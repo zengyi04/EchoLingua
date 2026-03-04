@@ -1,1 +1,1 @@
-# LinguaBridge-Borneo-
+# EchoLingua
