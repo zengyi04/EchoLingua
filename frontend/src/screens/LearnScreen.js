@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function LearnScreen() {
@@ -11,6 +11,12 @@ export default function LearnScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+        >
+          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Structured Lessons</Text>
         <Text style={styles.headerSubtitle}>Master the basics step-by-step</Text>
       </View>
@@ -142,9 +148,14 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   headerTitle: {
     fontSize: 24,
@@ -160,8 +171,10 @@ const styles = StyleSheet.create({
     padding: SPACING.l,
   },
   progressCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     marginBottom: SPACING.l,
     ...SHADOWS.small,
@@ -198,7 +211,9 @@ const styles = StyleSheet.create({
   lessonItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     borderRadius: SPACING.m,
     marginBottom: SPACING.s,

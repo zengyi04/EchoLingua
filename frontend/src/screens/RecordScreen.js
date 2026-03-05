@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, TextInput, Alert, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { playSound } from '../services/soundService';
 import { translateText } from '../services/translationService';
 import {
@@ -68,6 +68,32 @@ export default function RecordScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveHeights = useRef(Array(20).fill(0).map(() => new Animated.Value(20))).current;
   const isRecordingActionInFlightRef = useRef(false);
+
+  // Handle picking audio file from phone
+  const handlePickAudioFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        console.log('📁 Audio file picked:', asset.uri);
+        setRecordingUri(asset.uri);
+        setHasRecording(true);
+        setRecordingTime(30); // Default duration estimate
+        playSound('complete');
+        Alert.alert('File Imported', 'Audio file loaded successfully. You can now generate transcript or proceed with submission.');
+      }
+    } catch (error) {
+      if (error.code !== 'DOCUMENT_PICKER_CANCELLED') {
+        console.error('Error picking audio file:', error);
+        Alert.alert('Error', 'Failed to pick audio file. Please try again.');
+        playSound('incorrect');
+      }
+    }
+  };
 
   // Load recordings from local storage on mount
   useEffect(() => {
@@ -299,69 +325,6 @@ export default function RecordScreen() {
     }
   };
 
-  // NEW: Pick audio file from phone
-  const handlePickAudioFile = async () => {
-    try {
-      console.log('📁 Opening file picker for audio files...');
-      playSound('tap');
-
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*'],
-      });
-
-      if (result.canceled) {
-        console.log('⚠️ File selection canceled');
-        return;
-      }
-
-      if (!result.assets || result.assets.length === 0) {
-        Alert.alert('No File', 'Please select an audio file');
-        return;
-      }
-
-      const selectedFile = result.assets[0];
-      console.log('✅ Audio file selected:', selectedFile.name);
-      console.log('📁 URI:', selectedFile.uri);
-      console.log('📏 Size:', selectedFile.size, 'bytes');
-
-      // Validate audio file
-      if (!selectedFile.uri) {
-        Alert.alert('Invalid File', 'Could not access the selected file');
-        return;
-      }
-
-      playSound('complete');
-
-      // Set up the recording with picked file
-      setRecordingUri(selectedFile.uri);
-      setHasRecording(true);
-      setShowLanguageSelector(true);
-      setRecordingTime(0); // We don't know actual duration yet
-      
-      // Create recording object for storage
-      const newRecording = {
-        id: Date.now().toString(),
-        uri: selectedFile.uri,
-        duration: 0,
-        timestamp: new Date().toISOString(),
-        language: selectedLanguage || '',
-        transcript: '',
-        fileName: selectedFile.name, // NEW: Store original filename
-      };
-
-      saveRecordingToStorage(newRecording);
-
-      Alert.alert(
-        'Audio File Selected! ✓',
-        `File: ${selectedFile.name}\n\nNow select a language and generate transcript.`,
-        [{ text: 'OK' }]
-      );
-    } catch (error) {
-      console.error('❌ File picker error:', error);
-      playSound('incorrect');
-      Alert.alert('File Selection Error', `Could not select audio file: ${error.message}`);
-    }
-  };
 
   const handlePause = async () => {
     try {
@@ -741,6 +704,12 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+          >
+            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Voice Recording</Text>
           <Text style={styles.headerSubtitle}>Preserve indigenous voices for future generations</Text>
         </View>
@@ -815,17 +784,18 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
               </View>
             )}
 
-            {/* NEW: Pick from Phone Button - Show when not recording */}
+            {/* Upload Audio File Button */}
             {!isRecording && !hasRecording && (
               <TouchableOpacity
-                style={styles.pickAudioButton}
+                style={styles.uploadAudioButton}
                 onPress={handlePickAudioFile}
                 activeOpacity={0.7}
               >
-                <Ionicons name="folder-open" size={20} color={COLORS.primary} />
-                <Text style={styles.pickAudioButtonText}>Or Pick from Phone</Text>
+                <Ionicons name="folder-open" size={24} color={COLORS.primary} />
+                <Text style={styles.uploadAudioButtonText}>Or Pick from Phone</Text>
               </TouchableOpacity>
             )}
+
           </View>
 
           {/* NEW: Playback Controls - Redesigned */}
@@ -1201,10 +1171,15 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   headerTitle: {
     fontSize: 28,
@@ -1254,8 +1229,10 @@ const styles = StyleSheet.create({
     height: 80,
     gap: 3,
     marginVertical: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     ...SHADOWS.small,
   },
@@ -1289,7 +1266,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.s,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     paddingVertical: SPACING.m,
     paddingHorizontal: SPACING.l,
     borderRadius: SPACING.m,
@@ -1326,7 +1305,9 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     marginVertical: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
     borderRadius: SPACING.m,
     ...SHADOWS.small,
@@ -1343,8 +1324,10 @@ const styles = StyleSheet.create({
   },
   transcriptContainer: {
     width: '100%',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     marginVertical: SPACING.l,
     ...SHADOWS.small,
@@ -1356,7 +1339,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.m,
     paddingBottom: SPACING.s,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
   transcriptTitle: {
     fontSize: 16,
@@ -1390,7 +1373,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.m,
   },
   uploadButton: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderWidth: 2,
     borderColor: COLORS.primary,
     borderStyle: 'dashed',

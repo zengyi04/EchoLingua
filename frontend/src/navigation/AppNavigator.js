@@ -11,11 +11,18 @@ import VocabularyScreen from '../screens/VocabularyScreen';
 import StoryScreen from '../screens/StoryScreen';
 import StoryLibraryScreen from '../screens/StoryLibraryScreen';
 import QuizScreen from '../screens/QuizScreen';
-import LearnScreen from '../screens/LearnScreen';
 import RecordScreen from '../screens/RecordScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import LivingLanguageScreen from '../screens/LivingLanguageScreen';
 import MapScreen from '../screens/MapScreen';
+import AIChatScreen from '../screens/AIChatScreen';
+// New Feature Screens
+import CommunityStoryScreen from '../screens/CommunityStoryScreen';
+import ProgressTrackerScreen from '../screens/ProgressTrackerScreen';
+import CulturalEventsScreen from '../screens/CulturalEventsScreen';
+import DictionaryScreen from '../screens/DictionaryScreen';
+import CulturalKnowledgeScreen from '../screens/CulturalKnowledgeScreen';
+import FamilyLearningScreen from '../screens/FamilyLearningScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -66,7 +73,7 @@ function TabNavigator() {
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ tabBarLabel: 'Home' }} />
-      <Tab.Screen name="LearnTab" component={LearnScreen} options={{ tabBarLabel: 'Learn' }} />
+      <Tab.Screen name="LearnTab" component={LivingLanguageScreen} options={{ tabBarLabel: 'Learn' }} />
       <Tab.Screen name="RecordTab" component={RecordScreen} options={{ tabBarLabel: '' }} />
       <Tab.Screen name="StoriesTab" component={StoryLibraryScreen} options={{ tabBarLabel: 'Stories' }} />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ tabBarLabel: 'Profile' }} />
@@ -77,12 +84,20 @@ function TabNavigator() {
 export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {/* New Feature Screens */}
+      <Stack.Screen name="CommunityStory" component={CommunityStoryScreen} />
+      <Stack.Screen name="ProgressTracker" component={ProgressTrackerScreen} />
+      <Stack.Screen name="CulturalEvents" component={CulturalEventsScreen} />
+      <Stack.Screen name="Dictionary" component={DictionaryScreen} />
+      <Stack.Screen name="CulturalKnowledge" component={CulturalKnowledgeScreen} />
+      <Stack.Screen name="FamilyLearning" component={FamilyLearningScreen} />
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen name="Vocabulary" component={VocabularyScreen} />
       <Stack.Screen name="Story" component={StoryScreen} />
       <Stack.Screen name="LivingLanguage" component={LivingLanguageScreen} />
       <Stack.Screen name="Quiz" component={QuizScreen} />
       <Stack.Screen name="Map" component={MapScreen} />
+      <Stack.Screen name="AIChat" component={AIChatScreen} />
     </Stack.Navigator>
   );
 }

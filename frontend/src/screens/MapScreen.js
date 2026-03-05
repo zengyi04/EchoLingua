@@ -15,9 +15,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyD04MCoHQ_n0U7ODku5-bY5uKeU237_o0k';
+
+const WORLD_SEARCH_API = 'https://nominatim.openstreetmap.org/search';
 
 // Cultural and language learning locations in Borneo
 const CULTURAL_LOCATIONS = [
@@ -100,6 +102,8 @@ export default function MapScreen({ navigation }) {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredLocations, setFilteredLocations] = useState(CULTURAL_LOCATIONS);
+  const [destination, setDestination] = useState(null);
+  const [searchingDestination, setSearchingDestination] = useState(false);
   const [loading, setLoading] = useState(true);
   const mapRef = useRef(null);
 
@@ -157,6 +161,7 @@ export default function MapScreen({ navigation }) {
   };
 
   const handleMarkerPress = (location) => {
+    setDestination(location);
     setSelectedLocation(location);
     mapRef.current?.animateToRegion({
       latitude: location.latitude,
@@ -164,6 +169,61 @@ export default function MapScreen({ navigation }) {
       latitudeDelta: 0.05,
       longitudeDelta: 0.05,
     });
+  };
+
+  const searchWorldDestination = async () => {
+    if (!searchQuery.trim()) {
+      return;
+    }
+
+    try {
+      setSearchingDestination(true);
+      const encoded = encodeURIComponent(searchQuery.trim());
+      const url = `${WORLD_SEARCH_API}?q=${encoded}&format=json&limit=1`;
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'EchoLinguaBorneo/1.0 (learning-app)',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to search destination.');
+      }
+
+      const results = await response.json();
+      if (!Array.isArray(results) || results.length === 0) {
+        Alert.alert('No Results', 'Could not find that place. Try a more specific destination.');
+        return;
+      }
+
+      const top = results[0];
+      const worldDestination = {
+        id: `world-${Date.now()}`,
+        name: top.display_name.split(',')[0] || searchQuery.trim(),
+        description: top.display_name,
+        latitude: parseFloat(top.lat),
+        longitude: parseFloat(top.lon),
+        type: 'World Destination',
+        languages: ['Global'],
+        icon: 'pin',
+        color: '#1976D2',
+      };
+
+      setDestination(worldDestination);
+      setSelectedLocation(worldDestination);
+      mapRef.current?.animateToRegion({
+        latitude: worldDestination.latitude,
+        longitude: worldDestination.longitude,
+        latitudeDelta: 0.08,
+        longitudeDelta: 0.08,
+      });
+    } catch (error) {
+      console.error('World destination search failed:', error);
+      Alert.alert('Search Error', 'Unable to find destination right now. Please try again.');
+    } finally {
+      setSearchingDestination(false);
+    }
   };
 
   const openInWaze = (location) => {
@@ -202,14 +262,25 @@ export default function MapScreen({ navigation }) {
   };
 
   const openInGoogleMaps = (location) => {
+    const hasOrigin = Boolean(userLocation);
+    const destinationCoords = `${location.latitude},${location.longitude}`;
+    const originCoords = hasOrigin
+      ? `${userLocation.latitude},${userLocation.longitude}`
+      : '';
     const googleMapsUrl = Platform.select({
-      ios: `maps://app?daddr=${location.latitude},${location.longitude}`,
-      android: `google.navigation:q=${location.latitude},${location.longitude}`,
+      ios: hasOrigin
+        ? `maps://app?saddr=${originCoords}&daddr=${destinationCoords}`
+        : `maps://app?daddr=${destinationCoords}`,
+      android: hasOrigin
+        ? `google.navigation:q=${destinationCoords}&mode=d`
+        : `google.navigation:q=${destinationCoords}`,
     });
 
     Linking.openURL(googleMapsUrl).catch(() => {
       // Fallback to web version
-      const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`;
+      const webUrl = hasOrigin
+        ? `https://www.google.com/maps/dir/?api=1&origin=${originCoords}&destination=${destinationCoords}&travelmode=driving`
+        : `https://www.google.com/maps/dir/?api=1&destination=${destinationCoords}&travelmode=driving`;
       Linking.openURL(webUrl);
     });
   };
@@ -283,11 +354,19 @@ export default function MapScreen({ navigation }) {
         <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search places, languages, or types..."
+          placeholder="Search any world destination..."
           placeholderTextColor={COLORS.textSecondary}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          onSubmitEditing={searchWorldDestination}
         />
+        <TouchableOpacity onPress={searchWorldDestination} disabled={searchingDestination}>
+          <Ionicons
+            name={searchingDestination ? 'time-outline' : 'locate'}
+            size={20}
+            color={COLORS.primary}
+          />
+        </TouchableOpacity>
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
             <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
@@ -317,6 +396,19 @@ export default function MapScreen({ navigation }) {
             pinColor={location.color}
           />
         ))}
+        {destination && !filteredLocations.some((item) => item.id === destination.id) && (
+          <Marker
+            key={destination.id}
+            coordinate={{
+              latitude: destination.latitude,
+              longitude: destination.longitude,
+            }}
+            title={destination.name}
+            description={destination.description}
+            onPress={() => handleMarkerPress(destination)}
+            pinColor={destination.color}
+          />
+        )}
       </MapView>
 
       {/* Selected Location Detail Card */}
@@ -409,9 +501,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.m,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
   backButton: {
@@ -437,11 +529,13 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     margin: SPACING.m,
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.s,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
   searchIcon: {
@@ -461,10 +555,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingVertical: SPACING.m,
     borderTopLeftRadius: SPACING.l,
     borderTopRightRadius: SPACING.l,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.large,
     maxHeight: 220,
   },
@@ -545,10 +641,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.surface,
-    padding: SPACING.l,
+    backgroundColor: COLORS.glassLight,
     borderTopLeftRadius: SPACING.l,
     borderTopRightRadius: SPACING.l,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.4)',
+    padding: SPACING.l,
     ...SHADOWS.large,
   },
   detailHeader: {

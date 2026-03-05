@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -20,7 +20,7 @@ const QuickAction = ({ title, icon, color, onPress }) => (
     onPress={onPress}
     activeOpacity={0.8}
   >
-    <View style={[styles.actionIconBox, { backgroundColor: COLORS.surface }]}>
+    <View style={[styles.actionIconBox, { backgroundColor: COLORS.glassLight }]}>
       {React.cloneElement(icon, { color: color })}
     </View>
     <Text style={styles.actionLabel} numberOfLines={2}>{title}</Text>
@@ -122,51 +122,54 @@ export default function HomeScreen({ navigation }) {
            </View>
         </View>
 
-        {/* Elder Voice Highlight (New Feature) */}
-        <View style={styles.elderCard}>
-           <View style={styles.elderHeader}>
-              <Ionicons name="mic-circle" size={40} color={COLORS.error} />
-              <View style={{marginLeft: SPACING.m}}>
-                 <Text style={styles.elderTitle}>Elder Voice of the Week</Text>
-                 <Text style={styles.elderName}>Nenek Siti - "The River's Song"</Text>
-              </View>
-           </View>
-           <TouchableOpacity style={styles.listenButton} onPress={() => navigation.navigate('StoriesTab')}>
-              <Text style={styles.listenText}>Listen Now</Text>
-              <Ionicons name="play-circle-outline" size={20} color={COLORS.primary} />
-           </TouchableOpacity>
-        </View>
-
         <Text style={styles.sectionTitle}>Tools & Discovery</Text>
 
         <View style={styles.grid}>
           {/* Row 1: AI & Discovery (Wow Features) */}
           <QuickAction 
-            title="AI Lens" 
-            icon={<MaterialIcons name="image-search" size={24} />}
-            color="#E91E63" // Pink
-            onPress={() => navigation.navigate('Vocabulary')}
-          />
-          <QuickAction 
             title="AI Chat" 
             icon={<Ionicons name="chatbubbles-sharp" size={24} />}
             color="#2196F3" // Blue
-            onPress={() => alert('Start AI Conversation')}
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('AIChat');
+                return;
+              }
+              navigation.navigate('AIChat');
+            }}
+          />
+          <QuickAction 
+            title="Dictionary" 
+            icon={<FontAwesome5 name="book" size={20} />}
+            color="#8E44AD" // Purple
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('Dictionary');
+                return;
+              }
+              navigation.navigate('Dictionary');
+            }}
           />
           <QuickAction 
             title="Map" 
             icon={<FontAwesome5 name="map-marked-alt" size={20} />}
             color="#FF9800" // Orange
-            onPress={() => navigation.navigate('Map')}
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('Map');
+                return;
+              }
+              navigation.navigate('Map');
+            }}
           />
+
+          {/* Row 2: Core Learning & Preservation */}
           <QuickAction 
             title="Learn" 
             icon={<FontAwesome5 name="book-open" size={20} />}
             color={COLORS.primary}
             onPress={() => navigation.navigate('LearnTab')}
           />
-
-          {/* Row 2: Core Learning & Preservation */}
           <QuickAction 
             title="Practice" 
             icon={<MaterialIcons name="translate" size={24} />}
@@ -179,23 +182,84 @@ export default function HomeScreen({ navigation }) {
             color={COLORS.accent}
             onPress={() => navigation.navigate('Quiz')}
           />
+
+          {/* Row 3: Community & Progress */}
+          <QuickAction 
+            title="Community" 
+            icon={<FontAwesome5 name="users" size={20} />}
+            color="#3498DB" // Light Blue
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('CommunityStory');
+                return;
+              }
+              navigation.navigate('CommunityStory');
+            }}
+          />
+          <QuickAction 
+            title="Progress" 
+            icon={<MaterialIcons name="trending-up" size={24} />}
+            color="#27AE60" // Green
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('ProgressTracker');
+                return;
+              }
+              navigation.navigate('ProgressTracker');
+            }}
+          />
           <QuickAction 
             title="Stories" 
             icon={<Ionicons name="library" size={24} />}
             color="#009688" // Teal
             onPress={() => navigation.navigate('StoriesTab')}
           />
+
+          {/* Row 4: Culture & Family */}
+          <QuickAction 
+            title="Festivals" 
+            icon={<MaterialIcons name="festival" size={24} />}
+            color="#F39C12" // Yellow-Orange
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('CulturalEvents');
+                return;
+              }
+              navigation.navigate('CulturalEvents');
+            }}
+          />
+          <QuickAction 
+            title="Knowledge" 
+            icon={<FontAwesome5 name="scroll" size={20} />}
+            color="#9B59B6" // Purple
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('CulturalKnowledge');
+                return;
+              }
+              navigation.navigate('CulturalKnowledge');
+            }}
+          />
+          <QuickAction 
+            title="Family" 
+            icon={<MaterialIcons name="family-restroom" size={24} />}
+            color="#E74C3C" // Red
+            onPress={() => {
+              if (navigation.getParent()) {
+                navigation.getParent().navigate('FamilyLearning');
+                return;
+              }
+              navigation.navigate('FamilyLearning');
+            }}
+          />
+
+          {/* Row 5: Recording */}
           <QuickAction 
             title="Record" 
             icon={<MaterialIcons name="mic" size={24} />}
             color={COLORS.error}
             onPress={() => navigation.navigate('RecordTab')}
           />
-        </View>
-        <View style={styles.dailyWordCard}>
-          <Text style={styles.dailyTitle}>Daily Word</Text>
-          <Text style={styles.dailyWord}>"Rumah"</Text>
-          <Text style={styles.dailyTranslation}>House • /roo-mah/</Text>
         </View>
 
       </ScrollView>
@@ -233,7 +297,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   statsCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderWidth: 1,
     borderRadius: SPACING.m,
     padding: SPACING.m,
     marginBottom: SPACING.l,
@@ -269,12 +335,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#eee',
   },
   elderCard: {
-    backgroundColor: '#FFE0B2', // Light Orange/Terracotta
+    backgroundColor: 'rgba(255, 224, 178, 0.6)',
+    borderColor: 'rgba(208, 140, 96, 0.3)',
+    borderWidth: 1,
     borderRadius: SPACING.m,
     padding: SPACING.m,
     marginBottom: SPACING.l,
     borderLeftWidth: 4,
     borderLeftColor: COLORS.secondary,
+    ...SHADOWS.small,
   },
   elderHeader: {
     flexDirection: 'row',
@@ -283,44 +352,6 @@ const styles = StyleSheet.create({
   },
   elderTitle: {
     fontSize: 12,
-    fontWeight: 'bold',
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-  },
-  elderName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  listenButton: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    padding: SPACING.s,
-    borderRadius: SPACING.s,
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-    gap: SPACING.s,
-  },
-  listenText: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  tipCard: {
-    backgroundColor: '#E3F2FD', // Light Blue
-    padding: SPACING.m,
-    borderRadius: SPACING.m,
-    marginBottom: SPACING.l,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  tipHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.s,
-    gap: SPACING.s,
-  },
-  tipTitle: {
     fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.primary,
@@ -355,6 +386,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
+    backgroundColor: COLORS.glassLight,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderWidth: 1,
     ...SHADOWS.small,
   },
   actionLabel: {
@@ -368,34 +402,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
   },
-  dailyWordCard: {
-    backgroundColor: COLORS.surface,
-    padding: SPACING.l,
-    borderRadius: SPACING.m,
-    alignItems: 'center',
-    ...SHADOWS.medium,
-    borderTopWidth: 4,
-    borderTopColor: COLORS.accent,
-  },
-  dailyTitle: {
-    fontSize: 14,
-    textTransform: 'uppercase',
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.s,
-    letterSpacing: 1,
-  },
-  dailyWord: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    fontStyle: 'italic',
-    marginBottom: SPACING.s,
-  },
-  dailyTranslation: {
-    fontSize: 16,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -404,12 +410,12 @@ const styles = StyleSheet.create({
   langButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.s,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   langButtonText: {
     color: COLORS.primary,
@@ -424,7 +430,9 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '80%',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderWidth: 1,
     borderRadius: SPACING.m,
     padding: SPACING.l,
     ...SHADOWS.large,

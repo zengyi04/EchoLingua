@@ -1,0 +1,660 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Modal,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+
+const FAMILY_ACCOUNTS_KEY = 'familyAccounts';
+const ACTIVE_ACCOUNT_KEY = 'activeAccount';
+
+export default function FamilyLearningScreen({ navigation }) {
+  const [accounts, setAccounts] = useState([]);
+  const [activeAccount, setActiveAccount] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newAccountName, setNewAccountName] = useState('');
+  const [newAccountRole, setNewAccountRole] = useState('Child');
+  const [newAccountAge, setNewAccountAge] = useState('');
+  const [selectedAvatar, setSelectedAvatar] = useState('👤');
+
+  const AVATARS = ['👤', '👦', '👧', '👨', '👩', '👴', '👵', '🧒', '🧔', '👨‍🦱'];
+  const ROLES = ['Parent', 'Child', 'Grandparent', 'Teen'];
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const loadAccounts = async () => {
+    try {
+      const storedAccounts = await AsyncStorage.getItem(FAMILY_ACCOUNTS_KEY);
+      const storedActive = await AsyncStorage.getItem(ACTIVE_ACCOUNT_KEY);
+
+      if (storedAccounts) {
+        const accountsList = JSON.parse(storedAccounts);
+        setAccounts(accountsList);
+
+        if (storedActive) {
+          const active = accountsList.find((acc) => acc.id === storedActive);
+          setActiveAccount(active);
+        } else if (accountsList.length > 0) {
+          setActiveAccount(accountsList[0]);
+          await AsyncStorage.setItem(ACTIVE_ACCOUNT_KEY, accountsList[0].id);
+        }
+      } else {
+        // Create default account
+        const defaultAccount = {
+          id: Date.now().toString(),
+          name: 'You',
+          role: 'Parent',
+          age: null,
+          avatar: '👤',
+          progress: {
+            wordsLearned: 0,
+            quizzesTaken: 0,
+            storiesRead: 0,
+            streak: 0,
+          },
+          createdAt: new Date().toISOString(),
+        };
+        const newAccounts = [defaultAccount];
+        await AsyncStorage.setItem(FAMILY_ACCOUNTS_KEY, JSON.stringify(newAccounts));
+        await AsyncStorage.setItem(ACTIVE_ACCOUNT_KEY, defaultAccount.id);
+        setAccounts(newAccounts);
+        setActiveAccount(defaultAccount);
+      }
+    } catch (error) {
+      console.error('Load accounts error:', error);
+    }
+  };
+
+  const saveAccounts = async (updatedAccounts) => {
+    try {
+      await AsyncStorage.setItem(FAMILY_ACCOUNTS_KEY, JSON.stringify(updatedAccounts));
+      setAccounts(updatedAccounts);
+    } catch (error) {
+      console.error('Save accounts error:', error);
+    }
+  };
+
+  const handleAddAccount = async () => {
+    if (!newAccountName.trim()) {
+      Alert.alert('Error', 'Please enter a name');
+      return;
+    }
+
+    const newAccount = {
+      id: Date.now().toString(),
+      name: newAccountName.trim(),
+      role: newAccountRole,
+      age: newAccountAge ? parseInt(newAccountAge) : null,
+      avatar: selectedAvatar,
+      progress: {
+        wordsLearned: 0,
+        quizzesTaken: 0,
+        storiesRead: 0,
+        streak: 0,
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedAccounts = [...accounts, newAccount];
+    await saveAccounts(updatedAccounts);
+
+    setNewAccountName('');
+    setNewAccountRole('Child');
+    setNewAccountAge('');
+    setSelectedAvatar('👤');
+    setShowAddModal(false);
+    Alert.alert('Success', `Account for ${newAccount.name} created!`);
+  };
+
+  const handleSwitchAccount = async (account) => {
+    setActiveAccount(account);
+    await AsyncStorage.setItem(ACTIVE_ACCOUNT_KEY, account.id);
+    Alert.alert('Switched', `Now using ${account.name}'s account`);
+  };
+
+  const handleDeleteAccount = (accountId) => {
+    if (accounts.length === 1) {
+      Alert.alert('Error', 'Cannot delete the last account');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete this account? This will erase all progress.',
+      ​[
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const updatedAccounts = accounts.filter((acc) => acc.id !== accountId);
+            await saveAccounts(updatedAccounts);
+
+            if (activeAccount?.id === accountId) {
+              handleSwitchAccount(updatedAccounts[0]);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderAccountCard = (account) => {
+    const isActive = activeAccount?.id === account.id;
+
+    return (
+      <View key={account.id} style={[styles.accountCard, isActive && styles.accountCardActive]}>
+        <TouchableOpacity
+          style={styles.accountCardContent}
+          onPress={() => handleSwitchAccount(account)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.accountAvatar}>{account.avatar}</Text>
+          <View style={styles.accountInfo}>
+            <Text style={styles.accountName}>{account.name}</Text>
+            <Text style={styles.accountRole}>{account.role}</Text>
+            {account.age && <Text style={styles.accountAge}>Age: {account.age}</Text>}
+          </View>
+          {isActive && (
+            <View style={styles.activeBadge}>
+              <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Progress Stats */}
+        <View style={styles.progressSection}>
+          <View style={styles.statItem}>
+            <Ionicons name="book" size={16} color={COLORS.primary} />
+            <Text style={styles.statText}>{account.progress.wordsLearned} words</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Ionicons name="clipboard-outline" size={16} color={COLORS.secondary} />
+            <Text style={styles.statText}>{account.progress.quizzesTaken} quizzes</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Ionicons name="flame" size={16} color="#FF6B35" />
+            <Text style={styles.statText}>{account.progress.streak} day streak</Text>
+          </View>
+        </View>
+
+        {/* Actions */}
+        {accounts.length > 1 && !isActive && (
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => handleDeleteAccount(account.id)}
+          >
+            <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Family Learning</Text>
+        <TouchableOpacity onPress={() => setShowAddModal(true)}>
+          <Ionicons name="add-circle" size={28} color={COLORS.primary} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Info Banner */}
+        <View style={styles.infoBanner}>
+          <FontAwesome5 name="users" size={20} color={COLORS.primary} />
+          <Text style={styles.infoBannerText}>
+            Learn together! Create accounts for family members and track everyone's progress.
+          </Text>
+        </View>
+
+        {/* Active Account Highlight */}
+        {activeAccount && (
+          <View style={styles.activeAccountSection}>
+            <Text style={styles.sectionTitle}>Currently Learning</Text>
+            <View style={styles.activeAccountCard}>
+              <Text style={styles.activeAccountAvatar}>{activeAccount.avatar}</Text>
+              <View style={styles.activeAccountInfo}>
+                <Text style={styles.activeAccountName}>{activeAccount.name}</Text>
+                <Text style={styles.activeAccountRole}>{activeAccount.role}</Text>
+              </View>
+              <Ionicons name="star" size={32} color="#FFD93D" />
+            </View>
+          </View>
+        )}
+
+        {/* All Accounts */}
+        <View style={styles.accountsSection}>
+          <Text style={styles.sectionTitle}>Family Members ({accounts.length})</Text>
+          {accounts.map(renderAccountCard)}
+        </View>
+
+        {/* Family Activities */}
+        <View style={styles.activitiesSection}>
+          <Text style={styles.sectionTitle}>Family Activities</Text>
+
+          <TouchableOpacity style={styles.activityCard}>
+            <View style={styles.activityIcon}>
+              <Ionicons name="people" size={28} color={COLORS.primary} />
+            </View>
+            <View style={styles.activityInfo}>
+              <Text style={styles.activityTitle}>Group Practice</Text>
+              <Text style={styles.activityDescription}>Practice vocabulary together</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.activityCard}>
+            <View style={styles.activityIcon}>
+              <Ionicons name="trophy" size={28} color="#FFD93D" />
+            </View>
+            <View style={styles.activityInfo}>
+              <Text style={styles.activityTitle}>Family Challenge</Text>
+              <Text style={styles.activityDescription}>Compete in friendly quizzes</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.activityCard}>
+            <View style={styles.activityIcon}>
+              <Ionicons name="book-outline" size={28} color={COLORS.secondary} />
+            </View>
+            <View style={styles.activityInfo}>
+              <Text style={styles.activityTitle}>Story Time</Text>
+              <Text style={styles.activityDescription}>Read stories as a family</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.activityCard}>
+            <View style={styles.activityIcon}>
+              <Ionicons name="bar-chart" size={28} color="#4ECDC4" />
+            </View>
+            <View style={styles.activityInfo}>
+              <Text style={styles.activityTitle}>Family Progress</Text>
+              <Text style={styles.activityDescription}>View combined achievements</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* Add Account Modal */}
+      <Modal visible={showAddModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Family Member</Text>
+              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+                <Ionicons name="close" size={28} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              <Text style={styles.inputLabel}>Name *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter name"
+                placeholderTextColor={COLORS.textSecondary}
+                value={newAccountName}
+                onChangeText={setNewAccountName}
+              />
+
+              <Text style={styles.inputLabel}>Role</Text>
+              <View style={styles.roleContainer}>
+                {ROLES.map((role) => (
+                  <TouchableOpacity
+                    key={role}
+                    style={[styles.roleOption, newAccountRole === role && styles.roleOptionActive]}
+                    onPress={() => setNewAccountRole(role)}
+                  >
+                    <Text
+                      style={[
+                        styles.roleOptionText,
+                        newAccountRole === role && styles.roleOptionTextActive,
+                      ]}
+                    >
+                      {role}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Age (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter age"
+                placeholderTextColor={COLORS.textSecondary}
+                value={newAccountAge}
+                onChangeText={setNewAccountAge}
+                keyboardType="number-pad"
+              />
+
+              <Text style={styles.inputLabel}>Choose Avatar</Text>
+              <View style={styles.avatarContainer}>
+                {AVATARS.map((avatar) => (
+                  <TouchableOpacity
+                    key={avatar}
+                    style={[
+                      styles.avatarOption,
+                      selectedAvatar === avatar && styles.avatarOptionActive,
+                    ]}
+                    onPress={() => setSelectedAvatar(avatar)}
+                  >
+                    <Text style={styles.avatarEmoji}>{avatar}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity style={styles.createBtn} onPress={handleAddAccount}>
+                <Text style={styles.createBtnText}>Create Account</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
+    marginHorizontal: SPACING.l,
+    marginTop: SPACING.m,
+    borderRadius: 12,
+    gap: SPACING.s,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.text,
+    lineHeight: 18,
+  },
+  activeAccountSection: {
+    paddingHorizontal: SPACING.l,
+    marginTop: SPACING.l,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: SPACING.m,
+  },
+  activeAccountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderRadius: 16,
+    padding: SPACING.m,
+    borderWidth: 2,
+    borderColor: '#FFD93D',
+  },
+  activeAccountAvatar: {
+    fontSize: 48,
+    marginRight: SPACING.m,
+  },
+  activeAccountInfo: {
+    flex: 1,
+  },
+  activeAccountName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  activeAccountRole: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  accountsSection: {
+    paddingHorizontal: SPACING.l,
+    marginTop: SPACING.l,
+  },
+  accountCard: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 16,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    ...SHADOWS.small,
+  },
+  accountCardActive: {
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+  },
+  accountCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  accountAvatar: {
+    fontSize: 40,
+    marginRight: SPACING.m,
+  },
+  accountInfo: {
+    flex: 1,
+  },
+  accountName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  accountRole: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  accountAge: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  activeBadge: {
+    marginLeft: SPACING.s,
+  },
+  progressSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: SPACING.m,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  statText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: SPACING.s,
+    right: SPACING.s,
+    padding: SPACING.xs,
+  },
+  activitiesSection: {
+    paddingHorizontal: SPACING.l,
+    marginTop: SPACING.l,
+    marginBottom: SPACING.xl,
+  },
+  activityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 16,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    ...SHADOWS.small,
+  },
+  activityIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.m,
+  },
+  activityInfo: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  activityDescription: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: SPACING.l,
+    paddingTop: SPACING.l,
+    paddingBottom: SPACING.xl,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  modalScrollView: {
+    marginBottom: SPACING.m,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginTop: SPACING.m,
+    marginBottom: SPACING.xs,
+  },
+  input: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: SPACING.m,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  roleContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.s,
+  },
+  roleOption: {
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  roleOptionActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  roleOptionText: {
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  roleOptionTextActive: {
+    color: COLORS.surface,
+    fontWeight: '600',
+  },
+  avatarContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.s,
+  },
+  avatarOption: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F8F9FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  avatarOptionActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  avatarEmoji: {
+    fontSize: 32,
+  },
+  createBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    padding: SPACING.m,
+    alignItems: 'center',
+    marginTop: SPACING.l,
+    ...SHADOWS.small,
+  },
+  createBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.surface,
+  },
+});

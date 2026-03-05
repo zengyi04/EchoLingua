@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { useNavigation } from '@react-navigation/native';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 const MOCK_DETECTED_OBJECTS = [
@@ -35,6 +36,7 @@ const MOCK_DETECTED_OBJECTS = [
 ];
 
 export default function ImageVocabularyScreen() {
+  const navigation = useNavigation();
   const [uploadedImage, setUploadedImage] = useState(null);
   const [detectedObjects, setDetectedObjects] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -75,6 +77,12 @@ export default function ImageVocabularyScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+          >
+            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Image to Vocabulary</Text>
           <Text style={styles.headerSubtitle}>
             Upload images to discover indigenous words
@@ -315,10 +323,15 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   headerTitle: {
     fontSize: 28,
@@ -340,7 +353,7 @@ const styles = StyleSheet.create({
     borderRadius: SPACING.l,
     padding: SPACING.xxl,
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     ...SHADOWS.small,
   },
   uploadAreaDragging: {
@@ -372,8 +385,10 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   imagePreviewContainer: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     overflow: 'hidden',
     ...SHADOWS.medium,
   },
@@ -407,9 +422,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   processingCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     padding: SPACING.l,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     alignItems: 'center',
   },
   processingText: {
@@ -438,12 +455,12 @@ const styles = StyleSheet.create({
   objectChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingVertical: SPACING.s,
     paddingHorizontal: SPACING.m,
     borderRadius: 20,
     borderWidth: 2,
-    borderColor: COLORS.border,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     gap: SPACING.s,
     ...SHADOWS.small,
   },
@@ -471,8 +488,10 @@ const styles = StyleSheet.create({
     color: COLORS.success,
   },
   vocabularyCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
     marginTop: SPACING.l,
     ...SHADOWS.medium,

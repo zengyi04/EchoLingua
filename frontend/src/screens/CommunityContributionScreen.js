@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { useNavigation } from '@react-navigation/native';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 const MOCK_SUBMISSIONS = [
@@ -34,6 +35,7 @@ const MOCK_SUBMISSIONS = [
 const CATEGORIES = ['Story', 'Phrase', 'Cultural Knowledge'];
 
 export default function CommunityContributionScreen() {
+  const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('contribute');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -129,6 +131,12 @@ export default function CommunityContributionScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+      >
+        <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+      </TouchableOpacity>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Community Hub</Text>
         <Text style={styles.headerSubtitle}>
@@ -443,11 +451,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginLeft: SPACING.m,
+    marginTop: SPACING.s,
+    padding: SPACING.xs,
+  },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
   headerTitle: {
@@ -462,11 +476,11 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingHorizontal: SPACING.s,
     paddingTop: SPACING.s,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
   tab: {
     flex: 1,
@@ -496,8 +510,10 @@ const styles = StyleSheet.create({
     padding: SPACING.l,
   },
   formCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
     marginBottom: SPACING.l,
     ...SHADOWS.medium,
@@ -635,7 +651,9 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     borderRadius: SPACING.m,
     alignItems: 'center',
@@ -655,8 +673,10 @@ const styles = StyleSheet.create({
     gap: SPACING.m,
   },
   submissionCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     ...SHADOWS.small,
   },
@@ -743,8 +763,10 @@ const styles = StyleSheet.create({
     padding: SPACING.l,
   },
   profileCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.xl,
     alignItems: 'center',
     marginBottom: SPACING.l,
@@ -807,7 +829,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingTop: SPACING.l,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderTopColor: 'rgba(255, 255, 255, 0.4)',
   },
   profileStatItem: {
     alignItems: 'center',
@@ -828,8 +850,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.border,
   },
   achievementsCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
     marginBottom: SPACING.l,
     ...SHADOWS.small,
@@ -875,8 +899,10 @@ const styles = StyleSheet.create({
     color: COLORS.success,
   },
   activityCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
     ...SHADOWS.small,
   },

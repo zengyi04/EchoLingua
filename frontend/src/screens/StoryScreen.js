@@ -6,7 +6,7 @@ import * as Speech from 'expo-speech';
 import { MaterialIcons, Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { stories } from '../data/mockData';
-import { COLORS, SPACING, SHADOWS, FONTS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, FONTS, GLASS_EFFECTS } from '../constants/theme';
 import { playSound } from '../services/soundService';
 
 export default function StoryScreen() {
@@ -356,8 +356,10 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   controlsCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     marginBottom: SPACING.l,
     ...SHADOWS.small,
@@ -417,7 +419,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   contentCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
     borderRadius: SPACING.m,
     ...SHADOWS.small,

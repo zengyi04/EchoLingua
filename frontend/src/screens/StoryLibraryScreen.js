@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { stories } from '../data/mockData';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 const STORIES_STORAGE_KEY = '@echolingua_stories';
@@ -95,6 +95,12 @@ export default function StoryLibraryScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+        >
+          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Story Library</Text>
         <Text style={styles.headerSubtitle}>Discover ancient wisdom & tales</Text>
       </View>
@@ -141,10 +147,15 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingBottom: SPACING.m,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   headerTitle: {
     fontSize: 24,
@@ -206,8 +217,10 @@ const styles = StyleSheet.create({
   },
   storyCard: {
     flexDirection: 'row',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     marginBottom: SPACING.m,
     padding: SPACING.m,
     alignItems: 'center',

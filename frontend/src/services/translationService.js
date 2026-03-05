@@ -95,6 +95,45 @@ export const translateMultiple = async (texts, languageId) => {
 };
 
 /**
+ * Translate between any supported source and target language IDs.
+ * @param {string} text - Text to translate
+ * @param {string} sourceLanguageId - Source language ID
+ * @param {string} targetLanguageId - Target language ID
+ * @returns {Promise<string>} - Translated text
+ */
+export const translateTextBetween = async (text, sourceLanguageId, targetLanguageId) => {
+  try {
+    if (!text || !sourceLanguageId || !targetLanguageId) {
+      return text;
+    }
+
+    if (sourceLanguageId === targetLanguageId) {
+      return text;
+    }
+
+    const sourceCode = LANGUAGE_CODES[sourceLanguageId] || 'en';
+    const targetCode = LANGUAGE_CODES[targetLanguageId] || 'en';
+    const encodedText = encodeURIComponent(text);
+    const url = `https://api.mymemory.translated.net/get?q=${encodedText}&langpair=${sourceCode}|${targetCode}`;
+
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) {
+      return text;
+    }
+
+    const data = await response.json();
+    if (data.responseStatus === 200 && data.responseData?.translatedText) {
+      return data.responseData.translatedText;
+    }
+
+    return text;
+  } catch (error) {
+    console.error('❌ Pair translation error:', error);
+    return text;
+  }
+};
+
+/**
  * For production use: Google Translate API translation
  * Requires API key to be configured
  * @param {string} text - Text to translate
@@ -140,5 +179,6 @@ export const translateWithGoogleAPI = async (text, languageId, apiKey) => {
 export default {
   translateText,
   translateMultiple,
+  translateTextBetween,
   translateWithGoogleAPI,
 };

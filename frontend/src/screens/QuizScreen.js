@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, ScrollView }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { quizzesByLanguageAndDifficulty } from '../data/mockData';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { playSound } from '../services/soundService';
+import { translateText } from '../services/translationService';
+import { saveQuizResult as saveQuizScoreService } from '../services/scoringService';
 
 const QUIZ_STATE_STORAGE_KEY = '@echolingua_quiz_state';
 const QUIZ_HISTORY_STORAGE_KEY = '@echolingua_quiz_history';
@@ -59,6 +61,8 @@ export default function QuizScreen({ navigation }) {
   const [quizFinished, setQuizFinished] = useState(false);
   const [selectedOption, setSelectedOption] = useState(null);
   const [quizQuestions, setQuizQuestions] = useState([]);
+  const [localizedQuestion, setLocalizedQuestion] = useState(null);
+  const [isLocalizingQuestion, setIsLocalizingQuestion] = useState(false);
 
   const persistQuizState = async (overrides = {}) => {
     try {
@@ -140,6 +144,19 @@ export default function QuizScreen({ navigation }) {
 
     const total = quizQuestions.length;
     const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+    
+    // Save using the scoring service for proper user profile updates
+    saveQuizScoreService({
+      language: selectedLanguage.label,
+      difficulty: selectedDifficulty.id,
+      score: score,
+      totalQuestions: total,
+      quizNumber: selectedQuiz,
+    }).then(() => {
+      console.log('Quiz result saved to scoring service');
+    });
+
+    // Also save to local history for backward compatibility
     saveQuizResult({
       id: Date.now().toString(),
       languageId: selectedLanguage.id,
@@ -153,6 +170,47 @@ export default function QuizScreen({ navigation }) {
       completedAt: new Date().toISOString(),
     });
   }, [quizFinished]);
+
+  useEffect(() => {
+    const localizeCurrentQuestion = async () => {
+      const currentQuestion = quizQuestions[currentQuestionIndex];
+      if (!currentQuestion || !selectedLanguage) {
+        setLocalizedQuestion(null);
+        return;
+      }
+
+      // Keep native language content untouched when English is selected.
+      if (selectedLanguage.id === 'english') {
+        setLocalizedQuestion(currentQuestion);
+        return;
+      }
+
+      try {
+        setIsLocalizingQuestion(true);
+        const localizedText = await translateText(currentQuestion.question, selectedLanguage.id);
+        const localizedOptions = await Promise.all(
+          currentQuestion.options.map((option) => translateText(option, selectedLanguage.id))
+        );
+        const correctAnswerIndex = currentQuestion.options.findIndex(
+          (option) => option === currentQuestion.correctAnswer
+        );
+        setLocalizedQuestion({
+          ...currentQuestion,
+          question: localizedText,
+          options: localizedOptions,
+          correctAnswer: localizedOptions[correctAnswerIndex] || localizedOptions[0],
+          originalQuestion: currentQuestion.question,
+        });
+      } catch (error) {
+        console.error('Failed to localize quiz content:', error);
+        setLocalizedQuestion(currentQuestion);
+      } finally {
+        setIsLocalizingQuestion(false);
+      }
+    };
+
+    localizeCurrentQuestion();
+  }, [quizQuestions, currentQuestionIndex, selectedLanguage]);
 
   const handleLanguageSelect = (language) => {
     console.log(`🌍 Selected language: ${language.label}`);
@@ -306,6 +364,13 @@ export default function QuizScreen({ navigation }) {
   if (!selectedLanguage) {
     return (
       <SafeAreaView style={styles.container}>
+        <TouchableOpacity
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+          style={styles.backButtonTop}
+        >
+          <Ionicons name="chevron-back" size={28} color={COLORS.primary} />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Choose Language</Text>
           <Text style={styles.headerSubtitle}>Select a language to practice</Text>
@@ -453,7 +518,7 @@ export default function QuizScreen({ navigation }) {
   }
 
   // Active Quiz Screen
-  const currentQuestion = quizQuestions[currentQuestionIndex];
+  const currentQuestion = localizedQuestion || quizQuestions[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / quizQuestions.length) * 100;
 
   return (
@@ -485,6 +550,9 @@ export default function QuizScreen({ navigation }) {
       <ScrollView style={styles.quizContent} showsVerticalScrollIndicator={false}>
         <View style={styles.questionContainer}>
           <Text style={styles.questionNumber}>Question {currentQuestionIndex + 1}</Text>
+          {isLocalizingQuestion && (
+            <Text style={styles.localizingLabel}>Translating to {selectedLanguage.label}...</Text>
+          )}
           <Text style={styles.questionText}>{currentQuestion.question}</Text>
         </View>
 
@@ -541,9 +609,9 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
   headerTitle: {
@@ -576,10 +644,12 @@ const styles = StyleSheet.create({
   selectionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     padding: SPACING.m,
     marginBottom: SPACING.m,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
     gap: SPACING.m,
   },
@@ -644,9 +714,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.m,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
   backButtonSmall: {
@@ -684,7 +754,10 @@ const styles = StyleSheet.create({
   progressBarContainer: {
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   progressBarBg: {
     height: 8,
@@ -717,6 +790,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: SPACING.s,
   },
+  localizingLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.s,
+    fontStyle: 'italic',
+  },
   questionText: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -727,11 +806,11 @@ const styles = StyleSheet.create({
     gap: SPACING.m,
   },
   optionButton: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     padding: SPACING.m,
     borderRadius: SPACING.m,
     borderWidth: 2,
-    borderColor: COLORS.border,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     flexDirection: 'row',
     alignItems: 'center',
     ...SHADOWS.small,
@@ -824,12 +903,12 @@ const styles = StyleSheet.create({
     color: COLORS.surface,
   },
   secondaryButton: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingVertical: SPACING.m,
     paddingHorizontal: SPACING.l,
     borderRadius: SPACING.m,
     borderWidth: 2,
-    borderColor: COLORS.primary,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

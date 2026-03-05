@@ -11,6 +11,7 @@ import {
   releaseRecordingReference,
 } from '../services/recordingService';
 import * as Speech from 'expo-speech';
+import { translateTextBetween } from '../services/translationService';
 
 // Accuracy levels for testing
 const ACCURACY_LEVELS = {
@@ -20,7 +21,17 @@ const ACCURACY_LEVELS = {
   needsWork: { emoji: '📖', color: COLORS.error, label: 'Keep Practicing', minScore: 0 },
 };
 
-export default function VocabularyCard({ word, isSaved = false, onSave, testingMode = false, level }) {
+const wordTranslationCache = new Map();
+
+export default function VocabularyCard({ 
+  word, 
+  isSaved = false, 
+  onSave, 
+  testingMode = false, 
+  level,
+  fromLanguage,
+  toLanguage 
+}) {
   const [sound, setSound] = useState();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -28,6 +39,13 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
   const [accuracy, setAccuracy] = useState(null);
   const [isCheckingAccuracy, setIsCheckingAccuracy] = useState(false);
   const [recordingUri, setRecordingUri] = useState(null);
+  const [playingTranslation, setPlayingTranslation] = useState(false);
+  const [displayWord, setDisplayWord] = useState({
+    original: word.original,
+    translated: word.translated,
+    pronunciation: word.pronunciation,
+  });
+  const [isTranslatingWord, setIsTranslatingWord] = useState(false);
   
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -61,14 +79,75 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const buildDisplayWord = async () => {
+      const sourceId = fromLanguage?.id || 'malay';
+      const targetId = toLanguage?.id || 'english';
+      const cacheKey = `${word.id}:${sourceId}:${targetId}`;
+
+      if (wordTranslationCache.has(cacheKey)) {
+        if (mounted) {
+          setDisplayWord(wordTranslationCache.get(cacheKey));
+        }
+        return;
+      }
+
+      setIsTranslatingWord(true);
+      try {
+        const translatedOriginal = await translateTextBetween(word.original, 'malay', sourceId);
+        const translatedMeaning = await translateTextBetween(word.translated, 'english', targetId);
+
+        const transformed = {
+          original: translatedOriginal || word.original,
+          translated: translatedMeaning || word.translated,
+          pronunciation: word.pronunciation,
+        };
+        wordTranslationCache.set(cacheKey, transformed);
+        if (mounted) {
+          setDisplayWord(transformed);
+        }
+      } catch (error) {
+        if (mounted) {
+          setDisplayWord({
+            original: word.original,
+            translated: word.translated,
+            pronunciation: word.pronunciation,
+          });
+        }
+      } finally {
+        if (mounted) {
+          setIsTranslatingWord(false);
+        }
+      }
+    };
+
+    buildDisplayWord();
+
+    return () => {
+      mounted = false;
+    };
+  }, [word.id, word.original, word.translated, word.pronunciation, fromLanguage?.id, toLanguage?.id]);
+
   // Play pronunciation sound - speaks the word out loud using TTS
-  const playPronunciation = async () => {
-    if (isPlaying) return;
+  const playPronunciation = async (isTranslation = false) => {
+    if (isPlaying || playingTranslation) return;
     
     try {
-      console.log(`🔊 Playing pronunciation: ${word.original}`);
+      const textToSpeak = isTranslation ? displayWord.translated : displayWord.original;
+      const languageCode = isTranslation 
+        ? (toLanguage?.speechCode || 'en-US') 
+        : (fromLanguage?.speechCode || 'ms-MY');
+      
+      console.log(`🔊 Playing ${isTranslation ? 'translation' : 'pronunciation'}: ${textToSpeak} in ${languageCode}`);
       await playSound('play');
-      setIsPlaying(true);
+      
+      if (isTranslation) {
+        setPlayingTranslation(true);
+      } else {
+        setIsPlaying(true);
+      }
 
       // Animate button
       Animated.sequence([
@@ -86,34 +165,47 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
 
       // Use Text-to-Speech to pronounce the word
       try {
-        await Speech.speak(word.original, {
-          language: 'ms', // Malay/indigenous language pronunciation
+        await Speech.speak(textToSpeak, {
+          language: languageCode,
           pitch: 1,
           rate: 0.8, // Slightly slower for clarity
           onDone: () => {
-            console.log(`✅ Finished saying: ${word.original}`);
-            setIsPlaying(false);
+            console.log(`✅ Finished saying: ${textToSpeak}`);
+            if (isTranslation) {
+              setPlayingTranslation(false);
+            } else {
+              setIsPlaying(false);
+            }
           },
           onError: () => {
             console.log(`⚠️ TTS failed, using simulated audio`);
             setTimeout(() => {
-              console.log(`✅ Finished saying: ${word.original}`);
-              setIsPlaying(false);
+              console.log(`✅ Finished saying: ${textToSpeak}`);
+              if (isTranslation) {
+                setPlayingTranslation(false);
+              } else {
+                setIsPlaying(false);
+              }
             }, 1500);
           },
         });
       } catch (ttsError) {
         console.warn('TTS not available, falling back to simulated audio:', ttsError);
         // Fallback: simulate speaking time based on word length
-        const speakDuration = Math.max(1000, word.original.length * 150);
+        const speakDuration = Math.max(1000, textToSpeak.length * 150);
         setTimeout(() => {
-          console.log(`✅ Finished saying: ${word.original}`);
-          setIsPlaying(false);
+          console.log(`✅ Finished saying: ${textToSpeak}`);
+          if (isTranslation) {
+            setPlayingTranslation(false);
+          } else {
+            setIsPlaying(false);
+          }
         }, speakDuration);
       }
     } catch (error) {
       console.error('Failed to play sound:', error);
       setIsPlaying(false);
+      setPlayingTranslation(false);
       Alert.alert('Error', 'Failed to play audio: ' + error.message);
     }
   };
@@ -126,7 +218,7 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
 
     try {
       isPreparingRecordingRef.current = true;
-      console.log('🎤 Recording started for:', word.original);
+      console.log('🎤 Recording started for:', displayWord.original);
       await playSound('recording');
       setIsRecording(true);
       setAccuracy(null);
@@ -225,7 +317,7 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
       }
 
       setIsCheckingAccuracy(true);
-      console.log('🔍 Analyzing your pronunciation for:', word.original);
+      console.log('🔍 Analyzing your pronunciation for:', displayWord.original);
       console.log('📂 Using recording at:', uri);
 
       // Simulate accurate pronunciation checking
@@ -269,7 +361,7 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
         setAccuracy({
           score: Math.round(score),
           level: accuracyLevel,
-          feedback: `Your pronunciation score: ${Math.round(score)}% - ${accuracyLevel.label}`,
+          feedback: `Your ${fromLanguage?.label || 'source language'} pronunciation score: ${Math.round(score)}% - ${accuracyLevel.label}`,
         });
 
         console.log(`✅ Analysis complete: ${Math.round(score)}% - ${accuracyLevel.label}`);
@@ -286,23 +378,24 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
       {/* Image Section */}
       <View style={styles.imageContainer}>
         <MaterialCommunityIcons name="image-outline" size={40} color={COLORS.textSecondary} />
-        <Text style={styles.imageLabel}>{word.translated}</Text>
+        <Text style={styles.imageLabel}>{displayWord.translated}</Text>
       </View>
 
       {/* Content Section */}
       <View style={styles.content}>
         <View style={styles.textGroup}>
-          <Text style={styles.originalWord}>{word.original}</Text>
-          <Text style={styles.phonetic}>/{word.pronunciation}/</Text>
-          <Text style={styles.translation}>{word.translated}</Text>
+          <Text style={styles.originalWord}>{displayWord.original}</Text>
+          <Text style={styles.phonetic}>/{displayWord.pronunciation}/</Text>
+          <Text style={styles.translation}>{displayWord.translated}</Text>
+          {isTranslatingWord && <Text style={styles.translatingHint}>Updating word for selected languages...</Text>}
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          {/* Play Sound Button */}
+          {/* Play Original Sound Button */}
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <TouchableOpacity 
-              onPress={playPronunciation} 
+              onPress={() => playPronunciation(false)} 
               style={[styles.iconButton, isPlaying && styles.iconButtonActive]}
               disabled={isPlaying}
               activeOpacity={0.7}
@@ -317,6 +410,23 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
               )}
             </TouchableOpacity>
           </Animated.View>
+
+          {/* Play Translation Button */}
+          <TouchableOpacity 
+            onPress={() => playPronunciation(true)} 
+            style={[styles.iconButton, playingTranslation && styles.iconButtonActive]}
+            disabled={playingTranslation}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name="translate"
+              size={20}
+              color={playingTranslation ? COLORS.accent : COLORS.textSecondary}
+            />
+            {playingTranslation && (
+              <View style={styles.playingIndicator} />
+            )}
+          </TouchableOpacity>
 
           {/* Record Mic Button */}
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
@@ -442,6 +552,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
     fontWeight: '500',
+  },
+  translatingHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
   },
   actions: {
     flexDirection: 'row',

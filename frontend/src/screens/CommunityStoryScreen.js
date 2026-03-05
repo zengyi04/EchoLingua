@@ -1,0 +1,833 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Image,
+  Modal,
+  FlatList,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+
+export default function CommunityStoryScreen({ navigation }) {
+  const [stories, setStories] = useState([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [selectedStory, setSelectedStory] = useState(null);
+  const [filterTab, setFilterTab] = useState('all'); // all, following, popular
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Upload form state
+  const [storyTitle, setStoryTitle] = useState('');
+  const [storyDescription, setStoryDescription] = useState('');
+  const [selectedAudio, setSelectedAudio] = useState(null);
+  const [storyLanguage, setStoryLanguage] = useState('Kadazandusun');
+  const [storyCategory, setStoryCategory] = useState('Folklore');
+
+  // Comment state
+  const [newComment, setNewComment] = useState('');
+
+  useEffect(() => {
+    loadStories();
+  }, []);
+
+  const loadStories = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('communityStories');
+      if (stored) {
+        setStories(JSON.parse(stored));
+      } else {
+        // Sample stories
+        const sampleStories = [
+          {
+            id: '1',
+            title: 'The Legend of Mount Kinabalu',
+            description: 'A traditional Kadazandusun story about the sacred mountain',
+            author: 'Maria Linus',
+            authorAvatar: '👤',
+            language: 'Kadazandusun',
+            category: 'Folklore',
+            likes: 145,
+            comments: 23,
+            bookmarks: 67,
+            audioUri: null,
+            uploadedAt: new Date().toISOString(),
+            isFollowing: false,
+            commentsList: [
+              { id: 'c1', author: 'John Doe', text: 'Beautiful story!', time: '2h ago' },
+              { id: 'c2', author: 'Sarah Lee', text: 'This reminds me of my grandmother', time: '5h ago' },
+            ],
+          },
+          {
+            id: '2',
+            title: 'Iban Harvest Song',
+            description: 'Traditional song sung during rice harvest celebrations',
+            author: 'Anding Langit',
+            authorAvatar: '👤',
+            language: 'Iban',
+            category: 'Music & Songs',
+            likes: 203,
+            comments: 45,
+            bookmarks: 89,
+            audioUri: null,
+            uploadedAt: new Date().toISOString(),
+            isFollowing: true,
+            commentsList: [],
+          },
+          {
+            id: '3',
+            title: 'Bajau Sea Stories',
+            description: 'Tales from the sea nomads of Borneo',
+            author: 'Zainal Omar',
+            authorAvatar: '👤',
+            language: 'Bajau',
+            category: 'Cultural Heritage',
+            likes: 178,
+            comments: 31,
+            bookmarks: 52,
+            audioUri: null,
+            uploadedAt: new Date().toISOString(),
+            isFollowing: false,
+            commentsList: [],
+          },
+        ];
+        await AsyncStorage.setItem('communityStories', JSON.stringify(sampleStories));
+        setStories(sampleStories);
+      }
+    } catch (error) {
+      console.error('Error loading stories:', error);
+    }
+  };
+
+  const saveStories = async (updatedStories) => {
+    try {
+      await AsyncStorage.setItem('communityStories', JSON.stringify(updatedStories));
+      setStories(updatedStories);
+    } catch (error) {
+      console.error('Error saving stories:', error);
+    }
+  };
+
+  const handleLikeStory = (storyId) => {
+    const updatedStories = stories.map((story) => {
+      if (story.id === storyId) {
+        return { ...story, likes: story.likes + 1 };
+      }
+      return story;
+    });
+    saveStories(updatedStories);
+  };
+
+  const handleBookmarkStory = (storyId) => {
+    const updatedStories = stories.map((story) => {
+      if (story.id === storyId) {
+        return { ...story, bookmarks: story.bookmarks + 1 };
+      }
+      return story;
+    });
+    saveStories(updatedStories);
+    Alert.alert('Bookmarked', 'Story added to your bookmarks');
+  };
+
+  const handleFollowAuthor = (storyId) => {
+    const updatedStories = stories.map((story) => {
+      if (story.id === storyId) {
+        return { ...story, isFollowing: !story.isFollowing };
+      }
+      return story;
+    });
+    saveStories(updatedStories);
+  };
+
+  const handlePickAudio = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*', 'video/mp4'], // Include mp4 for compatibility
+      });
+
+      if (result.type === 'success' || result.assets) {
+        const file = result.assets ? result.assets[0] : result;
+        setSelectedAudio(file);
+        Alert.alert('Audio Selected', file.name || 'Audio file selected');
+      }
+    } catch (error) {
+      console.error('Error picking audio:', error);
+      Alert.alert('Error', 'Failed to pick audio file');
+    }
+  };
+
+  const handleUploadStory = async () => {
+    if (!storyTitle.trim()) {
+      Alert.alert('Error', 'Please enter a story title');
+      return;
+    }
+
+    if (!storyDescription.trim()) {
+      Alert.alert('Error', 'Please enter a story description');
+      return;
+    }
+
+    const newStory = {
+      id: Date.now().toString(),
+      title: storyTitle,
+      description: storyDescription,
+      author: 'You',
+      authorAvatar: '👤',
+      language: storyLanguage,
+      category: storyCategory,
+      likes: 0,
+      comments: 0,
+      bookmarks: 0,
+      audioUri: selectedAudio?.uri || null,
+      uploadedAt: new Date().toISOString(),
+      isFollowing: false,
+      commentsList: [],
+    };
+
+    const updatedStories = [newStory, ...stories];
+    await saveStories(updatedStories);
+
+    // Reset form
+    setStoryTitle('');
+    setStoryDescription('');
+    setSelectedAudio(null);
+    setShowUploadModal(false);
+    Alert.alert('Success', 'Your story has been uploaded!');
+  };
+
+  const handleAddComment = () => {
+    if (!newComment.trim() || !selectedStory) return;
+
+    const comment = {
+      id: Date.now().toString(),
+      author: 'You',
+      text: newComment,
+      time: 'Just now',
+    };
+
+    const updatedStories = stories.map((story) => {
+      if (story.id === selectedStory.id) {
+        return {
+          ...story,
+          comments: story.comments + 1,
+          commentsList: [comment, ...story.commentsList],
+        };
+      }
+      return story;
+    });
+
+    saveStories(updatedStories);
+    setNewComment('');
+    setShowCommentModal(false);
+    Alert.alert('Success', 'Comment added!');
+  };
+
+  const openComments = (story) => {
+    setSelectedStory(story);
+    setShowCommentModal(true);
+  };
+
+  const filteredStories = stories.filter((story) => {
+    // Filter by tab
+    if (filterTab === 'following' && !story.isFollowing) return false;
+    if (filterTab === 'popular' && story.likes < 100) return false;
+
+    // Filter by search
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        story.title.toLowerCase().includes(query) ||
+        story.description.toLowerCase().includes(query) ||
+        story.author.toLowerCase().includes(query) ||
+        story.language.toLowerCase().includes(query)
+      );
+    }
+
+    return true;
+  });
+
+  const renderStoryCard = ({ item }) => (
+    <View style={styles.storyCard}>
+      {/* Author Header */}
+      <View style={styles.authorHeader}>
+        <View style={styles.authorInfo}>
+          <Text style={styles.authorAvatar}>{item.authorAvatar}</Text>
+          <View>
+            <Text style={styles.authorName}>{item.author}</Text>
+            <Text style={styles.storyMeta}>
+              {item.language} • {item.category}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.followBtn, item.isFollowing && styles.followingBtn]}
+          onPress={() => handleFollowAuthor(item.id)}
+        >
+          <Text style={[styles.followBtnText, item.isFollowing && styles.followingBtnText]}>
+            {item.isFollowing ? 'Following' : 'Follow'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Story Content */}
+      <View style={styles.storyContent}>
+        <Text style={styles.storyTitle}>{item.title}</Text>
+        <Text style={styles.storyDescription}>{item.description}</Text>
+        {item.audioUri && (
+          <View style={styles.audioIndicator}>
+            <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
+            <Text style={styles.audioText}>Audio Recording Available</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Action Buttons */}
+      <View style={styles.actionBar}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => handleLikeStory(item.id)}>
+          <Ionicons name="heart-outline" size={22} color={COLORS.textSecondary} />
+          <Text style={styles.actionText}>{item.likes}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn} onPress={() => openComments(item)}>
+          <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
+          <Text style={styles.actionText}>{item.comments}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn} onPress={() => handleBookmarkStory(item.id)}>
+          <Ionicons name="bookmark-outline" size={22} color={COLORS.textSecondary} />
+          <Text style={styles.actionText}>{item.bookmarks}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn}>
+          <Ionicons name="share-outline" size={22} color={COLORS.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Community Stories</Text>
+        <TouchableOpacity onPress={() => setShowUploadModal(true)}>
+          <Ionicons name="add-circle" size={28} color={COLORS.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color={COLORS.textSecondary} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search stories, authors..."
+          placeholderTextColor={COLORS.textSecondary}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+
+      {/* Filter Tabs */}
+      <View style={styles.tabContainer}>
+        {['all', 'following', 'popular'].map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={[styles.tab, filterTab === tab && styles.activeTab]}
+            onPress={() => setFilterTab(tab)}
+          >
+            <Text style={[styles.tabText, filterTab === tab && styles.activeTabText]}>
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Stories List */}
+      <FlatList
+        data={filteredStories}
+        renderItem={renderStoryCard}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <FontAwesome5 name="book-open" size={48} color={COLORS.textSecondary} />
+            <Text style={styles.emptyText}>No stories found</Text>
+            <Text style={styles.emptySubtext}>Be the first to share a story!</Text>
+          </View>
+        }
+      />
+
+      {/* Upload Story Modal */}
+      <Modal visible={showUploadModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Upload Story</Text>
+              <TouchableOpacity onPress={() => setShowUploadModal(false)}>
+                <Ionicons name="close" size={28} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              <Text style={styles.inputLabel}>Title *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter story title"
+                placeholderTextColor={COLORS.textSecondary}
+                value={storyTitle}
+                onChangeText={setStoryTitle}
+              />
+
+              <Text style={styles.inputLabel}>Description *</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Describe your story..."
+                placeholderTextColor={COLORS.textSecondary}
+                value={storyDescription}
+                onChangeText={setStoryDescription}
+                multiline
+                numberOfLines={4}
+              />
+
+              <Text style={styles.inputLabel}>Language</Text>
+              <View style={styles.pickerContainer}>
+                {['Kadazandusun', 'Iban', 'Bajau', 'Murut'].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    style={[styles.pickerOption, storyLanguage === lang && styles.pickerOptionActive]}
+                    onPress={() => setStoryLanguage(lang)}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerOptionText,
+                        storyLanguage === lang && styles.pickerOptionTextActive,
+                      ]}
+                    >
+                      {lang}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Category</Text>
+              <View style={styles.pickerContainer}>
+                {['Folklore', 'Music & Songs', 'Cultural Heritage', 'Personal Story'].map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.pickerOption, storyCategory === cat && styles.pickerOptionActive]}
+                    onPress={() => setStoryCategory(cat)}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerOptionText,
+                        storyCategory === cat && styles.pickerOptionTextActive,
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Audio Recording (Optional)</Text>
+              <TouchableOpacity style={styles.audioPickerBtn} onPress={handlePickAudio}>
+                <Ionicons name="mic" size={24} color={COLORS.primary} />
+                <Text style={styles.audioPickerText}>
+                  {selectedAudio ? selectedAudio.name : 'Pick Audio File'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.uploadBtn} onPress={handleUploadStory}>
+                <Text style={styles.uploadBtnText}>Upload Story</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Comments Modal */}
+      <Modal visible={showCommentModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Comments</Text>
+              <TouchableOpacity onPress={() => setShowCommentModal(false)}>
+                <Ionicons name="close" size={28} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.commentsScrollView}>
+              {selectedStory?.commentsList.map((comment) => (
+                <View key={comment.id} style={styles.commentItem}>
+                  <Text style={styles.commentAuthor}>{comment.author}</Text>
+                  <Text style={styles.commentText}>{comment.text}</Text>
+                  <Text style={styles.commentTime}>{comment.time}</Text>
+                </View>
+              ))}
+              {selectedStory?.commentsList.length === 0 && (
+                <Text style={styles.noCommentsText}>No comments yet. Be the first!</Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.commentInputContainer}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Write a comment..."
+                placeholderTextColor={COLORS.textSecondary}
+                value={newComment}
+                onChangeText={setNewComment}
+              />
+              <TouchableOpacity style={styles.commentSendBtn} onPress={handleAddComment}>
+                <Ionicons name="send" size={24} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    marginHorizontal: SPACING.l,
+    marginTop: SPACING.m,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: SPACING.s,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
+    gap: SPACING.s,
+  },
+  tab: {
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+  },
+  activeTab: {
+    backgroundColor: COLORS.primary,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  activeTabText: {
+    color: COLORS.surface,
+  },
+  listContent: {
+    paddingHorizontal: SPACING.l,
+    paddingBottom: SPACING.xl,
+  },
+  storyCard: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 16,
+    padding: SPACING.m,
+    marginVertical: SPACING.s,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    ...SHADOWS.small,
+  },
+  authorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  authorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  authorAvatar: {
+    fontSize: 32,
+    marginRight: SPACING.s,
+  },
+  authorName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  storyMeta: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  followBtn: {
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.xs,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+  },
+  followingBtn: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  followBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.surface,
+  },
+  followingBtnText: {
+    color: COLORS.primary,
+  },
+  storyContent: {
+    marginBottom: SPACING.m,
+  },
+  storyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  storyDescription: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  audioIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: SPACING.s,
+  },
+  audioText: {
+    fontSize: 12,
+    color: COLORS.primary,
+    marginLeft: SPACING.xs,
+  },
+  actionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: SPACING.m,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  actionText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.xxl,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginTop: SPACING.m,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: SPACING.l,
+    paddingTop: SPACING.l,
+    paddingBottom: SPACING.xl,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  modalScrollView: {
+    marginBottom: SPACING.m,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginTop: SPACING.m,
+    marginBottom: SPACING.xs,
+  },
+  input: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: SPACING.m,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  pickerContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.s,
+  },
+  pickerOption: {
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  pickerOptionActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  pickerOptionText: {
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  pickerOptionTextActive: {
+    color: COLORS.surface,
+    fontWeight: '600',
+  },
+  audioPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    gap: SPACING.s,
+  },
+  audioPickerText: {
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  uploadBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    padding: SPACING.m,
+    alignItems: 'center',
+    marginTop: SPACING.l,
+    ...SHADOWS.small,
+  },
+  uploadBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.surface,
+  },
+  commentsScrollView: {
+    maxHeight: 400,
+    marginBottom: SPACING.m,
+  },
+  commentItem: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: SPACING.m,
+    marginBottom: SPACING.s,
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  commentText: {
+    fontSize: 14,
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  commentTime: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  noCommentsText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    paddingVertical: SPACING.xl,
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: SPACING.m,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  commentSendBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+});

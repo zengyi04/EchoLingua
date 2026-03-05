@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { useNavigation } from '@react-navigation/native';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 const STATS = [
@@ -39,6 +40,7 @@ const SIDEBAR_ITEMS = [
 ];
 
 export default function LanguageVitalityDashboard() {
+  const navigation = useNavigation();
   const [selectedView, setSelectedView] = useState('overview');
 
   const maxValue = Math.max(...CHART_DATA.map(d => d.value));
@@ -106,6 +108,12 @@ export default function LanguageVitalityDashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+        >
+          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Language Vitality</Text>
         <Text style={styles.headerSubtitle}>Track community impact and growth</Text>
       </View>
@@ -284,10 +292,15 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   headerTitle: {
     fontSize: 28,
@@ -305,10 +318,10 @@ const styles = StyleSheet.create({
   },
   sidebar: {
     width: 80,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     paddingVertical: SPACING.m,
     borderRightWidth: 1,
-    borderRightColor: COLORS.border,
+    borderRightColor: 'rgba(255, 255, 255, 0.4)',
   },
   sidebarItem: {
     alignItems: 'center',
@@ -343,8 +356,10 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     marginHorizontal: 4,
     borderLeftWidth: 4,
@@ -395,10 +410,12 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   chartCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     margin: SPACING.m,
     marginTop: 0,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     ...SHADOWS.small,
   },
@@ -498,15 +515,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   leaderboardCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     margin: SPACING.m,
     marginTop: 0,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     ...SHADOWS.small,
   },
   leaderboardHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row'rgba(255, 255, 255, 0.4)'
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.m,
@@ -632,8 +651,10 @@ const styles = StyleSheet.create({
   },
   insightCard: {
     flexDirection: 'row',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.m,
     gap: SPACING.m,
     ...SHADOWS.small,

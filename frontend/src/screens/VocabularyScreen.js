@@ -1,54 +1,63 @@
 import React, { useState } from 'react';
-import { View, FlatList, StyleSheet, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, FlatList, StyleSheet, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import VocabularyCard from '../components/VocabularyCard';
 import { vocabularyList } from '../data/mockData';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 
-// Organized vocabulary by difficulty level
+const LANGUAGE_OPTIONS = [
+  { id: 'malay', label: 'Malay', flag: 'MY', speechCode: 'ms-MY' },
+  { id: 'iban', label: 'Iban', flag: 'MY', speechCode: 'ms-MY' },
+  { id: 'kadazan', label: 'Kadazan-Dusun', flag: 'MY', speechCode: 'ms-MY' },
+  { id: 'english', label: 'English', flag: 'GB', speechCode: 'en-US' },
+  { id: 'mandarin', label: 'Mandarin', flag: 'CN', speechCode: 'zh-CN' },
+  { id: 'indonesian', label: 'Indonesian', flag: 'ID', speechCode: 'id-ID' },
+];
+
 const VOCABULARY_BY_DIFFICULTY = {
-  easy: vocabularyList.filter(word => word.difficulty === 'easy'),
-  medium: vocabularyList.filter(word => word.difficulty === 'medium'),
-  hard: vocabularyList.filter(word => word.difficulty === 'hard'),
+  easy: vocabularyList.filter((word) => word.difficulty === 'easy'),
+  medium: vocabularyList.filter((word) => word.difficulty === 'medium'),
+  hard: vocabularyList.filter((word) => word.difficulty === 'hard'),
 };
 
 export default function VocabularyScreen() {
   const navigation = useNavigation();
   const [selectedLevel, setSelectedLevel] = useState('easy');
-  const [savedWords, setSavedWords] = useState({
-    easy: [],
-    medium: [],
-    hard: [],
-  });
+  const [savedWords, setSavedWords] = useState({ easy: [], medium: [], hard: [] });
   const [testingMode, setTestingMode] = useState(false);
+  const [fromLanguage, setFromLanguage] = useState(LANGUAGE_OPTIONS[0]);
+  const [toLanguage, setToLanguage] = useState(LANGUAGE_OPTIONS[3]);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [selectingLanguageType, setSelectingLanguageType] = useState('from');
 
   const currentVocabulary = VOCABULARY_BY_DIFFICULTY[selectedLevel];
 
   const handleSaveWord = (word, level) => {
-    // Check if word already saved
-    const alreadySaved = savedWords[level].some(w => w.id === word.id);
-    
+    const alreadySaved = savedWords[level].some((w) => w.id === word.id);
     if (alreadySaved) {
-      // Remove from saved
       setSavedWords({
         ...savedWords,
-        [level]: savedWords[level].filter(w => w.id !== word.id),
+        [level]: savedWords[level].filter((w) => w.id !== word.id),
       });
-      console.log(`❌ Removed ${word.original} from saved`);
-    } else {
-      // Add to saved
-      setSavedWords({
-        ...savedWords,
-        [level]: [...savedWords[level], word],
-      });
-      console.log(`✅ Saved ${word.original} to ${level} collection`);
+      return;
     }
+    setSavedWords({
+      ...savedWords,
+      [level]: [...savedWords[level], word],
+    });
   };
 
-  const isWordSaved = (word, level) => {
-    return savedWords[level].some(w => w.id === word.id);
+  const isWordSaved = (word, level) => savedWords[level].some((w) => w.id === word.id);
+
+  const selectLanguage = (lang) => {
+    if (selectingLanguageType === 'from') {
+      setFromLanguage(lang);
+    } else {
+      setToLanguage(lang);
+    }
+    setShowLanguageModal(false);
   };
 
   return (
@@ -59,68 +68,67 @@ export default function VocabularyScreen() {
         </TouchableOpacity>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Learn Vocabulary</Text>
-          <Text style={styles.headerSubtitle}>Practice pronunciation & test yourself</Text>
+          <Text style={styles.headerSubtitle}>Practice pronunciation and test yourself</Text>
         </View>
-        <TouchableOpacity
-          style={styles.testButton}
-          onPress={() => setTestingMode(!testingMode)}
-        >
-          <MaterialCommunityIcons name="clipboard-check" size={24} color={testingMode ? COLORS.error : COLORS.primary} />
+        <TouchableOpacity style={styles.testButton} onPress={() => setTestingMode(!testingMode)}>
+          <MaterialCommunityIcons
+            name="clipboard-check"
+            size={24}
+            color={testingMode ? COLORS.error : COLORS.primary}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Testing Mode Banner */}
+      <View style={styles.languageSelectionContainer}>
+        <Text style={styles.languageLabel}>Learning:</Text>
+        <TouchableOpacity
+          style={styles.languageButton}
+          onPress={() => {
+            setSelectingLanguageType('from');
+            setShowLanguageModal(true);
+          }}
+        >
+          <Text style={styles.languageText}>{fromLanguage.flag} {fromLanguage.label}</Text>
+        </TouchableOpacity>
+        <Ionicons name="arrow-forward" size={20} color={COLORS.textSecondary} />
+        <TouchableOpacity
+          style={styles.languageButton}
+          onPress={() => {
+            setSelectingLanguageType('to');
+            setShowLanguageModal(true);
+          }}
+        >
+          <Text style={styles.languageText}>{toLanguage.flag} {toLanguage.label}</Text>
+        </TouchableOpacity>
+      </View>
+
       {testingMode && (
         <View style={styles.testingBanner}>
-          <MaterialCommunityIcons name="lightbulb" size={20} color={COLORS.accent} />
-          <Text style={styles.testingText}>Testing Mode: Record and we'll mark your accuracy</Text>
+          <MaterialCommunityIcons name="lightbulb" size={18} color={COLORS.accent} />
+          <Text style={styles.testingText}>Testing mode enabled: record speech and check accuracy.</Text>
         </View>
       )}
 
-      {/* Difficulty Level Tabs - Improved Layout */}
       <View style={styles.tabsContainer}>
         {['easy', 'medium', 'hard'].map((level) => (
           <TouchableOpacity
             key={level}
-            style={[
-              styles.tab,
-              selectedLevel === level && styles.tabActive,
-            ]}
-            onPress={() => {
-              console.log(`🎯 Switched to ${level} level`);
-              setSelectedLevel(level);
-            }}
-            activeOpacity={0.7}
+            style={[styles.tab, selectedLevel === level && styles.tabActive]}
+            onPress={() => setSelectedLevel(level)}
           >
-            <Text
-              style={[
-                styles.tabText,
-                selectedLevel === level && styles.tabTextActive,
-              ]}
-            >
+            <Text style={[styles.tabText, selectedLevel === level && styles.tabTextActive]}>
               {level.charAt(0).toUpperCase() + level.slice(1)}
             </Text>
-            <Text style={[
-              styles.tabCount,
-              selectedLevel === level && { color: COLORS.surface + 'CC' }
-            ]}>
-              {VOCABULARY_BY_DIFFICULTY[level].length} words
-            </Text>
+            <Text style={styles.tabCount}>{VOCABULARY_BY_DIFFICULTY[level].length} words</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Saved Words Counter */}
       <View style={styles.counterRow}>
-        <View style={styles.counterItem}>
-          <MaterialCommunityIcons name="bookmark" size={16} color={COLORS.success} />
-          <Text style={styles.counterText}>
-            {savedWords[selectedLevel].length} saved
-          </Text>
-        </View>
+        <MaterialCommunityIcons name="bookmark" size={16} color={COLORS.success} />
+        <Text style={styles.counterText}>{savedWords[selectedLevel].length} saved</Text>
       </View>
 
-      {/* Vocabulary List */}
       <FlatList
         data={currentVocabulary}
         keyExtractor={(item) => item.id.toString()}
@@ -131,123 +139,141 @@ export default function VocabularyScreen() {
             onSave={() => handleSaveWord(item, selectedLevel)}
             testingMode={testingMode}
             level={selectedLevel}
+            fromLanguage={fromLanguage}
+            toLanguage={toLanguage}
           />
         )}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
+
+      <Modal visible={showLanguageModal} transparent animationType="slide" onRequestClose={() => setShowLanguageModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select {selectingLanguageType === 'from' ? 'Source' : 'Translation'} Language</Text>
+              <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                <Ionicons name="close" size={26} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.languageList}>
+              {LANGUAGE_OPTIONS.map((lang) => (
+                <TouchableOpacity key={lang.id} style={styles.languageOption} onPress={() => selectLanguage(lang)}>
+                  <Text style={styles.languageOptionText}>{lang.flag} {lang.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
   header: {
     padding: SPACING.l,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     ...SHADOWS.small,
   },
-  backButton: {
-    paddingRight: SPACING.m,
+  backButton: { paddingRight: SPACING.m },
+  headerContent: { flex: 1 },
+  headerTitle: { fontSize: 24, fontWeight: '700', color: COLORS.primary },
+  headerSubtitle: { fontSize: 13, color: COLORS.textSecondary },
+  testButton: { padding: SPACING.s },
+  languageSelectionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    backgroundColor: COLORS.glassLight,
+    paddingVertical: SPACING.s,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
-  headerContent: {
-    flex: 1,
+  languageLabel: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
+  languageButton: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SPACING.s,
+    paddingVertical: 6,
+    paddingHorizontal: SPACING.s,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  testButton: {
-    padding: SPACING.s,
-  },
+  languageText: { fontSize: 13, color: COLORS.text, fontWeight: '600' },
   testingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.s,
     backgroundColor: COLORS.accent + '20',
-    padding: SPACING.m,
-    marginHorizontal: SPACING.m,
-    marginVertical: SPACING.s,
+    padding: SPACING.s,
+    margin: SPACING.m,
     borderRadius: SPACING.s,
   },
-  testingText: {
-    fontSize: 12,
-    color: COLORS.accent,
-    fontWeight: '600',
-    flex: 1,
-  },
+  testingText: { fontSize: 12, color: COLORS.accent, flex: 1 },
   tabsContainer: {
     flexDirection: 'row',
-    paddingVertical: SPACING.m,
-    paddingHorizontal: SPACING.m,
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 2,
-    borderBottomColor: COLORS.border,
-    ...SHADOWS.small,
+    backgroundColor: COLORS.glassLight,
+    padding: SPACING.s,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: SPACING.m,
-    paddingHorizontal: SPACING.l,
-    marginHorizontal: SPACING.xs,
-    borderRadius: SPACING.m,
-    backgroundColor: COLORS.background,
-    borderWidth: 2,
+    paddingVertical: SPACING.s,
+    borderRadius: SPACING.s,
+    borderWidth: 1,
     borderColor: COLORS.border,
+    marginHorizontal: 4,
   },
-  tabActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-    ...SHADOWS.medium,
-  },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'center',
-  },
-  tabTextActive: {
-    color: COLORS.surface,
-  },
-  tabCount: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
+  tabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  tabText: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  tabTextActive: { color: COLORS.surface },
+  tabCount: { fontSize: 11, color: COLORS.textSecondary },
   counterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.s,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  counterText: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '600' },
+  listContent: { paddingBottom: SPACING.xl },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: {
+    backgroundColor: COLORS.glassLight,
+    borderTopLeftRadius: SPACING.l,
+    borderTopRightRadius: SPACING.l,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.4)',
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: SPACING.m,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  counterItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  modalTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, flex: 1, marginRight: SPACING.s },
+  languageList: { padding: SPACING.m },
+  languageOption: {
+    backgroundColor: COLORS.background,
+    borderRadius: SPACING.s,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.m,
+    marginBottom: SPACING.s,
   },
-  counterText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-  },
-  listContent: {
-    paddingBottom: SPACING.xl,
-  },
+  languageOptionText: { fontSize: 15, color: COLORS.text, fontWeight: '600' },
 });
