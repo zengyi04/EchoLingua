@@ -235,15 +235,15 @@ export default function StoryScreen() {
         </View>
 
         {/* Audio Player */}
-        <TouchableOpacity style={styles.audioPlayer} onPress={toggleAudio} activeOpacity={0.9}>
-           <View style={styles.playButton}>
+        <TouchableOpacity style={[styles.audioPlayer, isCommunityStory && styles.audioPlayerDark]} onPress={toggleAudio} activeOpacity={0.9}>
+           <View style={[styles.playButton, isCommunityStory && styles.playButtonDark]}>
              <MaterialIcons name={isPlaying ? "pause" : "play-arrow"} size={32} color={COLORS.surface} />
            </View>
            <View style={styles.audioInfo}>
-             <Text style={styles.audioTitle}>
+             <Text style={[styles.audioTitle, isCommunityStory && styles.audioTitleDark]}>
                {isCommunityStory ? 'Listen to Recording' : 'Listen to Legend'}
              </Text>
-             <Text style={styles.audioSubtitle}>
+             <Text style={[styles.audioSubtitle, isCommunityStory && styles.audioSubtitleDark]}>
                {isCommunityStory ? `Community Story • ${story.language}` : 'Narrated by Elder Kambera'}
              </Text>
              {audioSource && isPlaying && (
@@ -399,15 +399,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary + '20', // transparent primary
   },
+  audioPlayerDark: {
+    backgroundColor: COLORS.glassLight,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
   playButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
     backgroundColor: COLORS.primary,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.m,
-    ...SHADOWS.medium,
+  },
+  playButtonDark: {
+    backgroundColor: COLORS.secondary,
   },
   audioInfo: {
     flex: 1,
@@ -417,9 +423,15 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 16,
   },
+  audioTitleDark: {
+    color: COLORS.text,
+  },
   audioSubtitle: {
     color: COLORS.textSecondary,
     fontSize: 12,
+  },
+  audioSubtitleDark: {
+    color: COLORS.textSecondary,
   },
   audioSourceLabel: {
     color: COLORS.primary,

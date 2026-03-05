@@ -12,9 +12,14 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 
+const USER_STORAGE_KEY = '@echolingua_current_user';
+const USERS_DATABASE_KEY = '@echolingua_users_database';
+
 export default function UserProfileScreen({ navigation, route }) {
   const { userId, userName } = route.params || {};
   const [userStories, setUserStories] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [viewedUser, setViewedUser] = useState(null);
   const [userStats, setUserStats] = useState({
     storiesCount: 0,
     followers: 156,
@@ -22,6 +27,7 @@ export default function UserProfileScreen({ navigation, route }) {
     totalLikes: 0,
   });
   const [isFollowing, setIsFollowing] = useState(false);
+  const [showEmergencyContacts, setShowEmergencyContacts] = useState(false);
 
   useEffect(() => {
     loadUserProfile();
@@ -29,12 +35,36 @@ export default function UserProfileScreen({ navigation, route }) {
 
   const loadUserProfile = async () => {
     try {
+      // Load current user
+      const currentUserData = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      if (currentUserData) {
+        const parsedCurrentUser = JSON.parse(currentUserData);
+        setCurrentUser(parsedCurrentUser);
+        
+        // If viewing another user's profile
+        if (userId && userId !== parsedCurrentUser.id) {
+          const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
+          if (usersData) {
+            const users = JSON.parse(usersData);
+            const foundUser = users.find(u => u.id === userId);
+            if (foundUser) {
+              const { password, ...userWithoutPassword } = foundUser;
+              setViewedUser(userWithoutPassword);
+            }
+          }
+        } else {
+          // Viewing own profile
+          setViewedUser(parsedCurrentUser);
+        }
+      }
+      
       // Load all stories and filter by user
       const storedStories = await AsyncStorage.getItem('communityStories');
       if (storedStories) {
         const allStories = JSON.parse(storedStories);
+        const targetUserId = userId || currentUser?.id;
         const filtered = allStories.filter(
-          (story) => story.userId === userId || story.author === userName
+          (story) => story.userId === targetUserId || story.author === userName
         );
         setUserStories(filtered);
 
@@ -99,12 +129,59 @@ export default function UserProfileScreen({ navigation, route }) {
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
-            <Text style={styles.avatarEmoji}>👤</Text>
+            <Text style={styles.avatarEmoji}>{viewedUser?.avatar || '👤'}</Text>
           </View>
-          <Text style={styles.userName}>{userName || 'Anonymous User'}</Text>
-          <Text style={styles.userBio}>
-            Passionate about preserving indigenous languages and sharing cultural stories
-          </Text>
+          <Text style={styles.userName}>{viewedUser?.fullName || userName || 'Anonymous User'}</Text>
+          
+          {/* Role Badge */}
+          {viewedUser?.role && (
+            <View style={[styles.roleBadge, styles[`roleBadge${viewedUser.role.charAt(0).toUpperCase() + viewedUser.role.slice(1)}`]]}>
+              <Ionicons 
+                name={viewedUser.role === 'elder' ? 'people' : viewedUser.role === 'admin' ? 'shield-checkmark' : 'school'} 
+                size={14} 
+                color={COLORS.surface} 
+              />
+              <Text style={styles.roleBadgeText}>{viewedUser.role.toUpperCase()}</Text>
+            </View>
+          )}
+          
+          {/* User Info */}
+          {viewedUser && (
+            <View style={styles.userInfoContainer}>
+              {viewedUser.email && (
+                <View style={styles.userInfoRow}>
+                  <Ionicons name="mail" size={16} color={COLORS.textSecondary} />
+                  <Text style={styles.userInfoText}>{viewedUser.email}</Text>
+                </View>
+              )}
+              {viewedUser.community && (
+                <View style={styles.userInfoRow}>
+                  <Ionicons name="location" size={16} color={COLORS.textSecondary} />
+                  <Text style={styles.userInfoText}>{viewedUser.community}</Text>
+                </View>
+              )}
+              {viewedUser.languages && (
+                <View style={styles.userInfoRow}>
+                  <Ionicons name="language" size={16} color={COLORS.textSecondary} />
+                  <Text style={styles.userInfoText}>{viewedUser.languages}</Text>
+                </View>
+              )}
+              {viewedUser.age && (
+                <View style={styles.userInfoRow}>
+                  <Ionicons name="calendar" size={16} color={COLORS.textSecondary} />
+                  <Text style={styles.userInfoText}>{viewedUser.age} years old</Text>
+                </View>
+              )}
+              {viewedUser.joinedAt && (
+                <View style={styles.userInfoRow}>
+                  <Ionicons name="time" size={16} color={COLORS.textSecondary} />
+                  <Text style={styles.userInfoText}>
+                    Joined {new Date(viewedUser.joinedAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Stats */}
           <View style={styles.statsContainer}>
@@ -129,20 +206,30 @@ export default function UserProfileScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* Follow Button */}
-          <TouchableOpacity
-            style={[styles.followButton, isFollowing && styles.followingButton]}
-            onPress={handleFollowToggle}
-          >
-            <Ionicons
-              name={isFollowing ? 'checkmark-circle' : 'add-circle'}
-              size={20}
-              color={isFollowing ? COLORS.primary : COLORS.surface}
-            />
-            <Text style={[styles.followButtonText, isFollowing && styles.followingButtonText]}>
-              {isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
+          {/* Follow Button or Emergency Contacts Button */}
+          {viewedUser?.id === currentUser?.id ? (
+            <TouchableOpacity
+              style={styles.emergencyContactsButton}
+              onPress={() => navigation.navigate('EmergencyContacts')}
+            >
+              <Ionicons name="people" size={20} color={COLORS.surface} />
+              <Text style={styles.emergencyContactsButtonText}>Emergency Contacts</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.followButton, isFollowing && styles.followingButton]}
+              onPress={handleFollowToggle}
+            >
+              <Ionicons
+                name={isFollowing ? 'checkmark-circle' : 'add-circle'}
+                size={20}
+                color={isFollowing ? COLORS.primary : COLORS.surface}
+              />
+              <Text style={[styles.followButtonText, isFollowing && styles.followingButtonText]}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* User's Stories Section */}
@@ -225,6 +312,47 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: SPACING.xs,
   },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: SPACING.m,
+  },
+  roleBadgeLearner: {
+    backgroundColor: '#10B981',
+  },
+  roleBadgeElder: {
+    backgroundColor: '#F59E0B',
+  },
+  roleBadgeAdmin: {
+    backgroundColor: '#EF4444',
+  },
+  roleBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.surface,
+  },
+  userInfoContainer: {
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: SPACING.m,
+    marginBottom: SPACING.l,
+    gap: SPACING.s,
+  },
+  userInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+  },
+  userInfoText: {
+    fontSize: 14,
+    color: COLORS.text,
+    flex: 1,
+  },
   userBio: {
     fontSize: 14,
     color: COLORS.textSecondary,
@@ -283,6 +411,21 @@ const styles = StyleSheet.create({
   },
   followingButtonText: {
     color: COLORS.primary,
+  },
+  emergencyContactsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.m,
+    borderRadius: 24,
+    gap: SPACING.xs,
+    ...SHADOWS.small,
+  },
+  emergencyContactsButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.surface,
   },
   storiesSection: {
     padding: SPACING.l,

@@ -1,9 +1,12 @@
-import React from 'react';
-import { View, Platform, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Platform, StyleSheet, ActivityIndicator } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS } from '../constants/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const USER_STORAGE_KEY = '@echolingua_current_user';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -24,6 +27,9 @@ import DictionaryScreen from '../screens/DictionaryScreen';
 import CulturalKnowledgeScreen from '../screens/CulturalKnowledgeScreen';
 import FamilyLearningScreen from '../screens/FamilyLearningScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import LoginScreen from '../screens/LoginScreen';
+import SignUpScreen from '../screens/SignUpScreen';
+import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -83,13 +89,45 @@ function TabNavigator() {
 }
 
 export default function AppNavigator() {
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const user = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      setIsLoggedIn(!!user);
+    } catch (error) {
+      console.error('Failed to check auth status:', error);
+      setIsLoggedIn(false);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  if (isCheckingAuth) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="MainTabs">
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={isLoggedIn ? "MainTabs" : "Login"}>
+      {/* Authentication Screens */}
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="SignUp" component={SignUpScreen} />
+      
       {/* Main App Entry Point */}
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       
       {/* Feature Screens */}
       <Stack.Screen name="CommunityStory" component={CommunityStoryScreen} />
+      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="ProgressTracker" component={ProgressTrackerScreen} />
       <Stack.Screen name="CulturalEvents" component={CulturalEventsScreen} />

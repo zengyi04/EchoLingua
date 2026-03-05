@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+
+const USERS_DATABASE_KEY = '@echolingua_users_database';
+const COMMUNITY_STORIES_KEY = '@echolingua_stories';
+const SEEN_STORIES_KEY = '@echolingua_seen_stories';
 
 const { width } = Dimensions.get('window');
 
@@ -30,6 +36,69 @@ const QuickAction = ({ title, icon, color, onPress }) => (
 export default function HomeScreen({ navigation }) {
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const [showLangModal, setShowLangModal] = useState(false); // Language selector hidden by default
+  const [activeUsersCount, setActiveUsersCount] = useState(0);
+  const [unreadStoriesCount, setUnreadStoriesCount] = useState(0);
+
+  // Load stats when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      loadActiveUsersCount();
+      loadUnreadStoriesCount();
+    }, [])
+  );
+
+  const loadActiveUsersCount = async () => {
+    try {
+      const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
+      if (usersData) {
+        const users = JSON.parse(usersData);
+        const today = new Date().toISOString().split('T')[0]; // Get today's date (YYYY-MM-DD)
+        
+        // Count users who logged in today (check their lastActive field)
+        const activeToday = users.filter(user => {
+          if (user.lastActive) {
+            const lastActiveDate = new Date(user.lastActive).toISOString().split('T')[0];
+            return lastActiveDate === today;
+          }
+          return false;
+        });
+        
+        setActiveUsersCount(activeToday.length);
+      }
+    } catch (error) {
+      console.error('Failed to load active users count:', error);
+      setActiveUsersCount(0);
+    }
+  };
+
+  const loadUnreadStoriesCount = async () => {
+    try {
+      const storiesData = await AsyncStorage.getItem(COMMUNITY_STORIES_KEY);
+      const seenStoriesData = await AsyncStorage.getItem(SEEN_STORIES_KEY);
+      
+      if (storiesData) {
+        const stories = JSON.parse(storiesData);
+        const seenStories = seenStoriesData ? JSON.parse(seenStoriesData) : [];
+        const today = new Date().toISOString().split('T')[0]; // Get today's date (YYYY-MM-DD)
+        
+        // Count stories created today that haven't been seen
+        const todayStories = stories.filter(story => {
+          if (story.timestamp) {
+            const storyDate = new Date(story.timestamp).toISOString().split('T')[0];
+            const isToday = storyDate === today;
+            const notSeen = !seenStories.includes(story.id);
+            return isToday && notSeen;
+          }
+          return false;
+        });
+        
+        setUnreadStoriesCount(todayStories.length);
+      }
+    } catch (error) {
+      console.error('Failed to load unread stories count:', error);
+      setUnreadStoriesCount(0);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -118,13 +187,13 @@ export default function HomeScreen({ navigation }) {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                 <Text style={styles.statNumber}>85</Text>
-                 <Text style={styles.statLabel}>Elders Active</Text>
+                 <Text style={styles.statNumber}>{activeUsersCount}</Text>
+                 <Text style={styles.statLabel}>Active Today</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                 <Text style={styles.statNumber}>32</Text>
-                 <Text style={styles.statLabel}>New Today</Text>
+                 <Text style={styles.statNumber}>{unreadStoriesCount}</Text>
+                 <Text style={styles.statLabel}>New Community Today</Text>
               </View>
            </View>
         </View>
@@ -291,11 +360,11 @@ const styles = StyleSheet.create({
   headerTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.s,
+    gap: SPACING.m,
   },
   appLogo: {
-    width: 35,
-    height: 35,
+    width: 55,
+    height: 55,
   },
   greeting: {
     fontSize: 16,

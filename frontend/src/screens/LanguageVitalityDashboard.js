@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   leaderboardHeader: {
-    flexDirection: 'row'rgba(255, 255, 255, 0.4)'
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.m,

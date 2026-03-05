@@ -6,6 +6,10 @@ import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getUserProfile, getAverageScoreByDifficulty } from '../services/scoringService';
 import { WORLD_LANGUAGES, getBorneoLanguages, getLanguagesByRegion } from '../constants/languages';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const USER_STORAGE_KEY = '@echolingua_current_user';
+const USERS_DB_KEY = '@echolingua_users_database';
 
 // Group languages by region for organized display
 const LANGUAGE_GROUPS = [
@@ -23,6 +27,7 @@ const LANGUAGE_GROUPS = [
 export default function ProfileScreen() {
   const navigation = useNavigation();
   const [userProfile, setUserProfile] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [easyAvg, setEasyAvg] = useState(0);
   const [mediumAvg, setMediumAvg] = useState(0);
   const [hardAvg, setHardAvg] = useState(0);
@@ -46,6 +51,13 @@ export default function ProfileScreen() {
 
   const loadUserProfile = async () => {
     try {
+      // Load current user from AsyncStorage
+      const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      if (userData) {
+        const user = JSON.parse(userData);
+        setCurrentUser(user);
+      }
+
       const profile = await getUserProfile();
       setUserProfile(profile);
       
@@ -60,6 +72,33 @@ export default function ProfileScreen() {
     } catch (error) {
       console.error('Failed to load user profile:', error);
     }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem(USER_STORAGE_KEY);
+              // Reset navigation to Login screen
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } catch (error) {
+              console.error('Failed to logout:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const toggle = (key) => setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -78,13 +117,22 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}><Text style={styles.avatarText}>JD</Text></View>
-          <Text style={styles.userName}>Jane Doe</Text>
+          <View style={styles.avatarContainer}>
+            <Text style={styles.avatarText}>
+              {currentUser?.fullName 
+                ? currentUser.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+                : 'JD'}
+            </Text>
+          </View>
+          <Text style={styles.userName}>{currentUser?.fullName || 'User Profile'}</Text>
           {userProfile && (
             <>
               <Text style={styles.userLevel}>{userProfile.title}</Text>
               <Text style={styles.levelType}>{userProfile.badge} {userProfile.levelType}</Text>
-              <Text style={styles.pointsText}>Points: {userProfile.totalPoints}</Text>
+              <View style={styles.pointsContainer}>
+                <Ionicons name="trophy" size={20} color="#FFD700" />
+                <Text style={styles.pointsText}>{userProfile.totalPoints} Points</Text>
+              </View>
             </>
           )}
         </View>
@@ -160,6 +208,63 @@ export default function ProfileScreen() {
           <Text style={styles.menuListItem}>Help & Support</Text>
           <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
         </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.menuItem, styles.logoutButton]} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={24} color={COLORS.error} />
+          <Text style={[styles.menuListItem, styles.logoutText]}>Logout</Text>
+        </TouchableOpacity>
+
+        {/* User Signup Info Section */}
+        {currentUser && (
+          <View style={styles.userInfoSection}>
+            <Text style={styles.userInfoSectionTitle}>Account Information</Text>
+            <View style={styles.userInfoCard}>
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelContainer}>
+                  <Ionicons name="mail-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.infoLabel}>Email</Text>
+                </View>
+                <Text style={styles.infoValue}>{currentUser.email}</Text>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelContainer}>
+                  <Ionicons name="people-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.infoLabel}>Community</Text>
+                </View>
+                <Text style={styles.infoValue}>{currentUser.community || 'Not set'}</Text>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelContainer}>
+                  <Ionicons name="language" size={18} color={COLORS.primary} />
+                  <Text style={styles.infoLabel}>Languages</Text>
+                </View>
+                <Text style={styles.infoValue}>{Array.isArray(currentUser.languages) && currentUser.languages.length > 0 ? currentUser.languages.join(', ') : 'Not set'}</Text>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelContainer}>
+                  <Ionicons name="cake-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.infoLabel}>Age</Text>
+                </View>
+                <Text style={styles.infoValue}>{currentUser.age || 'Not set'}</Text>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelContainer}>
+                  <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.infoLabel}>Joined</Text>
+                </View>
+                <Text style={styles.infoValue}>
+                  {currentUser.joinedAt 
+                    ? new Date(currentUser.joinedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                    : 'Not set'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       <Modal visible={showStats} animationType="slide" transparent onRequestClose={() => setShowStats(false)}>
@@ -374,12 +479,35 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 28, fontWeight: '700', color: COLORS.surface },
   userName: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   userLevel: { fontSize: 13, color: COLORS.textSecondary },
+  pointsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginTop: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.xs,
+    backgroundColor: COLORS.glassLight,
+    borderRadius: 20,
+  },
+  pointsText: { 
+    fontSize: 14, 
+    fontWeight: '600',
+    color: COLORS.text, 
+  },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.m },
   menuItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.glassLight, borderColor: 'rgba(255, 255, 255, 0.5)', borderWidth: 1, borderRadius: SPACING.m, padding: SPACING.m, marginBottom: SPACING.s, ...SHADOWS.small },
   menuContent: { flex: 1, marginLeft: SPACING.s },
   menuText: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   menuSubtext: { fontSize: 12, color: COLORS.textSecondary },
   menuListItem: { flex: 1, marginLeft: SPACING.s, fontSize: 15, fontWeight: '700', color: COLORS.text },
+  logoutButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: COLORS.error,
+    borderWidth: 1.5,
+  },
+  logoutText: {
+    color: COLORS.error,
+  },
   langDropdown: { backgroundColor: COLORS.surface, borderRadius: SPACING.m, padding: SPACING.s, marginBottom: SPACING.s, maxHeight: 400 },
   langGroup: { marginBottom: SPACING.m },
   langGroupTitle: { fontSize: 12, fontWeight: '700', color: COLORS.primary, textTransform: 'uppercase', paddingHorizontal: SPACING.s, paddingVertical: SPACING.xs, backgroundColor: COLORS.glassLight, borderRadius: SPACING.s, marginBottom: SPACING.xs },
@@ -422,6 +550,14 @@ const styles = StyleSheet.create({
   pointsText: { fontSize: 11, color: COLORS.textSecondary, marginTop: SPACING.xs },
   achievementsList: { gap: SPACING.s },
   achievementItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.glassLight, borderRadius: SPACING.s, padding: SPACING.m, gap: SPACING.s, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.2)' },
+  userInfoSection: { marginTop: SPACING.xl, marginBottom: SPACING.l },
+  userInfoSectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.m },
+  userInfoCard: { backgroundColor: COLORS.glassLight, borderColor: 'rgba(255, 255, 255, 0.5)', borderWidth: 1, borderRadius: SPACING.m, padding: SPACING.m, ...SHADOWS.small },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: SPACING.s },
+  infoLabelContainer: { flexDirection: 'row', alignItems: 'center', gap: SPACING.s },
+  infoLabel: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
+  infoValue: { fontSize: 13, color: COLORS.text, fontWeight: '700', textAlign: 'right', flex: 1, marginLeft: SPACING.s },
+  infoDivider: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)' },
   achievementPassed: { backgroundColor: COLORS.glassMedium, borderColor: COLORS.success, borderWidth: 2 },
   achievementEmoji: { fontSize: 32 },
   achievementInfo: { flex: 1 },

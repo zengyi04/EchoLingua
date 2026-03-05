@@ -105,7 +105,27 @@ export default function MapScreen({ navigation }) {
   const [destination, setDestination] = useState(null);
   const [searchingDestination, setSearchingDestination] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const mapRef = useRef(null);
+
+  // Calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c; // Distance in km
+    return d;
+  };
+
+  const deg2rad = (deg) => {
+    return deg * (Math.PI / 180);
+  };
 
   useEffect(() => {
     requestLocationPermission();
@@ -145,7 +165,9 @@ export default function MapScreen({ navigation }) {
 
   const filterLocations = (query) => {
     if (!query.trim()) {
-      setFilteredLocations(CULTURAL_LOCATIONS);
+      setFilteredLocations(sortLocationsByDistance(CULTURAL_LOCATIONS));
+      setSearchResults([]);
+      setShowSearchResults(false);
       return;
     }
 
@@ -157,7 +179,31 @@ export default function MapScreen({ navigation }) {
         loc.type.toLowerCase().includes(lowercaseQuery) ||
         loc.languages.some((lang) => lang.toLowerCase().includes(lowercaseQuery))
     );
-    setFilteredLocations(filtered);
+    
+    const sortedFiltered = sortLocationsByDistance(filtered);
+    setFilteredLocations(sortedFiltered);
+    setSearchResults(sortedFiltered);
+    setShowSearchResults(true);
+  };
+
+  const sortLocationsByDistance = (locations) => {
+    if (!userLocation) return locations;
+    
+    return [...locations].sort((a, b) => {
+      const distA = calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        a.latitude,
+        a.longitude
+      );
+      const distB = calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        b.latitude,
+        b.longitude
+      );
+      return distA - distB;
+    });
   };
 
   const handleMarkerPress = (location) => {
@@ -295,32 +341,52 @@ export default function MapScreen({ navigation }) {
     }
   };
 
-  const renderLocationCard = (location) => (
-    <TouchableOpacity
-      key={location.id}
-      style={[styles.locationCard, { borderLeftColor: location.color }]}
-      onPress={() => handleMarkerPress(location)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.locationIconContainer, { backgroundColor: location.color + '20' }]}>
-        <Ionicons name={location.icon} size={28} color={location.color} />
-      </View>
-      <View style={styles.locationInfo}>
-        <Text style={styles.locationName}>{location.name}</Text>
-        <Text style={styles.locationDescription} numberOfLines={2}>
-          {location.description}
-        </Text>
-        <View style={styles.languageTagsContainer}>
-          {location.languages.map((lang, idx) => (
-            <View key={idx} style={styles.languageTag}>
-              <Text style={styles.languageTagText}>{lang}</Text>
-            </View>
-          ))}
+  const renderLocationCard = (location) => {
+    let distance = null;
+    if (userLocation) {
+      distance = calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        location.latitude,
+        location.longitude
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        key={location.id}
+        style={[styles.locationCard, { borderLeftColor: location.color }]}
+        onPress={() => {
+          handleMarkerPress(location);
+          setShowSearchResults(false);
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.locationIconContainer, { backgroundColor: location.color + '20' }]}>
+          <Ionicons name={location.icon} size={28} color={location.color} />
         </View>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
-    </TouchableOpacity>
-  );
+        <View style={styles.locationInfo}>
+          <View style={styles.locationNameRow}>
+            <Text style={styles.locationName}>{location.name}</Text>
+            {distance !== null && (
+              <Text style={styles.distanceText}>{distance.toFixed(1)} km</Text>
+            )}
+          </View>
+          <Text style={styles.locationDescription} numberOfLines={2}>
+            {location.description}
+          </Text>
+          <View style={styles.languageTagsContainer}>
+            {location.languages.map((lang, idx) => (
+              <View key={idx} style={styles.languageTag}>
+                <Text style={styles.languageTagText}>{lang}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -359,27 +425,51 @@ export default function MapScreen({ navigation }) {
       </View>
 
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search any world destination..."
-          placeholderTextColor={COLORS.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={searchWorldDestination}
-        />
-        <TouchableOpacity onPress={searchWorldDestination} disabled={searchingDestination}>
-          <Ionicons
-            name={searchingDestination ? 'time-outline' : 'locate'}
-            size={20}
-            color={COLORS.primary}
+      <View style={styles.searchWrapper}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search locations near you..."
+            placeholderTextColor={COLORS.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={searchWorldDestination}
+            onFocus={() => searchQuery && setShowSearchResults(true)}
           />
-        </TouchableOpacity>
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+          <TouchableOpacity onPress={searchWorldDestination} disabled={searchingDestination}>
+            <Ionicons
+              name={searchingDestination ? 'time-outline' : 'locate'}
+              size={20}
+              color={COLORS.primary}
+            />
           </TouchableOpacity>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => {
+              setSearchQuery('');
+              setShowSearchResults(false);
+            }}>
+              <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Search Results Dropdown */}
+        {showSearchResults && searchResults.length > 0 && (
+          <View style={styles.searchResultsDropdown}>
+            <View style={styles.searchResultsHeader}>
+              <Text style={styles.searchResultsTitle}>
+                {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
+              </Text>
+              <Text style={styles.searchResultsSubtitle}>Sorted by distance</Text>
+            </View>
+            <ScrollView 
+              style={styles.searchResultsList}
+              showsVerticalScrollIndicator={false}
+            >
+              {searchResults.map((location) => renderLocationCard(location))}
+            </ScrollView>
+          </View>
         )}
       </View>
 
@@ -535,17 +625,53 @@ const styles = StyleSheet.create({
   locationButton: {
     padding: SPACING.s,
   },
+  searchWrapper: {
+    position: 'relative',
+    zIndex: 1000,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.glassLight,
+    backgroundColor: COLORS.surface,
     margin: SPACING.m,
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.s,
     borderRadius: SPACING.m,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
-    ...SHADOWS.small,
+    borderColor: COLORS.primary,
+    ...SHADOWS.medium,
+  },
+  searchResultsDropdown: {
+    position: 'absolute',
+    top: 60,
+    left: SPACING.m,
+    right: SPACING.m,
+    backgroundColor: COLORS.surface,
+    borderRadius: SPACING.m,
+    maxHeight: 400,
+    ...SHADOWS.large,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  searchResultsHeader: {
+    padding: SPACING.m,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.glassLight,
+  },
+  searchResultsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  searchResultsSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  searchResultsList: {
+    maxHeight: 340,
   },
   searchIcon: {
     marginRight: SPACING.s,
@@ -650,11 +776,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.glassLight,
+    backgroundColor: COLORS.surface,
     borderTopLeftRadius: SPACING.l,
     borderTopRightRadius: SPACING.l,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.4)',
+    borderTopWidth: 2,
+    borderTopColor: COLORS.primary,
     padding: SPACING.l,
     ...SHADOWS.large,
   },

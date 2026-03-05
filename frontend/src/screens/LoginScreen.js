@@ -64,6 +64,11 @@ export default function LoginScreen({ navigation }) {
       const { password: _, ...userWithoutPassword } = user;
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userWithoutPassword));
 
+      // Update user's lastActive timestamp in database
+      const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase().trim());
+      users[userIndex] = { ...user, lastActive: new Date().toISOString() };
+      await AsyncStorage.setItem(USERS_DATABASE_KEY, JSON.stringify(users));
+
       Alert.alert('Success', `Welcome back, ${user.fullName}!`, [
         {
           text: 'OK',

@@ -99,6 +99,7 @@ export default function SignUpScreen({ navigation }) {
         languages: languages.trim() || null,
         avatar: '👤',
         joinedAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
         storiesCount: 0,
         followers: 0,
         following: 0,
@@ -110,21 +111,14 @@ export default function SignUpScreen({ navigation }) {
       users.push(newUser);
       await AsyncStorage.setItem(USERS_DATABASE_KEY, JSON.stringify(users));
 
-      // Set as current user (without password)
-      const { password: _, ...userWithoutPassword } = newUser;
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userWithoutPassword));
-
       Alert.alert(
         'Success',
-        `Welcome to EchoLingua, ${fullName}!`,
+        `Account created successfully! Please log in with your credentials.`,
         [
           {
             text: 'OK',
             onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
+              navigation.navigate('Login');
             },
           },
         ]

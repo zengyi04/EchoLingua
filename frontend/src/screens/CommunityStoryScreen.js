@@ -19,6 +19,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 
+const SEEN_STORIES_KEY = '@echolingua_seen_stories';
+
 export default function CommunityStoryScreen({ navigation }) {
   const [stories, setStories] = useState([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -50,6 +52,7 @@ export default function CommunityStoryScreen({ navigation }) {
   useEffect(() => {
     loadStories();
     loadUserPreferences();
+    markStoriesAsSeen();
     
     return () => {
       // Cleanup audio on unmount
@@ -58,6 +61,27 @@ export default function CommunityStoryScreen({ navigation }) {
       }
     };
   }, []);
+  
+  const markStoriesAsSeen = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('communityStories');
+      if (stored) {
+        const allStories = JSON.parse(stored);
+        const storyIds = allStories.map(s => s.id);
+        
+        // Get existing seen stories
+        const seenData = await AsyncStorage.getItem(SEEN_STORIES_KEY);
+        const seenStories = seenData ? JSON.parse(seenData) : [];
+        
+        // Merge with new story IDs (remove duplicates)
+        const updatedSeenStories = [...new Set([...seenStories, ...storyIds])];
+        
+        await AsyncStorage.setItem(SEEN_STORIES_KEY, JSON.stringify(updatedSeenStories));
+      }
+    } catch (error) {
+      console.error('Error marking stories as seen:', error);
+    }
+  };
   
   const loadUserPreferences = async () => {
     try {

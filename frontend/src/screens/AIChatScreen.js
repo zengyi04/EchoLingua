@@ -181,7 +181,7 @@ export default function AIChatScreen({ navigation }) {
   };
 
   const stopVoiceRecordingAndAsk = async () => {
-    if (!recording || loading) {
+    if (!recording) {
       return;
     }
 
@@ -193,36 +193,109 @@ export default function AIChatScreen({ navigation }) {
 
       if (!uri) {
         Alert.alert('Recording Error', 'No audio captured. Please try again.');
+        setLoading(false);
         return;
       }
 
+      // Convert audio to base64
       const audioResponse = await fetch(uri);
       const buffer = await audioResponse.arrayBuffer();
       const base64Audio = toBase64(new Uint8Array(buffer));
 
-      const userMessage = { id: `${Date.now()}-vu`, role: 'user', text: '[Voice question]' };
-      setMessages((prev) => [...prev, userMessage]);
-
-      const answer = await requestGemini(
-        [
-          {
-            inline_data: {
-              mime_type: 'audio/mp4',
-              data: base64Audio,
-            },
-          },
-        ],
-        false // Don't include history for voice to avoid confusion
+      // Use Gemini to transcribe audio to text
+      console.log('🎤 Transcribing audio to text...');
+      const transcriptionResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    text: 'Please transcribe this audio to text. Only return the transcribed text with no explanations.',
+                  },
+                  {
+                    inline_data: {
+                      mime_type: 'audio/mp4',
+                      data: base64Audio,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: { temperature: 0.7 },
+          }),
+        }
       );
 
-      const botMessage = { id: `${Date.now()}-va`, role: 'assistant', text: answer };
+      if (!transcriptionResponse.ok) {
+        const errorData = await transcriptionResponse.json();
+        console.error('Transcription error:', errorData);
+        throw new Error('Failed to transcribe audio');
+      }
+
+      const transcriptionData = await transcriptionResponse.json();
+      const transcribedText = transcriptionData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      if (!transcribedText.trim()) {
+        Alert.alert('Transcription Failed', 'Could not transcribe audio. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('✅ Transcribed text:', transcribedText);
+
+      // Set the transcribed text in the input field for user review
+      setInput(transcribedText);
+      Alert.alert('Audio Transcribed', `"${transcribedText}" - Edit or click Send to ask`, [
+        {
+          text: 'Send Now',
+          onPress: async () => {
+            // Send the transcribed text directly
+            await handleSendText(transcribedText);
+          },
+        },
+        {
+          text: 'Edit First',
+          style: 'cancel',
+        },
+      ]);
+    } catch (error) {
+      console.error('Voice transcription failed:', error);
+      Alert.alert(
+        'Transcription Error',
+        'Could not transcribe your voice. Please try again or type your question.'
+      );
+      setInput('');
+      setIsRecording(false);
+      setRecording(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendText = async (textToSend) => {
+    const messageText = textToSend || input.trim();
+    if (!messageText) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const userMessage = { id: `${Date.now()}-user`, role: 'user', text: messageText };
+      setMessages((prev) => [...prev, userMessage]);
+      setInput('');
+
+      const answer = await requestGemini([{ text: messageText }]);
+      const botMessage = { id: `${Date.now()}-assistant`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
       Speech.speak(answer, { language: 'en-US', rate: 0.96 });
     } catch (error) {
-      console.error('Voice question failed:', error);
-      Alert.alert('Voice AI Error', 'Could not process voice question. Try again or type your question.');
-      setIsRecording(false);
-      setRecording(null);
+      console.error('Gemini text request failed:', error);
+      Alert.alert('AI Error', 'Could not get response. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -272,7 +345,7 @@ export default function AIChatScreen({ navigation }) {
           placeholderTextColor={COLORS.textSecondary}
           editable={!loading}
         />
-        <TouchableOpacity style={[styles.sendButton, !canSend && styles.sendDisabled]} onPress={sendText} disabled={!canSend}>
+        <TouchableOpacity style={[styles.sendButton, !canSend && styles.sendDisabled]} onPress={() => handleSendText()} disabled={!canSend}>
           <Ionicons name="send" size={18} color={COLORS.surface} />
         </TouchableOpacity>
       </View>

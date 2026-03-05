@@ -33,6 +33,7 @@ const LANGUAGE_GROUPS = [
 const RECORDINGS_STORAGE_KEY = '@echolingua_recordings';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
 const COMMUNITY_STORIES_KEY = '@echolingua_stories'; // For StoryLibraryScreen (Community Archive)
+const USERS_DB_KEY = '@echolingua_users_database';
 
 export default function RecordScreen() {
   const navigation = useNavigation();
@@ -73,6 +74,13 @@ export default function RecordScreen() {
   const [shareDescription, setShareDescription] = useState('');
   const [shareCategory, setShareCategory] = useState('Story');
   const [isSharingToCommunity, setIsSharingToCommunity] = useState(false);
+  
+  // NEW: Recipient selection
+  const [showRecipientModal, setShowRecipientModal] = useState(false);
+  const [selectedRecipients, setSelectedRecipients] = useState(['private']); // 'private', 'community', or emergency contact IDs
+  const [emergencyContacts, setEmergencyContacts] = useState([]);
+  const [emergencyContactsWithApp, setEmergencyContactsWithApp] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveHeights = useRef(Array(20).fill(0).map(() => new Animated.Value(20))).current;
@@ -115,6 +123,7 @@ export default function RecordScreen() {
         Alert.alert('Error', 'Failed to pick audio file. Please try again.');
         playSound('incorrect');
       }
+    loadUserData();
     }
   };
 
@@ -223,6 +232,35 @@ export default function RecordScreen() {
       }
     } catch (error) {
       console.error('Failed to load recordings:', error);
+    }
+  };
+  
+  // NEW: Load user data and emergency contacts
+  const loadUserData = async () => {
+    try {
+      const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      if (userData) {
+        const user = JSON.parse(userData);
+        setCurrentUser(user);
+        setEmergencyContacts(user.emergencyContacts || []);
+        
+        // Filter emergency contacts to only show those with app accounts
+        const usersDb = await AsyncStorage.getItem(USERS_DB_KEY);
+        const appUsers = usersDb ? JSON.parse(usersDb) : [];
+        
+        const filteredContacts = (user.emergencyContacts || []).filter(contact => {
+          // Check if contact exists in app users database by email or phone
+          return appUsers.some(appUser => 
+            appUser.email?.toLowerCase() === contact.email?.toLowerCase() ||
+            appUser.phone === contact.phone
+          );
+        });
+        
+        setEmergencyContactsWithApp(filteredContacts);
+        console.log(`📱 Found ${filteredContacts.length} emergency contacts with app accounts out of ${user.emergencyContacts?.length || 0} total`);
+      }
+    } catch (error) {
+      console.error('Failed to load user data:', error);
     }
   };
 
@@ -766,16 +804,23 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
       Alert.alert('Incomplete Story', 'Please record audio and generate transcript first');
       return;
     }
-
+    
+    // Show recipient selection modal
+    setShowRecipientModal(true);
+  };
+  
+  // NEW: Handle saving with selected recipients
+  const handleSaveWithRecipients = async () => {
     setIsSavingStory(true);
-    console.log('💾 Saving story to community archive...');
+    setShowRecipientModal(false);
+    console.log('💾 Saving story with recipients:', selectedRecipients);
 
     try {
       // Load existing stories
       const existingStoriesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
       const existingStories = existingStoriesJson ? JSON.parse(existingStoriesJson) : [];
 
-      // Create new story object
+      // Create new story object with author and recipient info
       const newStory = {
         id: Date.now().toString(),
         title: storyTitle.trim(),
@@ -786,6 +831,13 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
         duration: recordingTime,
         createdAt: new Date().toISOString(),
         category: 'Community Contribution',
+        author: currentUser?.fullName || 'Anonymous',
+        authorId: currentUser?.id || null,
+        authorRole: currentUser?.role || 'learner',
+        recipients: selectedRecipients,
+        sharedWith: selectedRecipients.includes('community') ? 'Community Archive' : 
+                     selectedRecipients.includes('private') ? 'Private Library' : 
+                     'Emergency Contacts',
       };
 
       // Add to stories array
@@ -795,9 +847,22 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
       console.log('✅ Story saved successfully!');
       playSound('complete');
 
+      // Build recipient message
+      let recipientMsg = '';
+      if (selectedRecipients.includes('community')) {
+        recipientMsg = 'Shared to Community Archive. ';
+      }
+      if (selectedRecipients.includes('private')) {
+        recipientMsg += 'Saved to your Private Library. ';
+      }
+      const emergencyContactIds = selectedRecipients.filter(r => r !== 'community' && r !== 'private');
+      if (emergencyContactIds.length > 0) {
+        recipientMsg += `Sent to ${emergencyContactIds.length} emergency contact(s). `;
+      }
+
       Alert.alert(
-        'Story Published! 🎉',
-        `"${storyTitle}" has been added to the Community Archive. Thank you for sharing your cultural knowledge!`,
+        'Story Saved! 🎉',
+        `"${storyTitle}" has been saved.\n\n${recipientMsg}\n\nLabeled by: ${newStory.author} (${newStory.authorRole})`,
         [
           {
             text: 'View in Archive',
@@ -815,6 +880,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
       setHasRecording(false);
       setSelectedLanguage('');
       setRecordingTime(0);
+      setSelectedRecipients(['private']);
       
     } catch (error) {
       console.error('❌ Failed to save story:', error);
@@ -1428,6 +1494,173 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Recipient Selection Modal */}
+      <Modal
+        visible={showRecipientModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowRecipientModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.shareModalContainer}>
+            <View style={styles.shareModalHeader}>
+              <View>
+                <Text style={styles.shareModalTitle}>Share Recording</Text>
+                <Text style={styles.shareModalSubtitle}>Choose who will receive this recording</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.closeModalButton}
+                onPress={() => setShowRecipientModal(false)}
+              >
+                <Ionicons name="close-circle" size={32} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.shareModalContent} showsVerticalScrollIndicator={false}>
+              {/* Private Library Option */}
+              <TouchableOpacity
+                style={[
+                  styles.recipientOption,
+                  selectedRecipients.includes('private') && styles.recipientOptionActive
+                ]}
+                onPress={() => {
+                  if (selectedRecipients.includes('private')) {
+                    setSelectedRecipients(selectedRecipients.filter(r => r !== 'private'));
+                  } else {
+                    setSelectedRecipients([...selectedRecipients, 'private']);
+                  }
+                }}
+              >
+                <View style={styles.recipientIconContainer}>
+                  <Ionicons name="lock-closed" size={24} color={COLORS.secondary} />
+                </View>
+                <View style={styles.recipientInfo}>
+                  <Text style={styles.recipientTitle}>Private Library</Text>
+                  <Text style={styles.recipientDescription}>Keep this recording in your personal collection only</Text>
+                </View>
+                <Ionicons
+                  name={selectedRecipients.includes('private') ? 'checkbox' : 'square-outline'}
+                  size={28}
+                  color={selectedRecipients.includes('private') ? COLORS.primary : COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {/* Community Archive Option */}
+              <TouchableOpacity
+                style={[
+                  styles.recipientOption,
+                  selectedRecipients.includes('community') && styles.recipientOptionActive
+                ]}
+                onPress={() => {
+                  if (selectedRecipients.includes('community')) {
+                    setSelectedRecipients(selectedRecipients.filter(r => r !== 'community'));
+                  } else {
+                    setSelectedRecipients([...selectedRecipients, 'community']);
+                  }
+                }}
+              >
+                <View style={styles.recipientIconContainer}>
+                  <Ionicons name="globe" size={24} color={COLORS.primary} />
+                </View>
+                <View style={styles.recipientInfo}>
+                  <Text style={styles.recipientTitle}>Community Archive</Text>
+                  <Text style={styles.recipientDescription}>Share with the entire community for cultural preservation</Text>
+                </View>
+                <Ionicons
+                  name={selectedRecipients.includes('community') ? 'checkbox' : 'square-outline'}
+                  size={28}
+                  color={selectedRecipients.includes('community') ? COLORS.primary : COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {/* Emergency Contacts Section */}
+              {emergencyContactsWithApp.length > 0 && (
+                <>
+                  <View style={styles.sectionDivider}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.sectionDividerText}>Emergency Contacts (App Users)</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+
+                  {emergencyContactsWithApp.map((contact) => (
+                    <TouchableOpacity
+                      key={contact.id}
+                      style={[
+                        styles.recipientOption,
+                        selectedRecipients.includes(contact.id) && styles.recipientOptionActive
+                      ]}
+                      onPress={() => {
+                        if (selectedRecipients.includes(contact.id)) {
+                          setSelectedRecipients(selectedRecipients.filter(r => r !== contact.id));
+                        } else {
+                          setSelectedRecipients([...selectedRecipients, contact.id]);
+                        }
+                      }}
+                    >
+                      <View style={styles.recipientIconContainer}>
+                        <Ionicons name="person-circle" size={24} color={COLORS.accent} />
+                      </View>
+                      <View style={styles.recipientInfo}>
+                        <Text style={styles.recipientTitle}>{contact.name}</Text>
+                        <Text style={styles.recipientDescription}>{contact.relation}</Text>
+                      </View>
+                      <Ionicons
+                        name={selectedRecipients.includes(contact.id) ? 'checkbox' : 'square-outline'}
+                        size={28}
+                        color={selectedRecipients.includes(contact.id) ? COLORS.primary : COLORS.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+
+              {emergencyContacts.length > 0 && emergencyContactsWithApp.length === 0 && (
+                <View style={styles.noContactsBanner}>
+                  <Ionicons name="people-outline" size={24} color={COLORS.textSecondary} />
+                  <Text style={styles.noContactsText}>
+                    You have {emergencyContacts.length} emergency contact(s), but none of them have the app installed yet. Only contacts with app accounts can receive recordings.
+                  </Text>
+                </View>
+              )}
+              
+              {emergencyContacts.length === 0 && (
+                <View style={styles.noContactsBanner}>
+                  <Ionicons name="people-outline" size={24} color={COLORS.textSecondary} />
+                  <Text style={styles.noContactsText}>
+                    No emergency contacts yet. Add contacts in your profile to share recordings with them.
+                  </Text>
+                </View>
+              )}
+
+              {/* Author Label Info */}
+              {currentUser && (
+                <View style={styles.authorLabelBanner}>
+                  <Ionicons name="information-circle" size={20} color={COLORS.primary} />
+                  <Text style={styles.authorLabelText}>
+                    This recording will be labeled: "Shared by {currentUser.fullName} ({currentUser.role})"
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Save Button */}
+            <TouchableOpacity
+              style={[
+                styles.saveRecipientButton,
+                selectedRecipients.length === 0 && styles.saveRecipientButtonDisabled
+              ]}
+              onPress={handleSaveWithRecipients}
+              disabled={selectedRecipients.length === 0}
+            >
+              <Text style={styles.saveRecipientButtonText}>
+                Save & Share ({selectedRecipients.length})
+              </Text>
+              <Ionicons name="checkmark-circle" size={24} color={COLORS.surface} />
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -2253,6 +2486,114 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   shareButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.surface,
+  },
+  // Recipient Selection Modal Styles
+  recipientOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: SPACING.m,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  recipientOptionActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  recipientIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.m,
+  },
+  recipientInfo: {
+    flex: 1,
+  },
+  recipientTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  recipientDescription: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  sectionDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: SPACING.l,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sectionDividerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginHorizontal: SPACING.m,
+    textTransform: 'uppercase',
+  },
+  noContactsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.m,
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    padding: SPACING.m,
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.2)',
+    marginVertical: SPACING.m,
+  },
+  noContactsText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  authorLabelBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    padding: SPACING.m,
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.2)',
+    marginTop: SPACING.l,
+  },
+  authorLabelText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.text,
+    lineHeight: 18,
+  },
+  saveRecipientButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.m,
+    borderRadius: SPACING.m,
+    marginTop: SPACING.l,
+    ...SHADOWS.medium,
+  },
+  saveRecipientButtonDisabled: {
+    opacity: 0.5,
+  },
+  saveRecipientButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.surface,

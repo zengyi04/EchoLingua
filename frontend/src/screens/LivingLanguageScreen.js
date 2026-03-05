@@ -635,7 +635,7 @@ export default function LivingLanguageScreen() {
               {filteredRecords.map((entry) => (
                 <View key={entry.id} style={styles.recordItem}>
                   <Text style={styles.recordCase}>{entry.caseTitle}</Text>
-                  <Text style={styles.recordMeta}>{entry.fromLanguage} -> {entry.toLanguage}</Text>
+                  <Text style={styles.recordMeta}>{entry.fromLanguage} to {entry.toLanguage}</Text>
                   <Text style={styles.recordScores}>
                     Accuracy {entry.scores.accuracy}% | Grammar {entry.scores.grammar}% | Vocabulary {entry.scores.vocabulary}% | Overall {entry.scores.overall}%
                   </Text>
@@ -879,25 +879,31 @@ const styles = StyleSheet.create({
     borderRadius: SPACING.l,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
-    padding: SPACING.m,
+    padding: SPACING.l,
     ...SHADOWS.medium,
-    minHeight: 110,
+    minHeight: 140,
     justifyContent: 'space-between',
   },
   caseCardGridTitle: { 
-    fontSize: 14, 
+    fontSize: 15, 
     fontWeight: '800', 
     color: COLORS.text, 
-    marginBottom: SPACING.s,
-    lineHeight: 20,
+    marginBottom: SPACING.m,
+    lineHeight: 22,
+    flex: 1,
   },
   caseCardGridMetaRow: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     gap: SPACING.xs,
-    paddingTop: SPACING.xs,
+    paddingTop: SPACING.s,
+    marginTop: 'auto',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    borderTopColor: 'rgba(255, 255, 255, 0.3)',
   },
-  caseCardGridMeta: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '500' },
+  caseCardGridMeta: { 
+    fontSize: 12, 
+    color: COLORS.textSecondary, 
+    fontWeight: '600' 
+  },
 });
