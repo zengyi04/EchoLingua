@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { Feather, MaterialIcons, FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -36,6 +36,7 @@ const QuickAction = ({ title, icon, color, onPress }) => {
     </TouchableOpacity>
   );
 };
+
 
 export default function HomeScreen({ navigation }) {
   const { theme, isDark } = useTheme();
@@ -221,56 +222,24 @@ export default function HomeScreen({ navigation }) {
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Tools & Discovery</Text>
 
         <View style={styles.grid}>
-          {/* Row 1: AI & Discovery (Wow Features) */}
+          {/* Row 1: Key Features */}
           <QuickAction 
             title="AI Chat" 
-            icon={<Ionicons name="chatbubbles-sharp" size={24} />}
-            color="#2196F3" // Blue
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('AIChat');
-                return;
-              }
-              navigation.navigate('AIChat');
-            }}
+            icon={<MaterialCommunityIcons name="robot" size={20} />} 
+            color="#E91E63"
+            onPress={() => navigation.navigate('AIChat')}
           />
           <QuickAction 
             title="Dictionary" 
             icon={<FontAwesome5 name="book" size={20} />}
-            color="#8E44AD" // Purple
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('Dictionary');
-                return;
-              }
-              navigation.navigate('Dictionary');
-            }}
+            color="#8E44AD" 
+            onPress={() => navigation.navigate('Dictionary')}
           />
           <QuickAction 
             title="Map" 
             icon={<FontAwesome5 name="map-marked-alt" size={20} />}
-            color="#FF9800" // Orange
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('Map');
-                return;
-              }
-              navigation.navigate('Map');
-            }}
-          />
-
-          {/* Row 2: Core Learning & Preservation */}
-          <QuickAction 
-            title="Learn" 
-            icon={<FontAwesome5 name="book-open" size={20} />}
-            color={theme.primary}
-            onPress={() => navigation.navigate('LearnTab')}
-          />
-          <QuickAction 
-            title="Practice" 
-            icon={<MaterialIcons name="translate" size={24} />}
-            color={theme.secondary}
-            onPress={() => navigation.navigate('Vocabulary')}
+            color="#FF9800" 
+            onPress={() => navigation.navigate('Map')}
           />
           <QuickAction 
             title="Quiz" 
@@ -279,83 +248,61 @@ export default function HomeScreen({ navigation }) {
             onPress={() => navigation.navigate('Quiz')}
           />
 
-          {/* Row 3: Community & Progress */}
+          {/* Row 2: Learning & Practice */}
           <QuickAction 
-            title="Community" 
-            icon={<FontAwesome5 name="users" size={20} />}
-            color="#3498DB" // Light Blue
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('CommunityStory');
-                return;
-              }
-              navigation.navigate('CommunityStory');
-            }}
-          />
-          <QuickAction 
-            title="Progress" 
-            icon={<MaterialIcons name="trending-up" size={24} />}
-            color="#27AE60" // Green
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('ProgressTracker');
-                return;
-              }
-              navigation.navigate('ProgressTracker');
-            }}
-          />
-          <QuickAction 
-            title="Voice Archive" 
-            icon={<Ionicons name="library" size={24} />}
-            color="#009688" // Teal
-            onPress={() => navigation.navigate('StoriesTab')}
-          />
-
-          {/* Row 4: Culture & Family */}
-          <QuickAction 
-            title="Festivals" 
-            icon={<MaterialIcons name="festival" size={24} />}
-            color="#F39C12" // Yellow-Orange
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('CulturalEvents');
-                return;
-              }
-              navigation.navigate('CulturalEvents');
-            }}
-          />
-          <QuickAction 
-            title="Knowledge" 
-            icon={<FontAwesome5 name="scroll" size={20} />}
-            color="#9B59B6" // Purple
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('CulturalKnowledge');
-                return;
-              }
-              navigation.navigate('CulturalKnowledge');
-            }}
+            title="Practice" 
+            icon={<MaterialIcons name="translate" size={24} />}
+            color={theme.secondary}
+            onPress={() => navigation.navigate('Vocabulary')}
           />
           <QuickAction 
             title="Family" 
             icon={<MaterialIcons name="family-restroom" size={24} />}
-            color="#E74C3C" // Red
-            onPress={() => {
-              if (navigation.getParent()) {
-                navigation.getParent().navigate('FamilyLearning');
-                return;
-              }
-              navigation.navigate('FamilyLearning');
-            }}
+            color="#E74C3C" 
+            onPress={() => navigation.navigate('FamilyLearning')}
+          />
+          <QuickAction 
+            title="Festivals" 
+            icon={<MaterialIcons name="festival" size={24} />}
+            color="#F39C12" 
+            onPress={() => navigation.navigate('CulturalEvents')}
+          />
+          <QuickAction 
+            title="Knowledge" 
+            icon={<FontAwesome5 name="scroll" size={20} />}
+            color="#9B59B6" 
+            onPress={() => navigation.navigate('CulturalKnowledge')}
           />
 
-          {/* Row 5: Recording */}
+          {/* Row 3: Others */}
           <QuickAction 
-            title="Record" 
-            icon={<MaterialIcons name="mic" size={24} />}
-            color={theme.error}
-            onPress={() => navigation.navigate('RecordTab')}
+            title="Community" 
+            icon={<FontAwesome5 name="users" size={20} />}
+            color="#3498DB" 
+            onPress={() => navigation.navigate('CommunityStory')}
           />
+          <QuickAction 
+            title="Progress" 
+            icon={<MaterialIcons name="trending-up" size={24} />}
+            color="#27AE60" 
+            onPress={() => navigation.navigate('ProgressTracker')}
+          />
+        </View>
+
+        <View style={styles.spotlightSection}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Cultural Spotlight</Text>
+          <View style={[styles.spotlightCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+             <View style={[styles.spotlightHeader, { backgroundColor: theme.secondary }]}>
+                <MaterialIcons name="lightbulb" size={20} color="white" />
+                <Text style={styles.spotlightLabel}>Did You Know?</Text>
+             </View>
+             <View style={styles.spotlightBody}>
+                <Text style={[styles.spotlightTitle, { color: theme.text }]}>The Sape': Boat Lute</Text>
+                <Text style={[styles.spotlightDesc, { color: theme.textSecondary }]}>
+                  Traditionally carved from a single block of wood, the Sape' is the iconic musical instrument of the Orang Ulu people in Sarawak, originally used for healing rituals.
+                </Text>
+             </View>
+          </View>
         </View>
 
       </ScrollView>
@@ -371,11 +318,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: SPACING.l,
     paddingTop: SPACING.s,
-    paddingBottom: 100, // Extra space for bottom tab
+    paddingBottom: SPACING.xl, 
   },
   header: {
     marginBottom: SPACING.l,
-    // marginTop removed to reduce space
   },
   headerTitleContainer: {
     flexDirection: 'row',
@@ -445,34 +391,70 @@ const styles = StyleSheet.create({
     height: '80%',
     backgroundColor: '#eee',
   },
-  elderCard: {
-    backgroundColor: 'rgba(255, 224, 178, 0.6)',
-    borderColor: 'rgba(208, 140, 96, 0.3)',
+  
+  // Word of the Day Styles
+  wordCard: {
+    padding: SPACING.l,
+    borderRadius: SPACING.l,
     borderWidth: 1,
-    borderRadius: SPACING.m,
-    padding: SPACING.m,
-    marginBottom: SPACING.l,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.secondary,
+    position: 'relative',
     ...SHADOWS.small,
   },
-  elderHeader: {
+  wordHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.m,
+    marginBottom: SPACING.s,
   },
-  elderTitle: {
+  wordLanguage: {
     fontSize: 12,
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.primary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  tipText: {
+  wordTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 99,
+  },
+  wordType: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  wordContent: {
+    alignItems: 'center',
+    paddingVertical: SPACING.s,
+  },
+  mainWord: {
+    fontSize: 32,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  pronunciation: {
     fontSize: 14,
     fontStyle: 'italic',
-    color: COLORS.text,
+    marginBottom: SPACING.m,
   },
-  sectionTitle: { // Restored missing sectionTitle style
+  divider: {
+    height: 1,
+    width: '40%',
+    marginBottom: SPACING.m,
+  },
+  wordMeaning: {
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  playWordButton: {
+    position: 'absolute',
+    bottom: SPACING.m,
+    right: SPACING.m,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+
+  sectionTitle: { 
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
@@ -481,34 +463,71 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between', 
-    marginBottom: SPACING.l,
-    rowGap: SPACING.l,
+    justifyContent: 'flex-start', 
+    marginBottom: 0,
   },
   actionBtn: {
-    width: '23%', // ~1/4th of screen width
+    width: (width - SPACING.l * 2) / 5, // 5 columns dynamic width based on available space
     alignItems: 'center',
-    marginBottom: SPACING.xs,
+    marginBottom: SPACING.l,
+    paddingHorizontal: 2,
   },
   actionIconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     backgroundColor: COLORS.glassLight,
     borderColor: 'rgba(255, 255, 255, 0.6)',
     borderWidth: 1,
     ...SHADOWS.small,
   },
   actionLabel: {
-    fontSize: 10,
+    fontSize: 9, 
     fontWeight: '700',
     color: COLORS.text,
     textAlign: 'center',
     width: '100%',
   },
+
+  // Cultural Spotlight
+  spotlightSection: {
+    marginTop: 0,
+    marginBottom: SPACING.m,
+  },
+  spotlightCard: {
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    overflow: 'hidden',
+    ...SHADOWS.small,
+  },
+  spotlightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    gap: SPACING.s,
+  },
+  spotlightLabel: {
+    color: '#FFFFFF', // Assuming secondary background is dark/colored
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  spotlightBody: {
+    padding: SPACING.m,
+  },
+  spotlightTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: SPACING.s,
+  },
+  spotlightDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  // Duplicate styles removed here
   cardSubtitle: {
     fontSize: 12,
     color: COLORS.textSecondary,

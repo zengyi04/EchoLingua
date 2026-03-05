@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -46,18 +47,83 @@ export default function ImageVocabularyScreen() {
   const [playingAudio, setPlayingAudio] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleImageUpload = () => {
-    console.log('📸 Image uploaded - Sound: camera shutter');
-    // Simulate image upload
+  const performMockDetection = () => {
     setIsProcessing(true);
-    setUploadedImage('https://via.placeholder.com/400x300/4CAF50/FFFFFF?text=Tropical+Fruits');
-    
+    // Simulate API delay
     setTimeout(() => {
-      console.log('✅ Image processed - Sound: success');
       setDetectedObjects(MOCK_DETECTED_OBJECTS);
       setIsProcessing(false);
       setSelectedObject(MOCK_DETECTED_OBJECTS[0]);
     }, 2000);
+  };
+
+  const pickImage = async () => {
+    // No permissions request is necessary for launching the image library
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setUploadedImage(result.assets[0].uri);
+      performMockDetection();
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+      return;
+    }
+
+    let result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setUploadedImage(result.assets[0].uri);
+      performMockDetection();
+    }
+  };
+
+  const handleSave = () => {
+    Alert.alert("Saved", "Word saved to your collection!");
+  };
+
+  const handleShare = () => {
+    Alert.alert("Share", "Sharing functionality coming soon!");
+  };
+
+  const handleAddToDeck = () => {
+    Alert.alert("Added to Deck", "Word added to your flashcard deck!");
+  };
+
+  const handleImageUpload = () => {
+    Alert.alert(
+      "Snap & Learn",
+      "Choose an option to identify objects",
+      [
+        {
+          text: "Take Photo",
+          onPress: takePhoto,
+          icon: "camera" 
+        },
+        {
+          text: "Choose from Gallery",
+          onPress: pickImage,
+          icon: "images"
+        },
+        {
+          text: "Cancel",
+          style: "cancel"
+        }
+      ]
+    );
   };
 
   const handlePlayAudio = (objectId) => {
@@ -78,17 +144,16 @@ export default function ImageVocabularyScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={[styles.header, { backgroundColor: theme.surfaceVariant, borderBottomColor: theme.border }]}>
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
-            style={styles.backButton}
             onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
           >
-            <Ionicons name="chevron-back" size={24} color={theme.primary} />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.primary }]}>Image to Vocabulary</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
-            Upload images to discover indigenous words
-          </Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Snap & Learn</Text>
+          <TouchableOpacity onPress={() => Alert.alert('How it works', 'Take a photo of an object to learn its name in indigenous languages.')}>
+            <Ionicons name="information-circle" size={24} color={theme.primary} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
@@ -97,8 +162,7 @@ export default function ImageVocabularyScreen() {
             <TouchableOpacity
               style={[
                 styles.uploadArea,
-                { backgroundColor: theme.surface, borderColor: theme.border },
-                isDragging && { borderColor: theme.primary, backgroundColor: theme.surfaceVariant }
+                { backgroundColor: theme.surface, borderColor: theme.border }
               ]}
               onPress={handleImageUpload}
               activeOpacity={0.7}
@@ -113,33 +177,31 @@ export default function ImageVocabularyScreen() {
               </View>
             </TouchableOpacity>
           ) : (
-            <View style={styles.imagePreviewContainer}>
-              <View style={styles.imageHeader}>
-                <Text style={[styles.imageHeaderTitle, { color: theme.text }]}>Uploaded Image</Text>
-                <TouchableOpacity onPress={handleReset} style={styles.resetButton}>
-                  <Ionicons name="close-circle" size={24} color={theme.error || '#EF4444'} />
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.imageWrapper}>
-                <Image
-                  source={{ uri: uploadedImage }}
-                  style={[styles.uploadedImage, { borderColor: theme.border, borderWidth: 1 }]}
-                  resizeMode="cover"
-                />
-                {isProcessing && (
-                  <View style={[styles.processingOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-                    <View style={[styles.processingCard, { backgroundColor: theme.surface }]}>
-                      <MaterialCommunityIcons
-                        name="robot"
-                        size={48}
-                        color={theme.primary}
-                      />
-                      <Text style={[styles.processingText, { color: theme.text }]}>Analyzing image...</Text>
-                    </View>
+            <View style={[styles.imagePreviewContainer, { borderColor: theme.border }]}>
+              <Image
+                source={{ uri: uploadedImage }}
+                style={styles.uploadedImage}
+                resizeMode="cover"
+              />
+              <TouchableOpacity 
+                onPress={handleReset} 
+                style={[styles.floatingCloseButton, { backgroundColor: 'rgba(0,0,0,0.5)' }]}
+              >
+                <Ionicons name="close" size={20} color="#FFF" />
+              </TouchableOpacity>
+
+              {isProcessing && (
+                <View style={[styles.processingOverlay, { backgroundColor: 'rgba(0,0,0,0.3)' }]}>
+                  <View style={[styles.processingCard, { backgroundColor: theme.surface }]}>
+                    <MaterialCommunityIcons
+                      name="robot"
+                      size={32}
+                      color={theme.primary}
+                    />
+                    <Text style={[styles.processingText, { color: theme.text }]}>Analyzing...</Text>
                   </View>
-                )}
-              </View>
+                </View>
+              )}
             </View>
           )}
 
@@ -214,32 +276,16 @@ export default function ImageVocabularyScreen() {
                 </View>
               </View>
 
-              <View style={styles.translationContainer}>
-                <View style={styles.translationHeader}>
-                  <MaterialCommunityIcons name="translate" size={18} color={theme.textSecondary} />
-                  <Text style={[styles.translationLabel, { color: theme.textSecondary }]}>English Translation</Text>
+              <View style={styles.detailsContainer}>
+                <View style={styles.detailItem}>
+                  <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>ENGLISH TRANSLATION</Text>
+                  <Text style={[styles.detailValue, { color: theme.text }]}>{selectedObject.translation}</Text>
                 </View>
-                <Text style={[styles.translationText, { color: theme.text }]}>{selectedObject.translation}</Text>
-              </View>
 
-              <View style={styles.descriptionContainer}>
-                <Text style={[styles.descriptionTitle, { color: theme.text }]}>About this word:</Text>
-                <Text style={[styles.descriptionText, { color: theme.textSecondary }]}>{selectedObject.description}</Text>
-              </View>
-
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.actionButton}>
-                  <Ionicons name="bookmark-outline" size={20} color={theme.primary} />
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Save</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
-                  <Ionicons name="share-social-outline" size={20} color={theme.primary} />
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Share</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
-                  <MaterialCommunityIcons name="cards" size={20} color={theme.primary} />
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Add to Deck</Text>
-                </TouchableOpacity>
+                <View style={[styles.detailItem, { marginTop: SPACING.m, paddingTop: SPACING.m, borderTopWidth: 1, borderTopColor: theme.border }]}>
+                  <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>ABOUT THIS WORD</Text>
+                  <Text style={[styles.descriptionText, { color: theme.textSecondary }]}>{selectedObject.description}</Text>
+                </View>
               </View>
             </View>
           )}
@@ -330,39 +376,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    padding: SPACING.l,
-    backgroundColor: COLORS.glassLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
-    ...SHADOWS.small,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    padding: SPACING.xs,
-    marginBottom: SPACING.xs,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.primary,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginTop: 4,
+    color: COLORS.text,
   },
   content: {
     padding: SPACING.l,
   },
   uploadArea: {
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
     borderRadius: SPACING.l,
     padding: SPACING.xxl,
     alignItems: 'center',
-    backgroundColor: COLORS.glassLight,
-    ...SHADOWS.small,
+    marginBottom: SPACING.l,
+    borderWidth: 1, // Thin border
+    borderStyle: 'dashed', // Dashed for upload area
   },
   uploadAreaDragging: {
     backgroundColor: COLORS.primary + '10',
@@ -393,35 +429,28 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   imagePreviewContainer: {
-    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
     overflow: 'hidden',
-    ...SHADOWS.medium,
-  },
-  imageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: SPACING.m,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  imageHeaderTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  resetButton: {
-    padding: 4,
-  },
-  imageWrapper: {
+    borderWidth: 1, // Thin border
+    marginBottom: SPACING.l,
     position: 'relative',
+    borderColor: '#e0e0e0', // Use a default light color if theme is not ready, or rely on JS injection
   },
   uploadedImage: {
     width: '100%',
-    height: 250,
+    height: 300, 
+    backgroundColor: '#000',
+  },
+  floatingCloseButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   processingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -434,6 +463,7 @@ const styles = StyleSheet.create({
     padding: SPACING.l,
     borderRadius: SPACING.m,
     borderWidth: 1,
+    marginBottom: SPACING.m,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     alignItems: 'center',
   },
@@ -467,10 +497,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.s,
     paddingHorizontal: SPACING.m,
     borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1, // Thin border
     gap: SPACING.s,
-    ...SHADOWS.small,
   },
   objectChipSelected: {
     borderColor: COLORS.primary,
@@ -498,11 +526,10 @@ const styles = StyleSheet.create({
   vocabularyCard: {
     backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
     padding: SPACING.l,
+    borderWidth: 1, // Thin border
     marginTop: SPACING.l,
-    ...SHADOWS.medium,
+    marginBottom: SPACING.xl,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -530,7 +557,7 @@ const styles = StyleSheet.create({
   wordContainer: {
     alignItems: 'center',
     marginBottom: SPACING.l,
-    paddingVertical: SPACING.m,
+    paddingVertical: SPACING.l, // Increased padding
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -550,71 +577,41 @@ const styles = StyleSheet.create({
     color: COLORS.secondary,
     fontStyle: 'italic',
   },
-  translationContainer: {
-    marginBottom: SPACING.l,
-  },
-  translationHeader: {
-    flexDirection: 'row',
+  detailsContainer: {
+    paddingHorizontal: SPACING.s,
     alignItems: 'center',
-    gap: SPACING.s,
+  },
+  detailItem: {
+    width: '100%',
+    alignItems: 'center',
     marginBottom: SPACING.s,
   },
-  translationLabel: {
+  detailLabel: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 1.2,
     color: COLORS.textSecondary,
+    marginBottom: SPACING.s,
     textTransform: 'uppercase',
   },
-  translationText: {
-    fontSize: 20,
+  detailValue: {
+    fontSize: 24,
     fontWeight: '600',
     color: COLORS.text,
-  },
-  descriptionContainer: {
-    backgroundColor: COLORS.background,
-    padding: SPACING.m,
-    borderRadius: SPACING.s,
-    marginBottom: SPACING.l,
-  },
-  descriptionTitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 4,
+    textAlign: 'center',
   },
   descriptionText: {
-    fontSize: 13,
+    fontSize: 14,
     color: COLORS.textSecondary,
-    lineHeight: 20,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: SPACING.s,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.s,
-    backgroundColor: COLORS.background,
-    paddingVertical: SPACING.m,
-    borderRadius: SPACING.s,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.primary,
+    lineHeight: 24,
+    textAlign: 'center',
   },
   tipsCard: {
     backgroundColor: '#F0F8FF',
     borderRadius: SPACING.m,
     padding: SPACING.l,
-    marginTop: SPACING.l,
-    ...SHADOWS.small,
+    marginBottom: SPACING.l,
+    borderWidth: 1, // Thin border
   },
   tipsHeader: {
     flexDirection: 'row',

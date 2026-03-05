@@ -1228,18 +1228,47 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
           >
             <Ionicons name="chevron-back" size={24} color={theme.primary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Voice Recording</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Preserve indigenous voices for future generations</Text>
+          <View style={styles.headerTextContainer}>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Voice Recording</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Preserve indigenous voices for future generations</Text>
+          </View>
         </View>
         
         <View style={styles.content}>
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: theme.accent, // Solid background
+              padding: SPACING.m,
+              borderRadius: SPACING.m,
+              marginBottom: SPACING.l,
+              ...SHADOWS.medium, // Add shadow
+            }}
+            onPress={() => navigation.navigate('AIStoryGenerator', { mode: 'train' })}
+          >
+            <View style={{ 
+              width: 48, height: 48, borderRadius: 24, 
+              backgroundColor: 'rgba(255,255,255,0.2)', 
+              justifyContent: 'center', alignItems: 'center',
+              marginRight: SPACING.m 
+            }}>
+               <MaterialCommunityIcons name="microphone-variant" size={28} color="#FFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+               <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.surface }}>Train Voice Model</Text>
+               <Text style={{ fontSize: 13, color: theme.surface, opacity: 0.9 }}>Create your own digital voice clone</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={theme.surface} />
+          </TouchableOpacity>
+
           <View style={[styles.recordingStudioCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
             <View style={styles.studioHeaderRow}>
               <Text style={[styles.studioTitle, { color: theme.text }]}>Recording Studio</Text>
@@ -1320,15 +1349,22 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 </View>
               )}
 
-              {/* Upload Audio File Button */}
+              {/* Import Audio Option */}
               {!isRecording && !hasRecording && (
                 <TouchableOpacity
-                  style={[styles.uploadAudioButton, { backgroundColor: theme.glassMedium, borderColor: theme.primary }]}
+                  style={{
+                    width: '100%', marginTop: SPACING.l,
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                    paddingVertical: 12, paddingHorizontal: 16,
+                    borderRadius: 16,
+                    backgroundColor: theme.glassMedium,
+                    borderWidth: 1, borderColor: theme.primary,
+                    gap: 8
+                  }}
                   onPress={handlePickAudioFile}
-                  activeOpacity={0.7}
                 >
-                  <Ionicons name="folder-open" size={24} color={theme.primary} />
-                  <Text style={[styles.uploadAudioButtonText, { color: theme.primary }]}>Or Pick from Phone</Text>
+                  <Ionicons name="folder-open" size={20} color={theme.primary} />
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.primary }}>Import Audio File</Text>
                 </TouchableOpacity>
               )}
 
@@ -1593,8 +1629,8 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
 
           {/* NEW: Previous Recordings Section */}
           {recordings.length > 0 && (
-            <View style={styles.previousRecordingsSection}>
-              <View style={styles.sectionHeader}>
+            <View style={[styles.previousRecordingsSection, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+              <View style={[styles.sectionHeader, { borderBottomColor: theme.border }]}>
                 <Ionicons name="folder-open" size={24} color={theme.primary} />
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>Previous Recordings</Text>
                 <View style={[styles.recordingBadge, { backgroundColor: theme.glassMedium }]}>
@@ -1607,7 +1643,17 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 keyExtractor={(item) => item.id}
                 scrollEnabled={false}
                 renderItem={({ item, index }) => (
-                  <View style={[styles.recordingListItem, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={[
+                    styles.recordingListItem, 
+                    { 
+                      backgroundColor: theme.surface, 
+                      borderColor: theme.border,
+                      flexDirection: 'column', // Force vertical layout
+                      alignItems: 'stretch', // Full width items
+                      paddingVertical: 12,
+                      gap: 12
+                    }
+                  ]}>
                     <View style={styles.recordingListItemContent}>
                       <View style={[styles.recordingNumberBadge, { backgroundColor: theme.glassMedium }]}>
                         <Text style={[styles.recordingNumber, { color: theme.primary }]}>{recordings.length - index}</Text>
@@ -1630,10 +1676,20 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                       </View>
                     </View>
 
-                    {/* Play/Delete/Share Buttons */}
-                    <View style={styles.recordingListActions}>
+                    {/* Play/Delete/Share Buttons - New Row */}
+                    <View style={[
+                      styles.recordingListActions, 
+                      { 
+                        width: '100%', 
+                        justifyContent: 'space-between',
+                        paddingTop: 8,
+                        borderTopWidth: 1,
+                        borderTopColor: theme.border,
+                        marginTop: 4
+                      }
+                    ]}>
                       <TouchableOpacity
-                        style={styles.recordingActionButton}
+                        style={{ flexDirection: 'row', alignItems: 'center', padding: 8 }}
                         onPress={() => playPreviousRecording(item.id, item.uri)}
                         activeOpacity={0.7}
                       >
@@ -1642,18 +1698,41 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                           size={28}
                           color={playingRecordingId === item.id ? theme.primary : theme.textSecondary}
                         />
+                        <Text style={{ marginLeft: 6, color: playingRecordingId === item.id ? theme.primary : theme.textSecondary, fontWeight: '600' }}>
+                          {playingRecordingId === item.id ? "Pause" : "Play"}
+                        </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={styles.recordingActionButton}
-                        onPress={() => openShareModal(item)}
+                        style={{ 
+                          flex: 1, 
+                          backgroundColor: theme.primary + '15', 
+                          borderRadius: 8,
+                          flexDirection: 'row', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          paddingVertical: 8,
+                          marginHorizontal: 8
+                        }}
+                        onPress={() => {
+                          // Navigate to Community Screen with pre-filled audio data
+                          navigation.navigate('CommunityStory', { 
+                             audioUri: item.uri, 
+                             duration: item.duration,
+                             transcript: item.transcript,
+                             fileName: item.fileName || `Recording ${new Date(item.timestamp).toLocaleDateString()}`
+                          });
+                        }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name="share-social" size={24} color={theme.accent} />
+                        <Ionicons name="share-social" size={18} color={theme.primary} />
+                        <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: 'bold', color: theme.primary }}>
+                          Share
+                        </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={styles.recordingActionButton}
+                        style={{ padding: 8 }}
                         onPress={() => {
                           Alert.alert(
                             'Delete Recording',
@@ -1670,7 +1749,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                         }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name="trash" size={24} color={theme.error} />
+                        <Ionicons name="trash-outline" size={24} color={theme.error} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1813,17 +1892,18 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
             </ScrollView>
 
             {/* Share Button */}
-            <View style={styles.shareModalFooter}>
+            <View style={[styles.shareModalFooter, { borderTopColor: theme.border }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { borderColor: theme.border }]}
                 onPress={() => setShowShareModal(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: theme.text }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
                   styles.shareButton,
+                  { backgroundColor: theme.primary },
                   isSharingToCommunity && styles.shareButtonDisabled
                 ]}
                 onPress={() => {
@@ -1851,11 +1931,11 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 disabled={isSharingToCommunity}
               >
                 {isSharingToCommunity ? (
-                  <Text style={styles.shareButtonText}>Sharing...</Text>
+                  <Text style={[styles.shareButtonText, { color: theme.onPrimary || '#FFFFFF' }]}>Sharing...</Text>
                 ) : (
                   <>
-                    <Ionicons name="share-social" size={20} color={COLORS.surface} />
-                    <Text style={styles.shareButtonText}>Next: Choose Recipients</Text>
+                    <Ionicons name="share-social" size={20} color={theme.onPrimary || '#FFFFFF'} />
+                    <Text style={[styles.shareButtonText, { color: theme.onPrimary || '#FFFFFF' }]}>Next: Choose Recipients</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -2161,26 +2241,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    padding: SPACING.l,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
     backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
   backButton: {
-    alignSelf: 'flex-start',
     padding: SPACING.xs,
-    marginBottom: SPACING.xs,
+    marginRight: SPACING.m,
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.primary,
   },
   headerSubtitle: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    marginTop: 4,
+    marginTop: 2,
   },
   content: {
     padding: SPACING.l,

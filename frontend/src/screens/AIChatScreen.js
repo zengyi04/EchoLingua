@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert } from 'react-native';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert, Animated, Modal, ScrollView, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -15,14 +15,55 @@ const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL || 'gemini-2.0-flash';
 const CHAT_HISTORY_KEY = '@echolingua_ai_chat_history';
 const USER_STORAGE_KEY = '@echolingua_current_user';
+const ELDER_VOICES_STORAGE_KEY = '@echolingua_elder_voices'; // From AIStoryGenerator
 
-const SYSTEM_CONTEXT = `You are an AI assistant for EchoLingua, a language learning app focused on indigenous languages of Borneo (Kadazandusun, Iban, Bajau, Murut). Help users with:
-- Language learning tips and pronunciation
-- Cultural information about Borneo indigenous communities
-- Story meanings and translations
-- Grammar and vocabulary questions
-- Practice scenarios and conversations
-Be friendly, concise, and educational. Answer in simple, clear language.`;
+const VOICE_PROFILES = [
+  { id: 'default', name: 'EchoLingua (Standard)', gender: 'neutral', pitch: 1.0, rate: 0.95 },
+  { id: 'elder_male', name: 'Elder (Deep)', gender: 'male', pitch: 0.8, rate: 0.85 },
+  { id: 'elder_female', name: 'Elder (Soft)', gender: 'female', pitch: 1.2, rate: 0.9 },
+  { id: 'energetic', name: 'Youth (Fast)', gender: 'neutral', pitch: 1.1, rate: 1.05 },
+];
+
+const SPEECH_CODES = {
+  malay: 'ms-MY',
+  english: 'en-US',
+  indonesian: 'id-ID',
+  mandarin: 'zh-CN',
+  spanish: 'es-ES',
+  french: 'fr-FR',
+  arabic: 'ar-SA',
+  japanese: 'ja-JP',
+  korean: 'ko-KR',
+  german: 'de-DE',
+  portuguese: 'pt-PT',
+  thai: 'th-TH',
+  vietnamese: 'vi-VN',
+  russian: 'ru-RU',
+  italian: 'it-IT',
+  turkish: 'tr-TR',
+  hindi: 'hi-IN',
+  // Fallbacks for indigenous languages often use Malay/Indonesian TTS if specific ones aren't available
+  iban: 'ms-MY',
+  kadazan: 'ms-MY',
+  murut: 'ms-MY',
+  bajau: 'ms-MY',
+  bidayuh: 'ms-MY',
+  melanau: 'ms-MY',
+  penan: 'ms-MY',
+};
+
+const SYSTEM_CONTEXT = `You are EchoLingua, a friendly AI language partner for indigenous languages of Borneo (Kadazandusun, Iban, Bajau, Murut). 
+YOUR CORE MISSION: Help users speak and learn naturally, like a friend.
+
+KEY BEHAVIORS:
+1. **Be Conversational**: Keep responses short, natural, and spoken-style (1-3 sentences preferably).
+2. **Correct Gently**: If the user makes a grammar or pronunciation mistake, gently repeat the correct phrase in your reply (e.g., "Ah, you mean [correction]? Yes...").
+3. **Teach Vocabulary**: If the user uses English because they don't know a word, supply the indigenous word in your reply naturally.
+4. **Cultural Context**: Share brief cultural facts when relevant.
+5. **Encourage Speaking**: Ask follow-up questions to keep the user talking.
+
+If the user speaks a Borneo language, reply in that language (or Malay/English if appropriate for the context).
+If the user speaks English, answer in English but teach them a phrase in the target language if known.`;
 
 function toBase64(bytes) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -67,8 +108,9 @@ function resolveLanguageId(languageValue) {
   return null;
 }
 
-export default function AIChatScreen({ navigation }) {
+export default function AIChatScreen({ navigation, route }) {
   const { theme } = useTheme();
+  const { targetLanguage, speechCode, mode } = route.params || {};
   const [messages, setMessages] = useState([
     { id: 'seed', role: 'assistant', text: 'Hello! I\'m your EchoLingua AI assistant. Ask me anything about Borneo indigenous languages (Kadazandusun, Iban, Bajau, Murut), culture, stories, or pronunciation. How can I help you today?' },
   ]);
@@ -79,10 +121,121 @@ export default function AIChatScreen({ navigation }) {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [preferredLanguageId, setPreferredLanguageId] = useState('english');
 
+  // Call Mode State
+  const [isCallMode, setIsCallMode] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [callStatus, setCallStatus] = useState('Connected');
+  
+  // Voice Features
+  const [selectedVoice, setSelectedVoice] = useState(VOICE_PROFILES[0]);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [trainedVoices, setTrainedVoices] = useState([]);
+  
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let animLoop;
+    
+    // Pulse animation logic
+    if (isCallMode && (isSpeaking || isRecording)) {
+      animLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.2, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.0, duration: 800, useNativeDriver: true })
+        ])
+      );
+      animLoop.start();
+    } else {
+      pulseAnim.setValue(1); 
+    }
+
+    return () => {
+      if (animLoop) {
+        animLoop.stop();
+      }
+    };
+  }, [isCallMode, isSpeaking, isRecording]);
+
+  useEffect(() => {
+    const loadVoices = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ELDER_VOICES_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          // Map stored voices to usable profiles (simulated characteristics)
+          const mapped = parsed.map(v => ({
+             id: v.id,
+             name: v.name + ' (Trained)', // Mark as trained
+             pitch: 0.9, // Simulate distinct quality
+             rate: 0.85,
+             isTrained: true
+          }));
+          setTrainedVoices(mapped);
+        }
+      } catch (e) { console.error(e); }
+    };
+    loadVoices();
+  }, []);
+
+  const startCall = () => {
+    setIsCallMode(true);
+    setCallStatus('Connected');
+    Speech.speak("Hello! I'm listening.", { language: 'en-US' });
+  };
+
+  const endCall = () => {
+    setIsCallMode(false);
+    setCallStatus('Connected');
+    Speech.stop();
+    if (recording) {
+      // Just stop recording but don't process if user cancelled
+      recording.stopAndUnloadAsync().catch(() => {});
+      setRecording(null);
+      setIsRecording(false);
+    }
+  };
+
+  const speakResponse = (text) => {
+    const speechLang = speechCode || SPEECH_CODES[preferredLanguageId] || 'en-US';
+    
+    // Apply voice settings
+    const options = {
+      language: speechLang,
+      pitch: selectedVoice.pitch || 1.0,
+      rate: selectedVoice.rate || 0.96,
+      onStart: () => {
+        setIsSpeaking(true);
+        setCallStatus('Speaking');
+      },
+      onDone: () => {
+        setIsSpeaking(false);
+        setCallStatus('Listening');
+      },
+      onStopped: () => {
+        setIsSpeaking(false);
+        setCallStatus('Connected');
+      }
+    };
+    
+    Speech.speak(text, options);
+  };
+
   const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
 
   useEffect(() => {
     const loadHistory = async () => {
+      // If we are in Living Language Mode, start fresh without loading old chat history
+      if (mode === 'living_language') {
+        setMessages([{
+          id: 'seed-living',
+          role: 'assistant',
+          text: `Welcome to ${targetLanguage} Living Language Mode! 🎙️\nI am here to practice speaking with you. I will correct your pronunciation and suggest words naturally.\n\nTap the microphone and say something in ${targetLanguage}!`
+        }]);
+        setHistoryLoaded(true);
+        Speech.speak(`Welcome to ${targetLanguage} Living Language Mode! I am ready to talk.`, { language: 'en-US' });
+        return;
+      }
+
       try {
         const raw = await AsyncStorage.getItem(CHAT_HISTORY_KEY);
         if (!raw) {
@@ -131,7 +284,7 @@ export default function AIChatScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    if (!historyLoaded) {
+    if (!historyLoaded || mode === 'living_language') {
       return;
     }
 
@@ -149,6 +302,29 @@ export default function AIChatScreen({ navigation }) {
   const requestGemini = async (parts, includeHistory = true) => {
     assertGeminiConfig();
 
+    let finalSystemContext = SYSTEM_CONTEXT;
+    const activeLanguage = targetLanguage || preferredLanguageId;
+
+    if (activeLanguage && activeLanguage !== 'english') {
+      finalSystemContext += `\n\nUSER CONTEXT: The user is learning or speaking ${activeLanguage}.
+      - IMPORTANT: Reply primarily in ${activeLanguage} if the user initiates in it.
+      - If the user speaks English, imply you are a ${activeLanguage} speaker teaching them.
+      - Correct their ${activeLanguage} grammar naturally.
+      - Be a patient, encouraging language partner.`;
+    }
+
+    if (mode === 'living_language' && targetLanguage) {
+      finalSystemContext = `YOU ARE A NATIVE SPEAKER OF ${targetLanguage}.
+      - MODE: LIVING LANGUAGE IMMERSION (Voice-First).
+      - YOUR GOAL: Act as a friendly local who only speaks ${targetLanguage}. Help the user practice conversation.
+      - CONVERSATION STYLE: Short, natural, spoken-style responses (1-3 sentences).
+      - CORRECTION: If the user makes a mistake, gently repeat the correct phrase in your reply naturally (e.g., "Ah, you mean [correction]? Yes...").
+      - TEACHING: If the user is stuck, suggest a word or phrase they might use.
+      - DO NOT LECTURE. Just chat.
+      - If the user speaks English, encourage them in ${targetLanguage} to try, or switch to English briefly to explain if they are very confused, then switch back.
+      `;
+    }
+
     // Build conversation history for context
     const conversationHistory = includeHistory
       ? messages.slice(-10).map((msg) => ({
@@ -163,7 +339,7 @@ export default function AIChatScreen({ navigation }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_CONTEXT }] },
+          systemInstruction: { parts: [{ text: finalSystemContext }] },
           contents: [
             ...conversationHistory,
             { role: 'user', parts },
@@ -204,7 +380,7 @@ export default function AIChatScreen({ navigation }) {
       const answer = await requestGemini([{ text: prompt }]);
       const botMessage = { id: `${Date.now()}-a`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
-      Speech.speak(answer, { language: 'en-US', rate: 0.96 });
+      speakResponse(answer);
     } catch (error) {
       Alert.alert('AI Error', 'Unable to get answer right now. Please try again.');
       console.error('Gemini text request failed:', error);
@@ -275,7 +451,7 @@ export default function AIChatScreen({ navigation }) {
                 role: 'user',
                 parts: [
                   {
-                    text: 'Please transcribe this audio to text. Only return the transcribed text with no explanations.',
+                    text: `Please transcribe this audio to text. The user might be speaking in ${targetLanguage || preferredLanguageId || 'English'} or mixed languages. Only return the transcribed text with no explanations.`,
                   },
                   {
                     inline_data: {
@@ -309,7 +485,9 @@ export default function AIChatScreen({ navigation }) {
       console.log('✅ Transcribed text:', transcribedText);
 
       let finalInput = transcribedText.trim();
-      if (preferredLanguageId && preferredLanguageId !== 'english') {
+      // Only auto-translate if we are NOT in a specific language practice mode
+      // Otherwise, trust the transcription matches the target language or English fallback
+      if (!targetLanguage && preferredLanguageId && preferredLanguageId !== 'english') {
         try {
           const translated = await translateTextBetween(finalInput, 'english', preferredLanguageId);
           if (translated && translated.trim()) {
@@ -320,14 +498,24 @@ export default function AIChatScreen({ navigation }) {
         }
       }
 
-      // Fill input bar only; user decides when to send.
-      setInput(finalInput);
-      const selectedLanguageLabel =
-        WORLD_LANGUAGES.find((lang) => lang.id === preferredLanguageId)?.label || 'English';
-      Alert.alert(
-        'Voice Ready',
-        `Text added to input (${selectedLanguageLabel}). You can edit it, then tap Send.`
-      );
+      // Auto-send for conversational flow (Living Language Style)
+      setInput(''); // Clear input as we are sending immediately
+      
+      // Add user message to UI immediately
+      const userMessage = { id: `${Date.now()}-voice-u`, role: 'user', text: finalInput };
+      setMessages((prev) => [...prev, userMessage]);
+      setLoading(true);
+
+      try {
+        const answer = await requestGemini([{ text: finalInput }]);
+        const botMessage = { id: `${Date.now()}-voice-a`, role: 'assistant', text: answer };
+        setMessages((prev) => [...prev, botMessage]);
+        
+        speakResponse(answer);
+      } catch (geminiError) {
+        console.error('Gemini text request failed after voice:', geminiError);
+        Alert.alert('AI Error', 'I heard you, but could not reply. Please try again.');
+      }
     } catch (error) {
       console.error('Voice transcription failed:', error);
       Alert.alert(
@@ -357,7 +545,7 @@ export default function AIChatScreen({ navigation }) {
       const answer = await requestGemini([{ text: messageText }]);
       const botMessage = { id: `${Date.now()}-assistant`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
-      Speech.speak(answer, { language: 'en-US', rate: 0.96 });
+      speakResponse(answer);
     } catch (error) {
       console.error('Gemini text request failed:', error);
       Alert.alert('AI Error', 'Could not get response. Please try again.');
@@ -365,6 +553,145 @@ export default function AIChatScreen({ navigation }) {
       setLoading(false);
     }
   };
+
+  if (isCallMode) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
+           <View style={{ position: 'absolute', top: 60, width: '100%', alignItems: 'center' }}>
+             <Text style={{ fontSize: 14, color: theme.textSecondary, letterSpacing: 1, marginBottom: 8 }}>ECHO LINGUA CALL</Text>
+             <Text style={{ fontSize: 24, fontWeight: '700', color: theme.text }}>{selectedVoice.name}</Text>
+             <Text style={{ fontSize: 16, color: theme.textSecondary, marginTop: 8 }}>{isSpeaking ? 'Speaking...' : (isRecording ? 'Listening...' : callStatus)}</Text>
+           </View>
+           
+           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: -40 }}>
+              {/* Animated Avatar Rings */}
+              <Animated.View style={{
+                 transform: [{ scale: pulseAnim }],
+                 width: 280, height: 280, borderRadius: 140,
+                 backgroundColor: theme.primary + '20',
+                 justifyContent: 'center', alignItems: 'center',
+                 position: 'absolute'
+              }} />
+              
+              <Animated.View style={{
+                 transform: [{ scale: isSpeaking ? pulseAnim : 1 }],
+                 width: 220, height: 220, borderRadius: 110,
+                 backgroundColor: isSpeaking ? theme.primary + '40' : theme.surface + '40',
+                 justifyContent: 'center', alignItems: 'center'
+              }}>
+                 {/* Avatar Image or Icon */}
+                 <View style={{ width: 140, height: 140, borderRadius: 70, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: theme.border }}>
+                    {selectedVoice.isTrained ? (
+                       <Ionicons name="person" size={80} color={theme.text} />
+                    ) : (
+                       <Ionicons name="hardware-chip" size={80} color={theme.text} />
+                    )}
+                 </View>
+              </Animated.View>
+           </View>
+
+           <View style={{ position: 'absolute', bottom: 60, width: '100%', alignItems: 'center', gap: 24 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 40 }}>
+                 
+                 {/* Change Voice Button */}
+                 <TouchableOpacity 
+                    style={{ alignItems: 'center', gap: 8 }}
+                    onPress={() => setShowVoiceModal(true)}
+                 >
+                    <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center' }}>
+                       <Ionicons name="options" size={24} color={theme.text} />
+                    </View>
+                    <Text style={{ color: theme.text, fontSize: 12 }}>Voice</Text>
+                 </TouchableOpacity>
+
+                 {/* End Call Button */}
+                 <TouchableOpacity 
+                   style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#EF4444', justifyContent: 'center', alignItems: 'center', ...SHADOWS.large }}
+                   onPress={endCall}
+                 >
+                    <Ionicons name="call" size={36} color="#FFF" />
+                 </TouchableOpacity>
+
+                 {/* Mic Toggle / Status */}
+                 <TouchableOpacity 
+                    style={{ alignItems: 'center', gap: 8 }}
+                    onPress={isRecording ? stopVoiceRecordingAndAsk : startVoiceRecording}
+                 >
+                    <View style={{ 
+                       width: 56, height: 56, borderRadius: 28, 
+                       backgroundColor: isRecording ? theme.text : theme.surface, 
+                       justifyContent: 'center', alignItems: 'center' 
+                    }}>
+                       <Ionicons name={isRecording ? "mic" : "mic-off"} size={24} color={isRecording ? theme.background : theme.text} />
+                    </View>
+                    <Text style={{ color: theme.text, fontSize: 12 }}>{isRecording ? 'On' : 'Tap to speak'}</Text>
+                 </TouchableOpacity>
+              </View>
+           </View>
+
+        {/* Voice Selection Modal */}
+        <Modal
+           visible={showVoiceModal}
+           transparent
+           animationType="slide"
+           onRequestClose={() => setShowVoiceModal(false)}
+        >
+           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+              <View style={{ backgroundColor: theme.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '60%' }}>
+                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.text }}>Select Voice</Text>
+                    <TouchableOpacity onPress={() => setShowVoiceModal(false)}>
+                       <Ionicons name="close" size={24} color={theme.text} />
+                    </TouchableOpacity>
+                 </View>
+                 
+                 <ScrollView>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textSecondary, marginBottom: 12 }}>PRESET PERSONALITIES</Text>
+                    {VOICE_PROFILES.map(voice => (
+                       <TouchableOpacity 
+                          key={voice.id}
+                          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}
+                          onPress={() => {
+                             setSelectedVoice(voice);
+                             setShowVoiceModal(false);
+                          }}
+                       >
+                          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.secondary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                             <Ionicons name="radio" size={20} color={theme.secondary} />
+                          </View>
+                          <Text style={{ fontSize: 16, color: theme.text, flex: 1 }}>{voice.name}</Text>
+                          {selectedVoice.id === voice.id && <Ionicons name="checkmark-circle" size={24} color={theme.primary} />}
+                       </TouchableOpacity>
+                    ))}
+
+                    {trainedVoices.length > 0 && (
+                       <>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textSecondary, marginTop: 24, marginBottom: 12 }}>YOUR TRAINED VOICES</Text>
+                          {trainedVoices.map((voice, idx) => (
+                             <TouchableOpacity 
+                                key={`trained-${idx}`}
+                                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}
+                                onPress={() => {
+                                   setSelectedVoice(voice);
+                                   setShowVoiceModal(false);
+                                }}
+                             >
+                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.success + '20', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                                   <Ionicons name="person" size={20} color={theme.success} />
+                                </View>
+                                <Text style={{ fontSize: 16, color: theme.text, flex: 1 }}>{voice.name}</Text>
+                                {selectedVoice.id === voice.id && <Ionicons name="checkmark-circle" size={24} color={theme.primary} />}
+                             </TouchableOpacity>
+                          ))}
+                       </>
+                    )}
+                 </ScrollView>
+              </View>
+           </View>
+        </Modal>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -375,10 +702,13 @@ export default function AIChatScreen({ navigation }) {
         >
           <Ionicons name="chevron-back" size={24} color={theme.primary} />
         </TouchableOpacity>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>AI Chat</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Speak -> translate -> review -> send</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Speak - translate - review - send</Text>
         </View>
+        <TouchableOpacity onPress={startCall} style={{ padding: 8 }}>
+           <Ionicons name="call-outline" size={24} color={theme.primary} />
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -519,4 +849,20 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   sendDisabled: { opacity: 0.4 },
+  callContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 40 },
+  callHeader: { position: 'absolute', top: 60, width: '100%', alignItems: 'center' },
+  callStatus: { fontSize: 18, fontWeight: '600', letterSpacing: 1 },
+  visualizerContainer: { alignItems: 'center', justifyContent: 'center' },
+  avatarContainer: {
+    width: 200, height: 200, borderRadius: 100, justifyContent: 'center', alignItems: 'center',
+    marginBottom: 20,
+  },
+  avatarLabel: { fontSize: 16, fontWeight: 'bold', marginTop: 10 },
+  callControls: { flexDirection: 'row', alignItems: 'center', gap: 30, marginTop: 40 },
+  callBtn: {
+    width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center',
+    ...SHADOWS.medium
+  },
+  endCallBtn: { width: 72, height: 72, borderRadius: 36 },
+  callHint: { position: 'absolute', bottom: 40, fontSize: 14, opacity: 0.8 },
 });

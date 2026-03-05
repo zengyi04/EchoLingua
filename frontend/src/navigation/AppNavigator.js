@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Platform, StyleSheet, ActivityIndicator } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SHADOWS } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -20,6 +20,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 import LivingLanguageScreen from '../screens/LivingLanguageScreen';
 import MapScreen from '../screens/MapScreen';
 import AIChatScreen from '../screens/AIChatScreen';
+import ImageVocabularyScreen from '../screens/ImageVocabularyScreen';
+import AIStoryGeneratorScreen from '../screens/AIStoryGeneratorScreen';
 // New Feature Screens
 import CommunityStoryScreen from '../screens/CommunityStoryScreen';
 import ProgressTrackerScreen from '../screens/ProgressTrackerScreen';
@@ -70,8 +72,8 @@ function TabNavigator() {
             iconName = focused ? 'book' : 'book-outline';
           } else if (route.name === 'RecordTab') {
             return (
-               <View style={[styles.floatingButton, { backgroundColor: theme.secondary }]}>
-                 <Ionicons name="mic" size={32} color={theme.surface} />
+               <View style={[styles.floatingButton, { backgroundColor: theme.primary }]}>
+                 <MaterialCommunityIcons name="microphone" size={32} color={theme.surface} />
                </View>
             );
           } else if (route.name === 'StoriesTab') {
@@ -86,7 +88,7 @@ function TabNavigator() {
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ tabBarLabel: 'Home' }} />
       <Tab.Screen name="LearnTab" component={LivingLanguageScreen} options={{ tabBarLabel: 'Learn' }} />
-      <Tab.Screen name="RecordTab" component={RecordScreen} options={{ tabBarLabel: '' }} />
+      <Tab.Screen name="RecordTab" component={AIStoryGeneratorScreen} options={{ tabBarLabel: '' }} />
       <Tab.Screen name="StoriesTab" component={StoryLibraryScreen} options={{ tabBarLabel: 'Stories' }} />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ tabBarLabel: 'Profile' }} />
     </Tab.Navigator>
@@ -131,6 +133,7 @@ export default function AppNavigator() {
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       
       {/* Feature Screens */}
+      <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="CommunityStory" component={CommunityStoryScreen} />
       <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
@@ -146,13 +149,15 @@ export default function AppNavigator() {
       <Stack.Screen name="Quiz" component={QuizScreen} />
       <Stack.Screen name="Map" component={MapScreen} />
       <Stack.Screen name="AIChat" component={AIChatScreen} />
+      <Stack.Screen name="AIStoryGenerator" component={AIStoryGeneratorScreen} />
+      <Stack.Screen name="ImageVocabulary" component={ImageVocabularyScreen} />
     </Stack.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
   floatingButton: {
-    top: -24,
+    top: -15, // Adjusted to hang out about 30%
     width: 64,
     height: 64,
     borderRadius: 32,

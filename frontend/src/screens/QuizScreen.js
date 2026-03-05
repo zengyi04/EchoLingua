@@ -449,19 +449,34 @@ export default function QuizScreen({ navigation }) {
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.quizGrid}>
+          {/* Changed to List view for cleaner look */}
+          <View style={styles.quizListContainer}>
             {[1, 2, 3, 4, 5].map((quizNum) => (
               <TouchableOpacity
                 key={quizNum}
-                style={[styles.quizCard, { backgroundColor: selectedDifficulty.color + '20', borderColor: selectedDifficulty.color }]}
+                style={[
+                  styles.quizListItem, 
+                  { 
+                    backgroundColor: theme.surface, 
+                    // tailored shadow/elevation instead of border
+                    ...SHADOWS.medium
+                  }
+                ]}
                 onPress={() => handleQuizSelect(quizNum)}
               >
-                <View style={[styles.quizNumberCircle, { backgroundColor: selectedDifficulty.color }]}>
-                  <Text style={[styles.quizNumber, { color: theme.surface }]}>{quizNum}</Text>
+                <View style={[styles.quizNumberBadge, { backgroundColor: selectedDifficulty.color + '15' }]}>
+                  <Text style={[styles.quizNumberText, { color: selectedDifficulty.color }]}>{quizNum}</Text>
                 </View>
-                <Text style={[styles.quizLabel, { color: theme.text }]}>Quiz {quizNum}</Text>
-                <Text style={[styles.quizSubtitle, { color: theme.textSecondary }]}>5 questions</Text>
-                <Ionicons name="arrow-forward" size={20} color={selectedDifficulty.color} style={{ marginTop: 8 }} />
+                
+                <View style={styles.quizInfoContent}>
+                  <Text style={[styles.quizTitle, { color: theme.text }]}>Quiz {quizNum}</Text>
+                  <Text style={[styles.quizDetails, { color: theme.textSecondary }]}>5 Questions • {selectedDifficulty.label}</Text>
+                </View>
+                
+                <View style={[styles.quizActionBtn, { backgroundColor: selectedDifficulty.color }]}>
+                  <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 12 }}>Start</Text>
+                  <Ionicons name="play" size={12} color="#FFF" style={{ marginLeft: 4 }} />
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -683,43 +698,48 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 2,
   },
-  quizGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  quizListContainer: {
     gap: SPACING.m,
-    justifyContent: 'space-between',
   },
-  quizCard: {
-    width: '48%',
-    paddingVertical: SPACING.l,
-    paddingHorizontal: SPACING.m,
-    borderRadius: SPACING.m,
+  quizListItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
-    ...SHADOWS.small,
+    padding: SPACING.m,
+    borderRadius: SPACING.m,
+    marginBottom: SPACING.s,
+    // No more border
   },
-  quizNumberCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  quizNumberBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.s,
+    marginRight: SPACING.m,
   },
-  quizNumber: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.surface,
+  quizNumberText: {
+    fontSize: 22,
+    fontWeight: '800',
   },
-  quizLabel: {
+  quizInfoContent: {
+    flex: 1,
+  },
+  quizTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontWeight: '700',
+    marginBottom: 2,
   },
-  quizSubtitle: {
+  quizDetails: {
     fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
+  },
+  quizActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginLeft: SPACING.s,
   },
   quizHeader: {
     flexDirection: 'row',

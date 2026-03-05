@@ -329,16 +329,22 @@ export default function DictionaryScreen({ navigation }) {
         <Ionicons name="search" size={20} color={theme.textSecondary} />
         <TextInput
           style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search words or translations..."
+          placeholder="Search words..."
           placeholderTextColor={theme.textSecondary}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <TouchableOpacity onPress={() => setSearchQuery('')} style={{ marginRight: 8 }}>
             <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
         )}
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('ImageVocabulary')}
+          style={{ padding: 4 }}
+        >
+          <Ionicons name="camera" size={22} color={theme.primary} />
+        </TouchableOpacity>
       </View>
 
       {/* Recent Searches */}

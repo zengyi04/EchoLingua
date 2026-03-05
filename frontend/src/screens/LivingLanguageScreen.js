@@ -679,6 +679,7 @@ export default function LivingLanguageScreen() {
             <MaterialCommunityIcons name="information" size={20} color={theme.secondary} />
             <Text style={[styles.infoText, { color: theme.text }]}>{viewAllScenarios ? 'Browse all scenarios and cases. Tap any case to start practicing!' : 'Each scenario includes multiple case conversations. Tap a scenario to begin.'}</Text>
           </View>
+
           {!viewAllScenarios ? (
             <FlatList data={SCENARIOS} renderItem={renderScenarioCard} keyExtractor={(item) => item.id} scrollEnabled={false} contentContainerStyle={styles.scenarioList} />
           ) : (
@@ -1070,5 +1071,34 @@ const styles = StyleSheet.create({
     fontSize: 12, 
     color: COLORS.textSecondary, 
     fontWeight: '600' 
+  },
+  aiChatCard: {
+    marginHorizontal: SPACING.m,
+    marginBottom: SPACING.m,
+    padding: SPACING.m,
+    borderRadius: SPACING.l,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.m,
+    borderWidth: 1,
+  },
+  aiChatIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aiChatContent: {
+    flex: 1,
+  },
+  aiChatTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  aiChatSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

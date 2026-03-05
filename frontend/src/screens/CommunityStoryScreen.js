@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -24,8 +25,16 @@ const SEEN_STORIES_KEY = '@echolingua_seen_stories';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
 const LEGACY_COMMUNITY_STORIES_KEY = 'communityStories';
 
+const formatTime = (seconds) => {
+  if (!seconds) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
 export default function CommunityStoryScreen({ navigation }) {
   const { theme } = useTheme();
+  const route = useRoute();
   const [stories, setStories] = useState([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
@@ -52,12 +61,57 @@ export default function CommunityStoryScreen({ navigation }) {
   // Collection state
   const [likedStories, setLikedStories] = useState({});
   const [collectedStories, setCollectedStories] = useState({});
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
+    // Check for incoming audio sharing
+    if (route.params?.audioUri) {
+      setSelectedAudio({
+        uri: route.params.audioUri,
+        name: route.params.fileName || 'Shared Recording.m4a',
+        duration: route.params.duration
+      });
+      // Pre-fill transcript if available
+      if (route.params?.transcript) {
+         setStoryDescription(route.params.transcript);
+      } else if (route.params?.description) {
+         setStoryDescription(route.params.description);
+      }
+      setShowUploadModal(true);
+      
+      // Clear params to avoid reopening on subsequent navigation where params persist
+      navigation.setParams({ audioUri: null, transcript: null, description: null });
+    }
+  }, [route.params]);
+
+  useFocusEffect(
+    useCallback(() => {
     loadStories();
     loadUserPreferences();
+    loadCurrentUser();
     markStoriesAsSeen();
-    
+    return () => {
+      // Cleanup audio on losing focus
+      if (audioSound) {
+        audioSound.unloadAsync().catch(() => {});
+        setPlayingAudioId(null);
+      }
+    };
+  }, [])
+  );
+  
+  const loadCurrentUser = async () => {
+    try {
+      const user = await AsyncStorage.getItem('@echolingua_current_user');
+      if (user) {
+        setCurrentUser(JSON.parse(user));
+      }
+    } catch (e) {
+      console.error('Failed to load user', e);
+    }
+  };
+
+  useEffect(() => {
     return () => {
       // Cleanup audio on unmount
       if (audioSound) {
@@ -344,9 +398,10 @@ export default function CommunityStoryScreen({ navigation }) {
       id: Date.now().toString(),
       title: storyTitle,
       description: storyDescription,
-      author: 'You',
-      authorAvatar: '👤',
-      userId: 'current_user', // Placeholder for current user ID
+      author: currentUser?.name || 'You',
+      authorAvatar: currentUser?.profileImage ? null : '👤', // Use emoji fallback if no image
+      authorAvatarUri: currentUser?.profileImage || null,    // Use profile image URI if available
+      userId: currentUser?.id || 'current_user',
       language: storyLanguage,
       category: storyCategory,
       likes: 0,
@@ -428,6 +483,11 @@ export default function CommunityStoryScreen({ navigation }) {
   const renderStoryCard = ({ item }) => {
     const isLiked = likedStories[item.id];
     const isCollected = collectedStories[item.id];
+    // Check if the story is posted by the current user
+    const isMe = currentUser && (
+       item.userId === currentUser.id || 
+       (item.userId === 'current_user')
+    );
     
     return (
       <View 
@@ -452,34 +512,47 @@ export default function CommunityStoryScreen({ navigation }) {
             style={styles.authorInfo}
             onPress={() => navigation.navigate('UserProfile', { userId: item.userId, userName: item.author })}
           >
-            <Text style={styles.authorAvatar}>{item.authorAvatar}</Text>
+            {item.authorAvatarUri ? (
+               <Image source={{ uri: item.authorAvatarUri }} style={{ width: 40, height: 40, borderRadius: 20, marginRight: 12, backgroundColor: theme.surfaceVariant }} />
+            ) : (
+               <Text style={styles.authorAvatar}>{item.authorAvatar || '👤'}</Text>
+            )}
             <View>
-              <Text style={[styles.authorName, { color: theme.text }]}>{item.author}</Text>
+              <Text style={[styles.authorName, { color: theme.text }]}>
+                {isMe ? (item.author === 'You' ? 'You' : `${item.author} (You)`) : item.author}
+              </Text>
               <Text style={[styles.storyMeta, { color: theme.textSecondary }]}>
                 {item.language} • {item.category}
               </Text>
             </View>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.followBtn, 
-              item.isFollowing ? styles.followingBtn : { backgroundColor: theme.primary },
-              item.isFollowing && { backgroundColor: theme.surfaceVariant, borderColor: theme.border }
-            ]}
-            onPress={() => handleFollowAuthor(item.id)}
-          >
-            <Text style={[
-              styles.followBtnText, 
-              item.isFollowing ? styles.followingBtnText : { color: theme.onPrimary },
-              item.isFollowing && { color: theme.textSecondary }
-            ]}>
-              {item.isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
+          
+          {!isMe && (
+            <TouchableOpacity
+              style={[
+                styles.followBtn, 
+                item.isFollowing ? styles.followingBtn : { backgroundColor: theme.primary },
+                item.isFollowing && { backgroundColor: theme.surfaceVariant, borderColor: theme.border }
+              ]}
+              onPress={() => handleFollowAuthor(item.id)}
+            >
+              <Text style={[
+                styles.followBtnText, 
+                item.isFollowing ? styles.followingBtnText : { color: theme.onPrimary },
+                item.isFollowing && { color: theme.textSecondary }
+              ]}>
+                {item.isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Story Content */}
-        <View style={styles.storyContent}>
+        <TouchableOpacity 
+          style={styles.storyContent}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Story', { story: item })}
+        >
           <Text style={[styles.storyTitle, { color: theme.text }]}>{item.title}</Text>
           <Text style={[styles.storyDescription, { color: theme.textSecondary }]}>{item.description}</Text>
           
@@ -487,31 +560,43 @@ export default function CommunityStoryScreen({ navigation }) {
           {item.imageUri && (
             <Image source={{ uri: item.imageUri }} style={styles.storyImage} resizeMode="cover" />
           )}
+        </TouchableOpacity>
           
           {/* Audio Player */}
           {item.audioUri && (
-            <TouchableOpacity 
+             <TouchableOpacity 
               style={[
                 styles.audioPlayer, 
                 { 
-                  backgroundColor: theme.surfaceVariant,
-                  borderColor: 'transparent' 
+                  backgroundColor: theme.surface === '#FFFFFF' ? '#F0FDFA' : 'rgba(78, 205, 196, 0.08)',
+                  borderColor: theme.primary + '40',
                 }
               ]}
               onPress={() => playAudio(item.audioUri, item.id)}
+              activeOpacity={0.7}
             >
-              <Ionicons 
-                name={playingAudioId === item.id ? "pause-circle" : "play-circle"} 
-                size={40} 
-                color={theme.primary} 
-              />
-              <View style={styles.audioPlayerInfo}>
-                <Text style={[styles.audioPlayerLabel, { color: theme.text }]}>
-                  {playingAudioId === item.id ? 'Playing...' : 'Audio Recording'}
-                </Text>
-                <Text style={[styles.audioPlayerSubtext, { color: theme.textSecondary }]}>Tap to {playingAudioId === item.id ? 'pause' : 'play'}</Text>
+              <View style={{
+                 width: 50, height: 50, borderRadius: 25, 
+                 backgroundColor: theme.primary, 
+                 justifyContent: 'center', alignItems: 'center',
+                 shadowColor: theme.primary, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3
+              }}>
+                <Ionicons 
+                  name={playingAudioId === item.id ? "pause" : "play"} 
+                  size={24} 
+                  color={theme.onPrimary || '#FFFFFF'} 
+                  style={{ marginLeft: playingAudioId === item.id ? 0 : 2 }}
+                />
               </View>
-              <Ionicons name="musical-notes" size={24} color={theme.primary} />
+              <View style={styles.audioPlayerInfo}>
+                <Text style={[styles.audioPlayerLabel, { color: theme.primary }]}>
+                  {playingAudioId === item.id ? 'Now Playing...' : 'Play Audio Recording'}
+                </Text>
+                <Text style={[styles.audioPlayerSubtext, { color: theme.textSecondary }]}>
+                  {item.duration ? formatTime(item.duration) : 'Listen to story'}
+                </Text>
+              </View>
+              <Ionicons name="musical-notes" size={24} color={theme.primary} style={{ opacity: 0.5 }} />
             </TouchableOpacity>
           )}
           
@@ -522,7 +607,6 @@ export default function CommunityStoryScreen({ navigation }) {
               <Text style={[styles.fileAttachmentText, { color: theme.textSecondary }]}>{item.fileName}</Text>
             </View>
           )}
-        </View>
 
         {/* Action Buttons */}
         <View style={[styles.actionBar, { borderTopColor: theme.border }]}>
@@ -933,26 +1017,33 @@ const styles = StyleSheet.create({
   audioPlayer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    borderRadius: 12,
+    backgroundColor: '#4ECDC415', // Subtle primary color background
+    borderRadius: 16,
     padding: SPACING.m,
     marginTop: SPACING.m,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#4ECDC440',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   audioPlayerInfo: {
     flex: 1,
     marginLeft: SPACING.m,
+    justifyContent: 'center',
   },
   audioPlayerLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4ECDC4',
+    marginBottom: 4,
   },
   audioPlayerSubtext: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.textSecondary,
+    fontWeight: '500',
   },
   fileAttachment: {
     flexDirection: 'row',

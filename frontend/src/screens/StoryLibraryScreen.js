@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { stories } from '../data/mockData';
+import { WORLD_LANGUAGES } from '../constants/languages';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -11,60 +12,52 @@ import { useTheme } from '../context/ThemeContext';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
 const USER_STORAGE_KEY = '@echolingua_current_user';
 
+
 export default function StoryLibraryScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
-  const [communityStories, setCommunityStories] = useState([]);
+  const [createdStories, setCreatedStories] = useState([]);
+  const [activeTab, setActiveTab] = useState('library'); // 'library' | 'creations'
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load community stories from AsyncStorage
-  const loadCommunityStories = async () => {
+  // Load created/generated stories from AsyncStorage
+  const loadCreatedStories = async () => {
     try {
       const storiesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
       const loadedStories = storiesJson ? JSON.parse(storiesJson) : [];
-
-      const currentUserRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
-      let receivedStories = [];
-      if (currentUserRaw) {
-        const currentUser = JSON.parse(currentUserRaw);
-        if (currentUser?.id) {
-          const receivedKey = `@echolingua_received_stories_${currentUser.id}`;
-          const receivedRaw = await AsyncStorage.getItem(receivedKey);
-          receivedStories = receivedRaw ? JSON.parse(receivedRaw) : [];
-        }
-      }
-
-      const allLoaded = [...receivedStories, ...loadedStories];
-      const deduped = allLoaded.filter((item, index, arr) => {
-        return index === arr.findIndex((candidate) => candidate.id === item.id);
-      });
-
-      console.log(`📚 Loaded ${deduped.length} stories (${receivedStories.length} received)`);
-      setCommunityStories(deduped);
+      setCreatedStories(loadedStories);
     } catch (error) {
-      console.error('Failed to load community stories:', error);
+      console.error('Failed to load created stories:', error);
     }
   };
 
   // Load stories when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      loadCommunityStories();
+      loadCreatedStories();
     }, [])
   );
 
   // Refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadCommunityStories();
+    await loadCreatedStories();
     setRefreshing(false);
   };
 
-  // Combine default stories with community stories
-  const allStories = [...communityStories, ...stories];
+  // Determine which list to show
+  const displayStories = activeTab === 'library' ? stories : createdStories;
+
+  const getLanguageFlag = (langName) => {
+    if (!langName) return '🌏';
+    const lang = WORLD_LANGUAGES.find(l => l.label === langName || l.id === langName.toLowerCase());
+    return lang ? lang.flag : '🇲🇾'; // Default to MY flag for local context
+  };
 
   const renderStoryItem = ({ item }) => {
-    const isCommunityStory = !!item.audioUri; // Community stories have audioUri
+    const isAiStory = !!item.isAiGenerated;
+    const isCommunityRecording = !!item.audioUri && !item.isAiGenerated;
+    const itemFlag = getLanguageFlag(item.language);
     
     return (
       <TouchableOpacity 
@@ -87,45 +80,58 @@ export default function StoryLibraryScreen() {
             <View style={[
               styles.placeholderImage, 
               { 
-                backgroundColor: isCommunityStory ? theme.accent + '15' : theme.secondary + '15' // Light background
+                backgroundColor: isAiStory ? theme.primary + '15' : (isCommunityRecording ? theme.accent + '15' : theme.secondary + '15')
               }
             ]}>
-               <Ionicons 
-                 name={isCommunityStory ? "mic" : "book"} 
-                 size={28} 
-                 color={isCommunityStory ? theme.accent : theme.secondary} // Colored icon
-               />
+               <Text style={{ fontSize: 24 }}>{itemFlag}</Text>
             </View>
         </View>
         <View style={styles.contentContainer}>
-            <Text style={[styles.category, { color: theme.textSecondary }]}>{isCommunityStory ? 'COMMUNITY' : 'FOLKLORE'}</Text>
-            <Text style={[styles.title, { color: theme.text }]}>{item.title}</Text>
+          <View style={styles.headerRow}>
+             <Text style={[styles.category, { color: theme.textSecondary, marginBottom: 0, marginRight: 8, fontSize: 11, fontWeight: '700' }]}>
+                {isCommunityRecording ? 'COMMUNITY' : (isAiStory ? 'AI TALE' : 'FOLKLORE')}
+             </Text>
+             <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: theme.textSecondary, marginRight: 8 }} />
+             <Text style={{ fontSize: 12, fontWeight: '600', color: theme.primary }}>
+               {item.language || 'English'}
+             </Text>
+             <View style={{ flex: 1 }} />
+             {isAiStory && (
+               <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.primary + '20', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
+                 <MaterialCommunityIcons name="robot" size={10} color={theme.primary} />
+                 <Text style={{ fontSize: 10, color: theme.primary, marginLeft: 2, fontWeight: 'bold'}}>AI</Text>
+               </View>
+             )}
+          </View>
+            <Text style={[styles.title, { color: theme.text, marginTop: 4, marginBottom: 4 }]} numberOfLines={1}>{item.title}</Text>
+            <Text style={[styles.storyDesc, { color: theme.textSecondary }]} numberOfLines={2}>
+              {item.summary || item.description || "No description available."}
+            </Text>
+
             <View style={styles.metaRow}>
-                {isCommunityStory ? (
+                {isCommunityRecording ? (
                   <>
-                    <View style={[styles.aiBadge, { backgroundColor: theme.accent + '15' }]}>
-                        <Ionicons name="people" size={12} color={theme.accent} />
-                        <Text style={[styles.aiBadgeText, { color: theme.accent }]}>
-                          {item.language || 'Community'}
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="mic" size={12} color={theme.accent} />
+                        <Text style={{ color: theme.accent, marginLeft: 4, fontSize: 12, fontWeight: '500' }}>
+                          Recording
                         </Text>
                     </View>
-                    {item.sentByLabel && (
-                      <Text style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}> • {item.sentByLabel}</Text>
-                    )}
                   </>
                 ) : (
                   <>
-                    <View style={[styles.aiBadge, { backgroundColor: theme.primary + '15' }]}>
-                        <MaterialCommunityIcons name="robot" size={12} color={theme.primary} />
-                        <Text style={[styles.aiBadgeText, { color: theme.primary }]}>AI Illustrated</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="time-outline" size={12} color={theme.textSecondary} />
+                        <Text style={{ color: theme.textSecondary, marginLeft: 4, fontSize: 12 }}>
+                           5 min read
+                        </Text>
                     </View>
-                    <Text style={[styles.metaText, { color: theme.textSecondary }]}> • 5 min</Text>
                   </>
                 )}
             </View>
         </View>
         <View style={styles.arrowContainer}>
-            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
         </View>
       </TouchableOpacity>
     );
@@ -140,40 +146,53 @@ export default function StoryLibraryScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={theme.primary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Story Library</Text>
-        <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Discover ancient wisdom & tales</Text>
+        <View style={styles.headerTextContainer}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Story Library</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Discover ancient wisdom & tales</Text>
+        </View>
       </View>
 
 
-      {/* NEW: AI Story Generator Call-to-Action */}
-      <View style={styles.createSection}>
-          <TouchableOpacity 
-            style={[styles.createCard, { backgroundColor: theme.primary, shadowColor: theme.shadow }]} 
-            activeOpacity={0.9} 
-            onPress={() => navigation.navigate('RecordTab', { createStory: true })}
-          >
-              <View style={[styles.createIconBg, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                  <MaterialCommunityIcons name="magic-staff" size={24} color={theme.onPrimary || '#FFFFFF'} />
-              </View>
-              <View style={styles.createTexts}>
-                  <Text style={[styles.createTitle, { color: theme.onPrimary || '#FFFFFF' }]}>Create AI Folktale</Text>
-                  <Text style={[styles.createSubtitle, { color: 'rgba(255,255,255,0.8)' }]}>Turn elder recordings into illustrated e-books instantly.</Text>
-              </View>
-              <Ionicons name="arrow-forward-circle" size={32} color={theme.onPrimary || '#FFFFFF'} />
-          </TouchableOpacity>
-      </View>
       
-      <Text style={[styles.sectionHeader, { color: theme.text }]}>Community Archive</Text>
+      {/* TABS */}
+      <View style={{ flexDirection: 'row',     paddingHorizontal: SPACING.l, marginBottom: SPACING.m }}>
+         <TouchableOpacity 
+           style={{ paddingVertical: 12, marginRight: 24, borderBottomWidth: activeTab === 'library' ? 3 : 0, borderBottomColor: theme.primary }}
+           onPress={() => setActiveTab('library')}
+         >
+            <Text style={{ fontWeight: 'bold', fontSize: 16, color: activeTab === 'library' ? theme.primary : theme.textSecondary }}>
+               Explore Library
+            </Text>
+         </TouchableOpacity>
+         <TouchableOpacity 
+           style={{  paddingVertical: 12, borderBottomWidth: activeTab === 'creations' ? 3 : 0, borderBottomColor: theme.primary }}
+           onPress={() => setActiveTab('creations')}
+         >
+            <Text style={{ fontWeight: 'bold', fontSize: 16, color: activeTab === 'creations' ? theme.primary : theme.textSecondary }}>
+               My Creations
+            </Text>
+         </TouchableOpacity>
+      </View>
       
       <FlatList
-        data={allStories}
+        data={displayStories}
         keyExtractor={(item, index) => {
-          const sourcePrefix = item.audioUri ? 'community' : 'default';
+          const sourcePrefix = item.isAiGenerated ? 'ai' : (item.audioUri ? 'community' : 'default');
           return `${sourcePrefix}-${String(item.id)}-${index}`;
         }}
         renderItem={renderStoryItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          activeTab === 'creations' ? (
+             <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                <MaterialCommunityIcons name="magic-staff" size={64} color={theme.textSecondary + '40'} />
+                <Text style={{ textAlign: 'center', marginTop: 16, color: theme.textSecondary }}>
+                   You haven't created any stories yet. Start preserving your heritage today!
+                </Text>
+             </View>
+          ) : null
+        }
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
         }
@@ -188,16 +207,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    padding: SPACING.l,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
     backgroundColor: COLORS.glassLight,
-    paddingBottom: SPACING.m,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
   backButton: {
-    alignSelf: 'flex-start',
     padding: SPACING.xs,
-    marginBottom: SPACING.xs,
+    marginRight: SPACING.m,
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: 24,
@@ -207,7 +230,7 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    marginTop: 4,
+    marginTop: 2,
   },
   createSection: {
     paddingHorizontal: SPACING.l,
@@ -278,6 +301,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  aiGeneratorCard: {
+    margin: SPACING.m,
+    padding: SPACING.m,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    ...SHADOWS.small,
+  },
+  aiIconContainer: {
+    width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginRight: SPACING.m
+  },
+  aiTextContainer: { flex: 1 },
+  aiTitle: { fontWeight: 'bold', fontSize: 16 },
+  aiSubtitle: { fontSize: 12, marginTop: 4 },
+  
   contentContainer: {
     flex: 1,
   },

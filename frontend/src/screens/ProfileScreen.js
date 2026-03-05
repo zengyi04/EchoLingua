@@ -516,10 +516,11 @@ export default function ProfileScreen() {
 
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>General Settings</Text>
+          <View style={[styles.modalContainer, { backgroundColor: theme.surface }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
               <TouchableOpacity onPress={() => setShowSettings(false)}><Ionicons name="close" size={28} color={theme.text} /></TouchableOpacity>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>General Settings</Text>
+              <View style={{ width: 28 }} />
             </View>
             <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
               <View style={[styles.toggleRow, { backgroundColor: theme.glassMedium, borderColor: theme.border }]}>
@@ -535,35 +536,14 @@ export default function ProfileScreen() {
                 <Switch value={settings.autoplayAudio} onValueChange={() => toggle('autoplayAudio')} trackColor={{ false: '#767577', true: theme.primary }} thumbColor={settings.autoplayAudio ? '#fff' : '#f4f3f4'} />
               </View>
 
-              <View style={{ marginTop: SPACING.m, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: SPACING.m }}>
-                <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: SPACING.s, color: theme.text }]}>Appearance</Text>
-                <View style={{ flexDirection: 'row', gap: SPACING.s }}>
-                  {['light', 'dark', 'system'].map((mode) => (
-                    <TouchableOpacity
-                      key={mode}
-                      onPress={() => updateTheme(mode)}
-                      style={{
-                        flex: 1,
-                        padding: SPACING.s,
-                        borderRadius: SPACING.s,
-                        backgroundColor: themeMode === mode ? theme.primary : theme.glassMedium,
-                        alignItems: 'center',
-                        borderColor: theme.border,
-                        borderWidth: 1,
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <Ionicons 
-                        name={mode === 'light' ? 'sunny' : mode === 'dark' ? 'moon' : 'settings-outline'} 
-                        size={20} 
-                        color={themeMode === mode ? '#FFF' : theme.text} 
-                      />
-                      <Text style={{ marginTop: 4, color: themeMode === mode ? '#FFF' : theme.text, fontSize: 12, textTransform: 'capitalize', fontWeight: '600' }}>
-                        {mode}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+              <View style={[styles.toggleRow, { backgroundColor: theme.glassMedium, borderColor: theme.border }]}>
+                <View style={styles.toggleLeft}><Ionicons name="moon" size={20} color={theme.primary} /><Text style={[styles.toggleText, { color: theme.text }]}>Dark Mode</Text></View>
+                <Switch 
+                  value={themeMode === 'dark'} 
+                  onValueChange={(val) => updateTheme(val ? 'dark' : 'light')} 
+                  trackColor={{ false: '#767577', true: theme.primary }} 
+                  thumbColor={themeMode === 'dark' ? '#fff' : '#f4f3f4'} 
+                />
               </View>
             </View>
           </View>
@@ -572,10 +552,11 @@ export default function ProfileScreen() {
 
       <Modal visible={showHelp} animationType="slide" transparent onRequestClose={() => setShowHelp(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.modalContainer, { backgroundColor: theme.surface, borderColor: theme.border, paddingBottom: SPACING.xl, borderRadius: SPACING.l }]}>
             <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Help & Support</Text>
               <TouchableOpacity onPress={() => setShowHelp(false)}><Ionicons name="close" size={28} color={theme.text} /></TouchableOpacity>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Help & Support</Text>
+              <View style={{ width: 28 }} />
             </View>
             <ScrollView style={styles.modalContent}>
               <TouchableOpacity style={[styles.contactItem, { backgroundColor: theme.surfaceVariant, borderColor: theme.border }]} onPress={() => Linking.openURL('tel:0169515429')}>
@@ -689,9 +670,9 @@ const styles = StyleSheet.create({
   langFlag: { fontSize: 20 },
   langOptionText: { fontSize: 14, color: COLORS.text, flex: 1 },
   indigenousBadge: { fontSize: 10, color: COLORS.accent, backgroundColor: COLORS.glassLight, paddingHorizontal: SPACING.xs, paddingVertical: 2, borderRadius: 4, fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
-  modalContainer: { backgroundColor: COLORS.surface, borderTopLeftRadius: SPACING.l, borderTopRightRadius: SPACING.l, maxHeight: '85%', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 2 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.l, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.surface },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContainer: { backgroundColor: COLORS.surface, borderRadius: SPACING.l, maxHeight: '85%', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 2, paddingBottom: SPACING.xl, marginBottom: SPACING.l, marginHorizontal: SPACING.m },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.l, borderBottomWidth: 1, borderBottomColor: COLORS.border, borderTopLeftRadius: SPACING.l, borderTopRightRadius: SPACING.l, backgroundColor: 'transparent' },
   modalTitle: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   modalContent: { padding: SPACING.l },
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.glassMedium, borderColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderRadius: SPACING.s, padding: SPACING.m, marginBottom: SPACING.s },
