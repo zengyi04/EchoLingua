@@ -18,7 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyD04MCoHQ_n0U7ODku5-bY5uKeU237_o0k';
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 const WORLD_SEARCH_API = 'https://nominatim.openstreetmap.org/search';
 
