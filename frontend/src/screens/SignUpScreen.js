@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { WORLD_LANGUAGES } from '../constants/languages';
 
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const USERS_DATABASE_KEY = '@echolingua_users_database';
@@ -35,10 +37,35 @@ export default function SignUpScreen({ navigation }) {
   const [selectedRole, setSelectedRole] = useState('learner');
   const [age, setAge] = useState('');
   const [community, setCommunity] = useState('');
-  const [languages, setLanguages] = useState('');
+  const [selectedLanguages, setSelectedLanguages] = useState([]);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [languageSearch, setLanguageSearch] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const filteredLanguages = useMemo(() => {
+    const query = languageSearch.trim().toLowerCase();
+    if (!query) {
+      return WORLD_LANGUAGES;
+    }
+
+    return WORLD_LANGUAGES.filter((language) => {
+      return (
+        language.label.toLowerCase().includes(query) ||
+        language.region.toLowerCase().includes(query)
+      );
+    });
+  }, [languageSearch]);
+
+  const toggleLanguageSelection = (languageLabel) => {
+    setSelectedLanguages((current) => {
+      if (current.includes(languageLabel)) {
+        return current.filter((item) => item !== languageLabel);
+      }
+      return [...current, languageLabel];
+    });
+  };
 
   const handleSignUp = async () => {
     // Validation
@@ -99,7 +126,7 @@ export default function SignUpScreen({ navigation }) {
         role: selectedRole,
         age: age.trim() || null,
         community: community.trim() || null,
-        languages: languages.trim() || null,
+        languages: selectedLanguages,
         avatar: '👤',
         joinedAt: new Date().toISOString(),
         lastActive: new Date().toISOString(),
@@ -284,16 +311,38 @@ export default function SignUpScreen({ navigation }) {
             {/* Languages */}
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: theme.text }]}>Languages You Know</Text>
-              <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
+              <TouchableOpacity
+                style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}
+                onPress={() => setShowLanguageModal(true)}
+                activeOpacity={0.8}
+              >
                 <Ionicons name="language-outline" size={20} color={theme.textSecondary} />
-                <TextInput
-                  style={[styles.input, { color: theme.text }]}
-                  placeholder="e.g., Kadazandusun, English, Malay"
-                  placeholderTextColor={theme.textSecondary}
-                  value={languages}
-                  onChangeText={setLanguages}
-                />
-              </View>
+                <Text
+                  style={[
+                    styles.input,
+                    { color: selectedLanguages.length ? theme.text : theme.textSecondary },
+                    styles.languageSelectorText,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {selectedLanguages.length
+                    ? `${selectedLanguages.length} selected`
+                    : 'Select from world language list'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
+              </TouchableOpacity>
+              {selectedLanguages.length > 0 && (
+                <View style={styles.selectedLanguagesWrap}>
+                  {selectedLanguages.map((language) => (
+                    <View
+                      key={language}
+                      style={[styles.selectedLanguageChip, { backgroundColor: theme.surfaceVariant, borderColor: theme.border }]}
+                    >
+                      <Text style={[styles.selectedLanguageText, { color: theme.text }]}>{language}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
 
             {/* Sign Up Button */}
@@ -318,6 +367,61 @@ export default function SignUpScreen({ navigation }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={showLanguageModal} transparent animationType="slide" onRequestClose={() => setShowLanguageModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.languageModalContent, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+            <View style={[styles.languageModalHeader, { borderBottomColor: theme.border }]}> 
+              <Text style={[styles.languageModalTitle, { color: theme.text }]}>Select Languages</Text>
+              <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.inputContainer, styles.languageSearchInput, { backgroundColor: theme.background, borderColor: theme.border }]}> 
+              <Ionicons name="search" size={18} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Search languages or region"
+                placeholderTextColor={theme.textSecondary}
+                value={languageSearch}
+                onChangeText={setLanguageSearch}
+              />
+            </View>
+
+            <ScrollView style={styles.languageList} showsVerticalScrollIndicator={false}>
+              {filteredLanguages.map((language) => {
+                const isSelected = selectedLanguages.includes(language.label);
+                return (
+                  <TouchableOpacity
+                    key={language.id}
+                    style={[styles.languageOption, { borderBottomColor: theme.border }]}
+                    onPress={() => toggleLanguageSelection(language.label)}
+                  >
+                    <Text style={styles.languageFlag}>{language.flag}</Text>
+                    <View style={styles.languageOptionTextWrap}>
+                      <Text style={[styles.languageOptionTitle, { color: theme.text }]}>{language.label}</Text>
+                      <Text style={[styles.languageOptionRegion, { color: theme.textSecondary }]}>{language.region}</Text>
+                    </View>
+                    <Ionicons
+                      name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={20}
+                      color={isSelected ? theme.primary : theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.doneButton, { backgroundColor: theme.primary }]}
+              onPress={() => setShowLanguageModal(false)}
+            >
+              <Text style={[styles.doneButtonText, { color: theme.background }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -355,20 +459,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99, 102, 241, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     marginBottom: SPACING.m,
     borderWidth: 2,
     borderColor: COLORS.primary,
     alignSelf: 'center',
   },
   appLogo: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 44,
+    width: '78%',
+    height: '78%',
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#C7D2FE',
     marginBottom: SPACING.xs,
   },
   subtitle: {
@@ -447,6 +551,86 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.s,
     fontSize: 15,
     color: COLORS.text,
+  },
+  languageSelectorText: {
+    marginRight: SPACING.xs,
+  },
+  selectedLanguagesWrap: {
+    marginTop: SPACING.s,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+  },
+  selectedLanguageChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 4,
+  },
+  selectedLanguageText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  languageModalContent: {
+    maxHeight: '80%',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    padding: SPACING.m,
+  },
+  languageModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    paddingBottom: SPACING.s,
+    marginBottom: SPACING.s,
+  },
+  languageModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  languageSearchInput: {
+    marginBottom: SPACING.s,
+  },
+  languageList: {
+    maxHeight: 360,
+  },
+  languageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    paddingVertical: SPACING.s,
+    borderBottomWidth: 1,
+  },
+  languageFlag: {
+    fontSize: 20,
+  },
+  languageOptionTextWrap: {
+    flex: 1,
+  },
+  languageOptionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  languageOptionRegion: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  doneButton: {
+    marginTop: SPACING.m,
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: SPACING.m,
+  },
+  doneButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
   signUpButton: {
     flexDirection: 'row',

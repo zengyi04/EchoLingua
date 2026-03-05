@@ -12,7 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLORS, SPACING, SHADOWS, useTheme } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const USERS_DATABASE_KEY = '@echolingua_users_database';
@@ -21,15 +22,26 @@ export default function EmergencyContactsScreen({ navigation }) {
   const [emergencyContacts, setEmergencyContacts] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [contactName, setContactName] = useState('');
+  const [contactUsername, setContactUsername] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactRelation, setContactRelation] = useState('');
+  const [editingContactId, setEditingContactId] = useState(null);
 
   const { theme } = useTheme();
 
   useEffect(() => {
     loadEmergencyContacts();
   }, []);
+
+  const resetContactForm = () => {
+    setEditingContactId(null);
+    setContactName('');
+    setContactUsername('');
+    setContactEmail('');
+    setContactPhone('');
+    setContactRelation('');
+  };
 
   const loadEmergencyContacts = async () => {
     try {
@@ -49,22 +61,54 @@ export default function EmergencyContactsScreen({ navigation }) {
       return;
     }
 
-    if (!contactEmail.trim() && !contactPhone.trim()) {
-      Alert.alert('Error', 'Please enter either email or phone number');
+    if (!contactUsername.trim() && !contactEmail.trim() && !contactPhone.trim()) {
+      Alert.alert('Error', 'Please enter username, email, or phone number');
       return;
     }
 
     try {
+      const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
+      const users = usersData ? JSON.parse(usersData) : [];
+
+      const normalizedUsername = contactUsername.trim().toLowerCase();
+      const normalizedEmail = contactEmail.trim().toLowerCase();
+      const normalizedPhone = contactPhone.trim();
+
+      const linkedUser = users.find((appUser) => {
+        return (
+          (normalizedEmail && appUser.email?.toLowerCase() === normalizedEmail) ||
+          (normalizedPhone && appUser.phone === normalizedPhone) ||
+          (normalizedUsername && (
+            appUser.username?.toLowerCase() === normalizedUsername ||
+            appUser.fullName?.toLowerCase() === normalizedUsername
+          ))
+        );
+      });
+
+      if (!linkedUser) {
+        Alert.alert(
+          'App Account Required',
+          'Contact must have an existing app account. Please enter matching username, email, or phone.'
+        );
+        return;
+      }
+
       const newContact = {
-        id: Date.now().toString(),
+        id: editingContactId || Date.now().toString(),
         name: contactName.trim(),
-        email: contactEmail.trim() || null,
-        phone: contactPhone.trim() || null,
+        username: contactUsername.trim() || linkedUser.username || null,
+        email: contactEmail.trim() || linkedUser.email || null,
+        phone: contactPhone.trim() || linkedUser.phone || null,
         relation: contactRelation.trim() || 'Other',
+        linkedUserId: linkedUser.id,
+        linkedUserName: linkedUser.fullName,
+        hasAppAccount: true,
         addedAt: new Date().toISOString(),
       };
 
-      const updatedContacts = [...emergencyContacts, newContact];
+      const updatedContacts = editingContactId
+        ? emergencyContacts.map((contact) => (contact.id === editingContactId ? newContact : contact))
+        : [...emergencyContacts, newContact];
 
       // Update current user
       const currentUserData = await AsyncStorage.getItem(USER_STORAGE_KEY);
@@ -74,9 +118,7 @@ export default function EmergencyContactsScreen({ navigation }) {
         await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
 
         // Update users database
-        const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
         if (usersData) {
-          const users = JSON.parse(usersData);
           const userIndex = users.findIndex(u => u.id === user.id);
           if (userIndex !== -1) {
             users[userIndex].emergencyContacts = updatedContacts;
@@ -87,11 +129,13 @@ export default function EmergencyContactsScreen({ navigation }) {
 
       setEmergencyContacts(updatedContacts);
       setShowAddModal(false);
-      setContactName('');
-      setContactEmail('');
-      setContactPhone('');
-      setContactRelation('');
-      Alert.alert('Success', 'Emergency contact added successfully!');
+      resetContactForm();
+      Alert.alert(
+        'Success',
+        editingContactId
+          ? 'Emergency contact updated successfully!'
+          : 'Emergency contact linked to an app account successfully!'
+      );
     } catch (error) {
       console.error('Error adding contact:', error);
       Alert.alert('Error', 'Failed to add contact');
@@ -142,6 +186,16 @@ export default function EmergencyContactsScreen({ navigation }) {
     );
   };
 
+  const handleEditContact = (contact) => {
+    setEditingContactId(contact.id);
+    setContactName(contact.name || '');
+    setContactUsername(contact.username || '');
+    setContactEmail(contact.email || '');
+    setContactPhone(contact.phone || '');
+    setContactRelation(contact.relation || '');
+    setShowAddModal(true);
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
@@ -150,7 +204,10 @@ export default function EmergencyContactsScreen({ navigation }) {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Emergency Contacts</Text>
-        <TouchableOpacity onPress={() => setShowAddModal(true)}>
+        <TouchableOpacity onPress={() => {
+          resetContactForm();
+          setShowAddModal(true);
+        }}>
           <Ionicons name="add-circle" size={28} color={theme.primary} />
         </TouchableOpacity>
       </View>
@@ -175,6 +232,12 @@ export default function EmergencyContactsScreen({ navigation }) {
               <View style={styles.contactInfo}>
                 <Text style={[styles.contactName, { color: theme.text }]}>{contact.name}</Text>
                 <Text style={[styles.contactRelation, { color: theme.primary }]}>{contact.relation}</Text>
+                {contact.username && (
+                  <View style={styles.contactDetailRow}>
+                    <Ionicons name="at" size={14} color={theme.textSecondary} />
+                    <Text style={[styles.contactDetail, { color: theme.textSecondary }]}>{contact.username}</Text>
+                  </View>
+                )}
                 {contact.email && (
                   <View style={styles.contactDetailRow}>
                     <Ionicons name="mail" size={14} color={theme.textSecondary} />
@@ -187,7 +250,19 @@ export default function EmergencyContactsScreen({ navigation }) {
                     <Text style={[styles.contactDetail, { color: theme.textSecondary }]}>{contact.phone}</Text>
                   </View>
                 )}
+                {contact.hasAppAccount && (
+                  <View style={[styles.linkedBadge, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '55' }]}>
+                    <Ionicons name="checkmark-circle" size={12} color={theme.primary} />
+                    <Text style={[styles.linkedBadgeText, { color: theme.primary }]}>Linked App User</Text>
+                  </View>
+                )}
               </View>
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => handleEditContact(contact)}
+              >
+                <Ionicons name="create-outline" size={22} color={theme.primary} />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.deleteButton}
                 onPress={() => handleDeleteContact(contact.id)}
@@ -205,7 +280,10 @@ export default function EmergencyContactsScreen({ navigation }) {
             </Text>
             <TouchableOpacity
               style={[styles.addFirstButton, { backgroundColor: theme.primary }]}
-              onPress={() => setShowAddModal(true)}
+              onPress={() => {
+                resetContactForm();
+                setShowAddModal(true);
+              }}
             >
               <Ionicons name="add" size={20} color={theme.background} />
               <Text style={[styles.addFirstButtonText, { color: theme.background }]}>Add First Contact</Text>
@@ -219,8 +297,13 @@ export default function EmergencyContactsScreen({ navigation }) {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Add Emergency Contact</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                {editingContactId ? 'Update Emergency Contact' : 'Add Emergency Contact'}
+              </Text>
+              <TouchableOpacity onPress={() => {
+                setShowAddModal(false);
+                resetContactForm();
+              }}>
                 <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
@@ -252,6 +335,22 @@ export default function EmergencyContactsScreen({ navigation }) {
                     placeholderTextColor={theme.textSecondary}
                     value={contactRelation}
                     onChangeText={setContactRelation}
+                  />
+                </View>
+              </View>
+
+              {/* Email */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.text }]}>Username</Text>
+                <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                  <Ionicons name="at-outline" size={20} color={theme.textSecondary} />
+                  <TextInput
+                    style={[styles.input, { color: theme.text }]}
+                    placeholder="Enter username/full name in app"
+                    placeholderTextColor={theme.textSecondary}
+                    value={contactUsername}
+                    onChangeText={setContactUsername}
+                    autoCapitalize="none"
                   />
                 </View>
               </View>
@@ -290,7 +389,9 @@ export default function EmergencyContactsScreen({ navigation }) {
               </View>
 
               <TouchableOpacity style={[styles.addButton, { backgroundColor: theme.primary }]} onPress={handleAddContact}>
-                <Text style={[styles.addButtonText, { color: theme.background }]}>Add Contact</Text>
+                <Text style={[styles.addButtonText, { color: theme.background }]}>
+                  {editingContactId ? 'Update Contact' : 'Add Contact'}
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -376,6 +477,21 @@ const styles = StyleSheet.create({
   contactDetail: {
     fontSize: 13,
     color: COLORS.textSecondary,
+  },
+  linkedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 3,
+    marginTop: SPACING.s,
+  },
+  linkedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   deleteButton: {
     padding: SPACING.s,

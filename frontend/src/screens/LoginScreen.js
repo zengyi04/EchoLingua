@@ -10,6 +10,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +27,11 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim()) {
@@ -88,6 +94,66 @@ export default function LoginScreen({ navigation }) {
       Alert.alert('Error', 'Failed to login. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const openForgotPasswordModal = () => {
+    setResetEmail(email.trim());
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setShowForgotModal(true);
+  };
+
+  const handleForgotPassword = async () => {
+    const normalizedEmail = resetEmail.toLowerCase().trim();
+    if (!normalizedEmail) {
+      Alert.alert('Error', 'Please enter your account email');
+      return;
+    }
+
+    if (!newPassword) {
+      Alert.alert('Error', 'Please enter a new password');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      Alert.alert('Error', 'Password confirmation does not match');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
+      const users = usersData ? JSON.parse(usersData) : [];
+      const userIndex = users.findIndex(
+        (u) => u.email.toLowerCase() === normalizedEmail
+      );
+
+      if (userIndex === -1) {
+        Alert.alert('Error', 'No account found with this email');
+        return;
+      }
+
+      users[userIndex] = {
+        ...users[userIndex],
+        password: newPassword,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await AsyncStorage.setItem(USERS_DATABASE_KEY, JSON.stringify(users));
+      setShowForgotModal(false);
+      setPassword('');
+      Alert.alert('Password Updated', 'Your password has been reset. Please log in.');
+    } catch (error) {
+      console.error('Password reset error:', error);
+      Alert.alert('Error', 'Failed to reset password. Please try again.');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -161,6 +227,10 @@ export default function LoginScreen({ navigation }) {
               </View>
             </View>
 
+            <TouchableOpacity style={styles.forgotPasswordButton} onPress={openForgotPasswordModal}>
+              <Text style={[styles.forgotPasswordText, { color: theme.primary }]}>Forgot Password?</Text>
+            </TouchableOpacity>
+
             {/* Login Button */}
             <TouchableOpacity
               style={[styles.loginButton, { backgroundColor: theme.primary }, isLoading && styles.loginButtonDisabled]}
@@ -197,6 +267,87 @@ export default function LoginScreen({ navigation }) {
               Create an account to save your progress, share stories, and connect with the community
             </Text>
           </View>
+
+          <Modal
+            visible={showForgotModal}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setShowForgotModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Reset Password</Text>
+                <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Enter your email and set a new password</Text>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Email</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}> 
+                    <Ionicons name="mail-outline" size={20} color={theme.textSecondary} />
+                    <TextInput
+                      style={[styles.input, { color: theme.text }]}
+                      placeholder="Enter your account email"
+                      placeholderTextColor={theme.textSecondary}
+                      value={resetEmail}
+                      onChangeText={setResetEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>New Password</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}> 
+                    <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
+                    <TextInput
+                      style={[styles.input, { color: theme.text }]}
+                      placeholder="At least 6 characters"
+                      placeholderTextColor={theme.textSecondary}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      secureTextEntry
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Confirm Password</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}> 
+                    <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
+                    <TextInput
+                      style={[styles.input, { color: theme.text }]}
+                      placeholder="Re-enter new password"
+                      placeholderTextColor={theme.textSecondary}
+                      value={confirmNewPassword}
+                      onChangeText={setConfirmNewPassword}
+                      secureTextEntry
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalSecondaryButton, { borderColor: theme.border }]}
+                    onPress={() => setShowForgotModal(false)}
+                    disabled={isResettingPassword}
+                  >
+                    <Text style={[styles.modalSecondaryButtonText, { color: theme.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalPrimaryButton, { backgroundColor: theme.primary }, isResettingPassword && styles.loginButtonDisabled]}
+                    onPress={handleForgotPassword}
+                    disabled={isResettingPassword}
+                  >
+                    <Text style={[styles.modalPrimaryButtonText, { color: theme.background }]}>
+                      {isResettingPassword ? 'Updating...' : 'Update Password'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -228,14 +379,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99, 102, 241, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     marginBottom: SPACING.m,
     borderWidth: 2,
     borderColor: COLORS.primary,
   },
   appLogo: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
+    width: '78%',
+    height: '78%',
   },
   title: {
     fontSize: 32,
@@ -301,6 +452,15 @@ const styles = StyleSheet.create({
   loginButtonDisabled: {
     opacity: 0.6,
   },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    marginTop: SPACING.xs,
+  },
+  forgotPasswordText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
   loginButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -345,5 +505,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.text,
     lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.l,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  modalCard: {
+    borderRadius: 16,
+    padding: SPACING.l,
+    borderWidth: 1,
+    ...SHADOWS.medium,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalSubtitle: {
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.m,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: SPACING.s,
+    marginTop: SPACING.s,
+  },
+  modalSecondaryButton: {
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  modalSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalPrimaryButton: {
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    borderRadius: 10,
+  },
+  modalPrimaryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

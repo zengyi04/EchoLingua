@@ -7,11 +7,14 @@ import * as Speech from 'expo-speech';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { prepareSingleRecording, stopAndReleaseRecording } from '../services/recordingService';
+import { translateTextBetween } from '../services/translationService';
+import { WORLD_LANGUAGES } from '../constants/languages';
 import { useTheme } from '../context/ThemeContext';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL || 'gemini-2.0-flash';
 const CHAT_HISTORY_KEY = '@echolingua_ai_chat_history';
+const USER_STORAGE_KEY = '@echolingua_current_user';
 
 const SYSTEM_CONTEXT = `You are an AI assistant for EchoLingua, a language learning app focused on indigenous languages of Borneo (Kadazandusun, Iban, Bajau, Murut). Help users with:
 - Language learning tips and pronunciation
@@ -45,6 +48,25 @@ function assertGeminiConfig() {
   }
 }
 
+function resolveLanguageId(languageValue) {
+  if (!languageValue || typeof languageValue !== 'string') {
+    return null;
+  }
+
+  const normalized = languageValue.trim().toLowerCase();
+  const byId = WORLD_LANGUAGES.find((lang) => lang.id.toLowerCase() === normalized);
+  if (byId) {
+    return byId.id;
+  }
+
+  const byLabel = WORLD_LANGUAGES.find((lang) => lang.label.toLowerCase() === normalized);
+  if (byLabel) {
+    return byLabel.id;
+  }
+
+  return null;
+}
+
 export default function AIChatScreen({ navigation }) {
   const { theme } = useTheme();
   const [messages, setMessages] = useState([
@@ -55,6 +77,7 @@ export default function AIChatScreen({ navigation }) {
   const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [preferredLanguageId, setPreferredLanguageId] = useState('english');
 
   const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
 
@@ -78,6 +101,33 @@ export default function AIChatScreen({ navigation }) {
     };
 
     loadHistory();
+  }, []);
+
+  useEffect(() => {
+    const loadPreferredLanguage = async () => {
+      try {
+        const rawUser = await AsyncStorage.getItem(USER_STORAGE_KEY);
+        if (!rawUser) {
+          return;
+        }
+
+        const user = JSON.parse(rawUser);
+        const languageCandidates = Array.isArray(user?.languages)
+          ? user.languages
+          : typeof user?.languages === 'string'
+            ? user.languages.split(',').map((item) => item.trim()).filter(Boolean)
+            : [];
+
+        const firstLanguageId = resolveLanguageId(languageCandidates[0]);
+        if (firstLanguageId) {
+          setPreferredLanguageId(firstLanguageId);
+        }
+      } catch (error) {
+        console.error('Failed to load preferred AI chat language:', error);
+      }
+    };
+
+    loadPreferredLanguage();
   }, []);
 
   useEffect(() => {
@@ -258,21 +308,26 @@ export default function AIChatScreen({ navigation }) {
 
       console.log('✅ Transcribed text:', transcribedText);
 
-      // Set the transcribed text in the input field for user review
-      setInput(transcribedText);
-      Alert.alert('Audio Transcribed', `"${transcribedText}" - Edit or click Send to ask`, [
-        {
-          text: 'Send Now',
-          onPress: async () => {
-            // Send the transcribed text directly
-            await handleSendText(transcribedText);
-          },
-        },
-        {
-          text: 'Edit First',
-          style: 'cancel',
-        },
-      ]);
+      let finalInput = transcribedText.trim();
+      if (preferredLanguageId && preferredLanguageId !== 'english') {
+        try {
+          const translated = await translateTextBetween(finalInput, 'english', preferredLanguageId);
+          if (translated && translated.trim()) {
+            finalInput = translated.trim();
+          }
+        } catch (translationError) {
+          console.error('Voice text translation failed:', translationError);
+        }
+      }
+
+      // Fill input bar only; user decides when to send.
+      setInput(finalInput);
+      const selectedLanguageLabel =
+        WORLD_LANGUAGES.find((lang) => lang.id === preferredLanguageId)?.label || 'English';
+      Alert.alert(
+        'Voice Ready',
+        `Text added to input (${selectedLanguageLabel}). You can edit it, then tap Send.`
+      );
     } catch (error) {
       console.error('Voice transcription failed:', error);
       Alert.alert(
@@ -322,7 +377,7 @@ export default function AIChatScreen({ navigation }) {
         </TouchableOpacity>
         <View>
           <Text style={[styles.headerTitle, { color: theme.text }]}>AI Chat</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Ask by typing or speaking</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Speak -> translate -> review -> send</Text>
         </View>
       </View>
 

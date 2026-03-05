@@ -258,6 +258,16 @@ export default function StoryScreen() {
              <Text style={[styles.audioSubtitle, isCommunityStory && [styles.audioSubtitleDark, { color: theme.textSecondary }], !isCommunityStory && { color: 'rgba(255,255,255,0.8)' }]}>
                {isCommunityStory ? `Community Story • ${story.language}` : 'Narrated by Elder Kambera'}
              </Text>
+             {isCommunityStory && story.sentByLabel && (
+               <Text style={[styles.audioSubtitle, isCommunityStory && [styles.audioSubtitleDark, { color: theme.textSecondary }]]}>
+                 {story.sentByLabel}
+               </Text>
+             )}
+             {isCommunityStory && !!story.description && (
+               <Text style={[styles.audioDescription, { color: theme.textSecondary }]}>
+                 {story.description}
+               </Text>
+             )}
              {audioSource && isPlaying && (
                <Text style={[styles.audioSourceLabel, { color: isCommunityStory ? theme.text : (theme.onPrimary || '#FFFFFF') }]}>
                  🔊 {audioSource === 'recorded' ? '🎙️ Recorded Audio' : '🗣️ Voice Reading (TTS)'}
@@ -461,6 +471,12 @@ const styles = StyleSheet.create({
   audioSubtitleDark: {
     color: COLORS.textSecondary,
   },
+  audioDescription: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 17,
+  },
   audioSourceLabel: {
     color: COLORS.primary,
     fontSize: 11,
@@ -492,7 +508,6 @@ const styles = StyleSheet.create({
     fontSize: 26,
     lineHeight: 38,
     fontWeight: '600',
-    color: '#2C3E50',
   },
   translationBox: {
     marginTop: SPACING.m,

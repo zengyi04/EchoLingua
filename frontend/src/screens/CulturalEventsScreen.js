@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -110,6 +110,132 @@ const FESTIVALS = [
     ],
     activities: ['Join bamboo dance', 'Participate in gong performance', 'Visit Bidayuh village'],
   },
+  {
+    id: '6',
+    name: 'Pesta Irau Aco Lun Bawang',
+    language: 'Lun Bawang',
+    date: 'June (varies)',
+    description: 'Annual cultural gathering celebrating Lun Bawang identity, music, and food traditions.',
+    icon: '🥁',
+    traditions: ['Traditional bamboo music', 'Community thanksgiving prayers', 'Heritage costume showcases'],
+    vocabulary: [
+      { word: 'Irau', meaning: 'Festival celebration', pronunciation: 'ee-rau' },
+      { word: 'Aco', meaning: 'People/community', pronunciation: 'ah-cho' },
+      { word: 'Lun Bawang', meaning: 'Ethnic community name', pronunciation: 'loon bah-wang' },
+    ],
+    greetings: [
+      { phrase: 'Selamat Datai Irau', meaning: 'Welcome to the festival', pronunciation: 'seh-lah-maht dah-tie ee-rau' },
+    ],
+    activities: ['Watch traditional bands', 'Visit craft stalls', 'Try heritage dishes'],
+  },
+  {
+    id: '7',
+    name: 'Tadau Kaul',
+    language: 'Melanau',
+    date: 'April',
+    description: 'Melanau sea thanksgiving festival honoring blessings, safety, and prosperity.',
+    icon: '🌊',
+    traditions: ['Offerings to the sea', 'Spinning top games', 'Traditional costumes and songs'],
+    vocabulary: [
+      { word: 'Kaul', meaning: 'Ritual vow/offering', pronunciation: 'kah-ool' },
+      { word: 'Serahang', meaning: 'Decorated offering basket', pronunciation: 'seh-rah-hang' },
+      { word: 'Tibow', meaning: 'Traditional giant swing', pronunciation: 'tee-bow' },
+    ],
+    greetings: [
+      { phrase: 'Selamat Tadau Kaul', meaning: 'Happy Kaul festival day', pronunciation: 'seh-lah-maht tah-dow kah-ool' },
+    ],
+    activities: ['Watch sea-offering ritual', 'Play traditional games', 'Enjoy Melanau food fair'],
+  },
+  {
+    id: '8',
+    name: 'Hari Raya Aidilfitri',
+    language: 'Malay',
+    date: 'Shawwal (varies)',
+    description: 'Major Muslim celebration marked by prayer, family gatherings, and forgiveness.',
+    icon: '🌙',
+    traditions: ['Morning Eid prayers', 'Open houses', 'Giving duit raya to children'],
+    vocabulary: [
+      { word: 'Aidilfitri', meaning: 'Festival after fasting month', pronunciation: 'eye-dil-fit-ree' },
+      { word: 'Maaf', meaning: 'Forgiveness', pronunciation: 'mah-af' },
+      { word: 'Silaturahim', meaning: 'Kinship ties', pronunciation: 'see-lah-too-rah-heem' },
+    ],
+    greetings: [
+      { phrase: 'Selamat Hari Raya', meaning: 'Happy Eid celebration', pronunciation: 'seh-lah-maht hah-ree rah-yah' },
+    ],
+    activities: ['Visit family homes', 'Prepare festive meals', 'Practice festive greetings'],
+  },
+  {
+    id: '9',
+    name: 'Chinese New Year',
+    language: 'Mandarin Chinese',
+    date: 'January/February',
+    description: 'Lunar new year with reunion dinners, red decorations, and prosperity traditions.',
+    icon: '🧧',
+    traditions: ['Reunion dinner', 'Lion dance', 'Giving red packets'],
+    vocabulary: [
+      { word: 'Xin Nian', meaning: 'New year', pronunciation: 'shin nyen' },
+      { word: 'Hongbao', meaning: 'Red packet', pronunciation: 'hong-bao' },
+      { word: 'Fú', meaning: 'Blessing/prosperity', pronunciation: 'foo' },
+    ],
+    greetings: [
+      { phrase: 'Xin Nian Kuai Le', meaning: 'Happy New Year', pronunciation: 'shin nyen kwai luh' },
+    ],
+    activities: ['Learn lion dance terms', 'Write greeting cards', 'Explore zodiac stories'],
+  },
+  {
+    id: '10',
+    name: 'Deepavali',
+    language: 'Tamil',
+    date: 'October/November',
+    description: 'Festival of lights celebrating good over evil with lamps, sweets, and prayer.',
+    icon: '🪔',
+    traditions: ['Lighting oil lamps', 'Kolam designs', 'Temple visits'],
+    vocabulary: [
+      { word: 'Deepavali', meaning: 'Row of lights', pronunciation: 'dee-pah-vah-lee' },
+      { word: 'Vilakku', meaning: 'Lamp', pronunciation: 'vee-lak-koo' },
+      { word: 'Inippu', meaning: 'Sweet', pronunciation: 'ee-nip-poo' },
+    ],
+    greetings: [
+      { phrase: 'Iniya Deepavali Nalvazhthukkal', meaning: 'Happy Deepavali wishes', pronunciation: 'ee-nee-yah dee-pah-vah-lee nal-vazh-thuk-kal' },
+    ],
+    activities: ['Create kolam art', 'Learn festive Tamil phrases', 'Share sweet recipes'],
+  },
+  {
+    id: '11',
+    name: 'Christmas in Borneo',
+    language: 'English',
+    date: 'December 25',
+    description: 'Community-centered Christmas celebration with choirs, open houses, and family feasts.',
+    icon: '🎄',
+    traditions: ['Carol singing', 'Church services', 'Family open houses'],
+    vocabulary: [
+      { word: 'Carol', meaning: 'Festive song', pronunciation: 'keh-rol' },
+      { word: 'Nativity', meaning: 'Birth story of Jesus', pronunciation: 'nuh-tiv-uh-tee' },
+      { word: 'Blessing', meaning: 'Good wish or prayer', pronunciation: 'bleh-sing' },
+    ],
+    greetings: [
+      { phrase: 'Merry Christmas', meaning: 'Christmas greeting', pronunciation: 'meh-ree kris-muhs' },
+    ],
+    activities: ['Join choir practice', 'Visit decorated villages', 'Learn multilingual greetings'],
+  },
+  {
+    id: '12',
+    name: 'Nowruz',
+    language: 'Persian (Farsi)',
+    date: 'March 21',
+    description: 'Persian new year welcoming spring with symbolic food, poetry, and gatherings.',
+    icon: '🌸',
+    traditions: ['Haft-seen table setup', 'Family visits', 'Poetry recitals'],
+    vocabulary: [
+      { word: 'Nowruz', meaning: 'New day/new year', pronunciation: 'noh-rooz' },
+      { word: 'Haft-seen', meaning: 'Seven symbolic items', pronunciation: 'haft-seen' },
+      { word: 'Eydi', meaning: 'Holiday gift', pronunciation: 'ay-dee' },
+    ],
+    greetings: [
+      { phrase: 'Nowruz Mobarak', meaning: 'Happy Nowruz', pronunciation: 'noh-rooz moh-bah-rak' },
+    ],
+    activities: ['Prepare haft-seen display', 'Learn seasonal greetings', 'Read cultural stories'],
+  },
 ];
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -117,8 +243,13 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 export default function CulturalEventsScreen({ navigation }) {
   const { theme } = useTheme();
   const [selectedFestival, setSelectedFestival] = useState(null);
-  const [filterLanguage, setFilterLanguage] = useState('all'); // all, Kadazandusun, Iban, Bajau, Murut
+  const [filterLanguage, setFilterLanguage] = useState('all');
   const [playingSound, setPlayingSound] = useState(null);
+
+  const availableFestivalFilters = useMemo(() => {
+    const languages = Array.from(new Set(FESTIVALS.map((festival) => festival.language)));
+    return ['all', ...languages];
+  }, []);
 
   const filteredFestivals = filterLanguage === 'all'
     ? FESTIVALS
@@ -354,7 +485,7 @@ export default function CulturalEventsScreen({ navigation }) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 10, paddingRight: SPACING.l }}
         >
-          {['all', 'Kadazandusun', 'Iban', 'Bajau', 'Murut'].map((lang) => (
+          {availableFestivalFilters.map((lang) => (
             <TouchableOpacity
               key={lang}
               activeOpacity={0.7}

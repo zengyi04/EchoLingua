@@ -9,6 +9,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { translateText } from '../services/translationService';
+import { WORLD_LANGUAGES } from '../constants/languages';
 import {
   prepareSingleRecording,
   stopAndReleaseRecording,
@@ -18,14 +19,32 @@ import { analyzeRecording, saveScenarioResult } from '../services/scoringService
 
 const ROLEPLAY_RECORDS_KEY = '@echolingua_roleplay_records';
 
-const LANGUAGE_CHOICES = [
-  { id: 'malay', label: 'Malay', speechCode: 'ms-MY' },
-  { id: 'english', label: 'English', speechCode: 'en-US' },
-  { id: 'indonesian', label: 'Indonesian', speechCode: 'id-ID' },
-  { id: 'mandarin', label: 'Mandarin', speechCode: 'zh-CN' },
-  { id: 'spanish', label: 'Spanish', speechCode: 'es-ES' },
-  { id: 'french', label: 'French', speechCode: 'fr-FR' },
-];
+const SPEECH_CODES = {
+  malay: 'ms-MY',
+  english: 'en-US',
+  indonesian: 'id-ID',
+  mandarin: 'zh-CN',
+  spanish: 'es-ES',
+  french: 'fr-FR',
+  arabic: 'ar-SA',
+  japanese: 'ja-JP',
+  korean: 'ko-KR',
+  german: 'de-DE',
+  portuguese: 'pt-PT',
+  thai: 'th-TH',
+  vietnamese: 'vi-VN',
+  russian: 'ru-RU',
+  italian: 'it-IT',
+  turkish: 'tr-TR',
+  hindi: 'hi-IN',
+};
+
+const LANGUAGE_CHOICES = WORLD_LANGUAGES.map((language) => ({
+  id: language.id,
+  label: `${language.flag} ${language.label}`,
+  plainLabel: language.label,
+  speechCode: SPEECH_CODES[language.id] || 'en-US',
+}));
 
 const BASE_SCENARIOS = [
   {
@@ -268,8 +287,11 @@ export default function LivingLanguageScreen() {
   const [selectedCase, setSelectedCase] = useState(null);
   const [showTranslation, setShowTranslation] = useState(true);
   const [playingAudio, setPlayingAudio] = useState(null);
-  const [fromLanguage, setFromLanguage] = useState(LANGUAGE_CHOICES[0]);
-  const [toLanguage, setToLanguage] = useState(LANGUAGE_CHOICES[1]);
+  const defaultFromLanguage = LANGUAGE_CHOICES.find((item) => item.id === 'malay') || LANGUAGE_CHOICES[0];
+  const defaultToLanguage = LANGUAGE_CHOICES.find((item) => item.id === 'english') || LANGUAGE_CHOICES[1] || LANGUAGE_CHOICES[0];
+  const [fromLanguage, setFromLanguage] = useState(defaultFromLanguage);
+  const [toLanguage, setToLanguage] = useState(defaultToLanguage);
+  const [activeLanguagePicker, setActiveLanguagePicker] = useState(null);
   const [adaptedConversations, setAdaptedConversations] = useState([]);
   const [loadingLanguage, setLoadingLanguage] = useState(false);
   const [recording, setRecording] = useState(null);
@@ -452,7 +474,7 @@ export default function LivingLanguageScreen() {
     setPlayingAudio(lineId);
     Speech.stop();
     Speech.speak(text, {
-      language: fromLanguage.speechCode,
+      language: fromLanguage.speechCode || 'en-US',
       rate: 0.9,
       onDone: () => setPlayingAudio(null),
       onStopped: () => setPlayingAudio(null),
@@ -460,15 +482,17 @@ export default function LivingLanguageScreen() {
     });
   };
 
-  const cycleLanguage = (type) => {
-    const current = type === 'from' ? fromLanguage : toLanguage;
-    const index = LANGUAGE_CHOICES.findIndex((item) => item.id === current.id);
-    const next = LANGUAGE_CHOICES[(index + 1) % LANGUAGE_CHOICES.length];
+  const selectLanguage = (type, language) => {
     if (type === 'from') {
-      setFromLanguage(next);
-      return;
+      setFromLanguage(language);
+    } else {
+      setToLanguage(language);
     }
-    setToLanguage(next);
+    setActiveLanguagePicker(null);
+  };
+
+  const toggleLanguagePicker = (type) => {
+    setActiveLanguagePicker((current) => (current === type ? null : type));
   };
 
   const handleBackFromPage = () => {
@@ -590,16 +614,64 @@ export default function LivingLanguageScreen() {
       </View>
 
       <View style={[styles.languageBar, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <TouchableOpacity style={[styles.languageChip, { backgroundColor: theme.primary + '12', borderColor: theme.primary + '55' }]} onPress={() => cycleLanguage('from')}>
+        <TouchableOpacity
+          style={[
+            styles.languageChip,
+            { backgroundColor: theme.primary + '12', borderColor: theme.primary + '55' },
+            activeLanguagePicker === 'from' && { borderColor: theme.primary },
+          ]}
+          onPress={() => toggleLanguagePicker('from')}
+        >
           <Text style={[styles.languageChipLabel, { color: theme.textSecondary }]}>From</Text>
           <Text style={[styles.languageChipValue, { color: theme.text }]}>{fromLanguage.label}</Text>
         </TouchableOpacity>
         <Ionicons name="arrow-forward" size={20} color={theme.textSecondary} />
-        <TouchableOpacity style={[styles.languageChip, { backgroundColor: theme.primary + '12', borderColor: theme.primary + '55' }]} onPress={() => cycleLanguage('to')}>
+        <TouchableOpacity
+          style={[
+            styles.languageChip,
+            { backgroundColor: theme.primary + '12', borderColor: theme.primary + '55' },
+            activeLanguagePicker === 'to' && { borderColor: theme.primary },
+          ]}
+          onPress={() => toggleLanguagePicker('to')}
+        >
           <Text style={[styles.languageChipLabel, { color: theme.textSecondary }]}>To</Text>
           <Text style={[styles.languageChipValue, { color: theme.text }]}>{toLanguage.label}</Text>
         </TouchableOpacity>
       </View>
+
+      {activeLanguagePicker && (
+        <View style={[styles.languagePickerPanel, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+          <Text style={[styles.languagePickerTitle, { color: theme.text }]}>
+            Select {activeLanguagePicker === 'from' ? 'From' : 'To'} Language
+          </Text>
+          <ScrollView style={styles.languageOptionsScroll} contentContainerStyle={styles.languageOptionsRow} showsVerticalScrollIndicator={false}>
+            {LANGUAGE_CHOICES.map((language) => {
+              const isSelected =
+                activeLanguagePicker === 'from'
+                  ? fromLanguage.id === language.id
+                  : toLanguage.id === language.id;
+
+              return (
+                <TouchableOpacity
+                  key={`${activeLanguagePicker}-${language.id}`}
+                  style={[
+                    styles.languageOption,
+                    {
+                      backgroundColor: isSelected ? theme.primary + '20' : theme.background,
+                      borderColor: isSelected ? theme.primary : theme.border,
+                    },
+                  ]}
+                  onPress={() => selectLanguage(activeLanguagePicker, language)}
+                >
+                  <Text style={[styles.languageOptionText, { color: isSelected ? theme.primary : theme.text }]}>
+                    {language.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {!selectedScenario && (
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -722,6 +794,35 @@ const styles = StyleSheet.create({
   },
   languageChipLabel: { fontSize: 11, color: COLORS.textSecondary },
   languageChipValue: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  languagePickerPanel: {
+    paddingHorizontal: SPACING.m,
+    paddingTop: SPACING.s,
+    paddingBottom: SPACING.m,
+    borderBottomWidth: 1,
+  },
+  languagePickerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: SPACING.s,
+  },
+  languageOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.s,
+  },
+  languageOptionsScroll: {
+    maxHeight: 220,
+  },
+  languageOption: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: 8,
+  },
+  languageOptionText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   content: { flex: 1 },
   infoCard: {
     flexDirection: 'row',

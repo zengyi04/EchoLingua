@@ -17,6 +17,11 @@ import { useTheme } from '../context/ThemeContext';
 
 const FAMILY_ACCOUNTS_KEY = 'familyAccounts';
 const ACTIVE_ACCOUNT_KEY = 'activeAccount';
+const QUIZ_RESULTS_KEY = '@echolingua_quiz_results';
+const QUIZ_HISTORY_KEY = '@echolingua_quiz_history';
+const DAILY_STREAK_KEY = '@dailyStreak';
+const DICTIONARY_FAVORITES_KEY = 'dictionaryFavorites';
+const STORIES_KEY = '@echolingua_stories';
 
 export default function FamilyLearningScreen({ navigation }) {
   const [accounts, setAccounts] = useState([]);
@@ -26,6 +31,8 @@ export default function FamilyLearningScreen({ navigation }) {
   const [newAccountRole, setNewAccountRole] = useState('Child');
   const [newAccountAge, setNewAccountAge] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('👤');
+  const [manualRole, setManualRole] = useState('Parent');
+  const [showFamilyProgressModal, setShowFamilyProgressModal] = useState(false);
 
   const AVATARS = ['👤', '👦', '👧', '👨', '👩', '👴', '👵', '🧒', '🧔', '👨‍🦱'];
   const ROLES = ['Parent', 'Child', 'Grandparent', 'Teen'];
@@ -35,6 +42,12 @@ export default function FamilyLearningScreen({ navigation }) {
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  useEffect(() => {
+    if (!activeAccount) return;
+    setManualRole(activeAccount.role || 'Parent');
+    refreshLearningMetrics(activeAccount.id);
+  }, [activeAccount?.id, accounts.length]);
 
   const loadAccounts = async () => {
     try {
@@ -88,6 +101,60 @@ export default function FamilyLearningScreen({ navigation }) {
     }
   };
 
+  const getLearningMetrics = async () => {
+    const [quizResultsRaw, quizHistoryRaw, favoritesRaw, streakRaw, storiesRaw] = await Promise.all([
+      AsyncStorage.getItem(QUIZ_RESULTS_KEY),
+      AsyncStorage.getItem(QUIZ_HISTORY_KEY),
+      AsyncStorage.getItem(DICTIONARY_FAVORITES_KEY),
+      AsyncStorage.getItem(DAILY_STREAK_KEY),
+      AsyncStorage.getItem(STORIES_KEY),
+    ]);
+
+    const quizResults = quizResultsRaw ? JSON.parse(quizResultsRaw) : [];
+    const quizHistory = quizHistoryRaw ? JSON.parse(quizHistoryRaw) : [];
+    const favorites = favoritesRaw ? JSON.parse(favoritesRaw) : [];
+    const stories = storiesRaw ? JSON.parse(storiesRaw) : [];
+    const quizzesTaken = Math.max(
+      Array.isArray(quizResults) ? quizResults.length : 0,
+      Array.isArray(quizHistory) ? quizHistory.length : 0
+    );
+
+    return {
+      wordsLearned: Array.isArray(favorites) ? favorites.length : 0,
+      quizzesTaken,
+      storiesRead: Array.isArray(stories) ? stories.length : 0,
+      streak: Number.parseInt(streakRaw || '0', 10) || 0,
+    };
+  };
+
+  const refreshLearningMetrics = async (accountId) => {
+    try {
+      const metrics = await getLearningMetrics();
+      const updatedAccounts = accounts.map((account) => {
+        if (account.id !== accountId) return account;
+        return {
+          ...account,
+          progress: {
+            ...account.progress,
+            ...metrics,
+          },
+        };
+      });
+
+      if (!updatedAccounts.some((account) => account.id === accountId)) {
+        return;
+      }
+
+      await saveAccounts(updatedAccounts);
+      const updatedActive = updatedAccounts.find((account) => account.id === accountId);
+      if (updatedActive) {
+        setActiveAccount(updatedActive);
+      }
+    } catch (error) {
+      console.error('Refresh family learning metrics error:', error);
+    }
+  };
+
   const handleAddAccount = async () => {
     if (!newAccountName.trim()) {
       Alert.alert('Error', 'Please enter a name');
@@ -123,7 +190,23 @@ export default function FamilyLearningScreen({ navigation }) {
   const handleSwitchAccount = async (account) => {
     setActiveAccount(account);
     await AsyncStorage.setItem(ACTIVE_ACCOUNT_KEY, account.id);
-    Alert.alert('Switched', `Now using ${account.name}'s account`);
+    setManualRole(account.role || 'Parent');
+  };
+
+  const handleManualRoleChange = async (role) => {
+    if (!activeAccount) return;
+    setManualRole(role);
+
+    const updatedAccounts = accounts.map((account) => {
+      if (account.id !== activeAccount.id) return account;
+      return { ...account, role };
+    });
+
+    await saveAccounts(updatedAccounts);
+    const updatedActive = updatedAccounts.find((account) => account.id === activeAccount.id);
+    if (updatedActive) {
+      setActiveAccount(updatedActive);
+    }
   };
 
   const handleDeleteAccount = (accountId) => {
@@ -159,7 +242,7 @@ export default function FamilyLearningScreen({ navigation }) {
       Alert.alert('Select Account', 'Please select an active account first');
       return;
     }
-    navigation.navigate('VocabularyScreen');
+    navigation.navigate('Vocabulary');
   };
 
   const handleFamilyChallenge = () => {
@@ -167,7 +250,7 @@ export default function FamilyLearningScreen({ navigation }) {
       Alert.alert('Select Account', 'Please select an active account first');
       return;
     }
-    navigation.navigate('QuizScreen');
+    navigation.navigate('Quiz');
   };
 
   const handleStoryTime = () => {
@@ -175,7 +258,7 @@ export default function FamilyLearningScreen({ navigation }) {
       Alert.alert('Select Account', 'Please select an active account first');
       return;
     }
-    navigation.navigate('StoryLibraryScreen');
+    navigation.navigate('FamilyStoryTime', { activeAccount });
   };
 
   const handleFamilyProgress = () => {
@@ -184,21 +267,12 @@ export default function FamilyLearningScreen({ navigation }) {
       return;
     }
     
-    // Calculate combined family progress
-    const totalWords = accounts.reduce((sum, acc) => sum + acc.progress.wordsLearned, 0);
-    const totalQuizzes = accounts.reduce((sum, acc) => sum + acc.progress.quizzesTaken, 0);
-    const totalStories = accounts.reduce((sum, acc) => sum + acc.progress.storiesRead, 0);
-    const maxStreak = Math.max(...accounts.map(acc => acc.progress.streak));
+    setShowFamilyProgressModal(true);
+  };
 
-    const progressMessage = `Family Achievements:\n\n` +
-      `👥 ${accounts.length} Family Members\n` +
-      `📚 ${totalWords} Total Words Learned\n` +
-      `✅ ${totalQuizzes} Total Quizzes Completed\n` +
-      `📖 ${totalStories} Stories Read Together\n` +
-      `🔥 ${maxStreak} Day Best Streak\n\n` +
-      `Keep learning together!`;
-
-    Alert.alert('Family Progress', progressMessage);
+  const handleOpenMemberProgress = (account) => {
+    setShowFamilyProgressModal(false);
+    navigation.navigate('ProgressTracker', { familyAccount: account });
   };
 
   const renderAccountCard = (account) => {
@@ -302,6 +376,55 @@ export default function FamilyLearningScreen({ navigation }) {
               </View>
               <Ionicons name="star" size={32} color="#FFD93D" />
             </View>
+
+            <Text style={[styles.manualControlLabel, { color: theme.textSecondary }]}>Current learner</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.manualLearnerRow}>
+              {accounts.map((account) => {
+                const selected = activeAccount?.id === account.id;
+                return (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={[
+                      styles.manualLearnerChip,
+                      {
+                        backgroundColor: selected ? theme.primary : theme.surface,
+                        borderColor: selected ? theme.primary : theme.border,
+                      },
+                    ]}
+                    onPress={() => handleSwitchAccount(account)}
+                  >
+                    <Text style={[styles.manualLearnerChipText, { color: selected ? theme.surface : theme.text }]}>
+                      {account.avatar} {account.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={[styles.manualControlLabel, { color: theme.textSecondary }]}>Current role</Text>
+            <View style={styles.roleContainer}>
+              {ROLES.map((role) => (
+                <TouchableOpacity
+                  key={`active-${role}`}
+                  style={[
+                    styles.roleOption,
+                    { backgroundColor: theme.background, borderColor: theme.border },
+                    manualRole === role && { backgroundColor: theme.primary, borderColor: theme.primary },
+                  ]}
+                  onPress={() => handleManualRoleChange(role)}
+                >
+                  <Text
+                    style={[
+                      styles.roleOptionText,
+                      { color: theme.text },
+                      manualRole === role && { color: theme.surface, fontWeight: '600' },
+                    ]}
+                  >
+                    {role}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
 
@@ -339,8 +462,8 @@ export default function FamilyLearningScreen({ navigation }) {
               <Ionicons name="trophy" size={28} color="#FFD93D" />
             </View>
             <View style={styles.activityInfo}>
-              <Text style={[styles.activityTitle, { color: theme.text }]}>Family Challenge</Text>
-              <Text style={[styles.activityDescription, { color: theme.textSecondary }]}>Compete in friendly quizzes</Text>
+              <Text style={[styles.activityTitle, { color: theme.text }]}>Quiz Game</Text>
+              <Text style={[styles.activityDescription, { color: theme.textSecondary }]}>Play quiz game challenge</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color={theme.textSecondary} />
           </TouchableOpacity>
@@ -355,7 +478,7 @@ export default function FamilyLearningScreen({ navigation }) {
             </View>
             <View style={styles.activityInfo}>
               <Text style={[styles.activityTitle, { color: theme.text }]}>Story Time</Text>
-              <Text style={[styles.activityDescription, { color: theme.textSecondary }]}>Read stories as a family</Text>
+              <Text style={[styles.activityDescription, { color: theme.textSecondary }]}>Open story dashboard with age and language filters</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color={theme.textSecondary} />
           </TouchableOpacity>
@@ -457,6 +580,39 @@ export default function FamilyLearningScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showFamilyProgressModal} transparent animationType="slide" onRequestClose={() => setShowFamilyProgressModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}> 
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Family Progress Members</Text>
+              <TouchableOpacity onPress={() => setShowFamilyProgressModal(false)}>
+                <Ionicons name="close" size={28} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              {accounts.map((account) => (
+                <TouchableOpacity
+                  key={`progress-${account.id}`}
+                  style={[styles.accountCard, { backgroundColor: theme.background, borderColor: theme.border }]}
+                  onPress={() => handleOpenMemberProgress(account)}
+                >
+                  <View style={styles.accountCardContent}>
+                    <Text style={styles.accountAvatar}>{account.avatar}</Text>
+                    <View style={styles.accountInfo}>
+                      <Text style={[styles.accountName, { color: theme.text }]}>{account.name}</Text>
+                      <Text style={[styles.accountRole, { color: theme.textSecondary }]}>{account.role}</Text>
+                      <Text style={[styles.accountAge, { color: theme.textSecondary }]}>Tap to open progress</Text>
+                    </View>
+                    <Ionicons name="chevron-forward-circle" size={24} color={theme.primary} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -533,6 +689,26 @@ const styles = StyleSheet.create({
   activeAccountRole: {
     fontSize: 14,
     color: COLORS.textSecondary,
+  },
+  manualControlLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: SPACING.m,
+    marginBottom: SPACING.xs,
+  },
+  manualLearnerRow: {
+    paddingBottom: SPACING.xs,
+    gap: SPACING.s,
+  },
+  manualLearnerChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.xs,
+  },
+  manualLearnerChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   accountsSection: {
     paddingHorizontal: SPACING.l,

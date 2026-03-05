@@ -165,7 +165,9 @@ export default function UserProfileScreen({ navigation, route }) {
               {viewedUser.languages && (
                 <View style={styles.userInfoRow}>
                   <Ionicons name="language" size={16} color={theme.textSecondary} />
-                  <Text style={[styles.userInfoText, { color: theme.text }]}>{viewedUser.languages}</Text>
+                  <Text style={[styles.userInfoText, { color: theme.text }]}>
+                    {Array.isArray(viewedUser.languages) ? viewedUser.languages.join(', ') : viewedUser.languages}
+                  </Text>
                 </View>
               )}
               {viewedUser.age && (

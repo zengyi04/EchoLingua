@@ -27,6 +27,7 @@ import CulturalEventsScreen from '../screens/CulturalEventsScreen';
 import DictionaryScreen from '../screens/DictionaryScreen';
 import CulturalKnowledgeScreen from '../screens/CulturalKnowledgeScreen';
 import FamilyLearningScreen from '../screens/FamilyLearningScreen';
+import FamilyStoryTimeScreen from '../screens/FamilyStoryTimeScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
@@ -34,6 +35,7 @@ import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
+const SafeFamilyStoryTimeScreen = FamilyStoryTimeScreen || FamilyLearningScreen;
 
 function TabNavigator() {
   const { theme } = useTheme();
@@ -137,6 +139,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Dictionary" component={DictionaryScreen} />
       <Stack.Screen name="CulturalKnowledge" component={CulturalKnowledgeScreen} />
       <Stack.Screen name="FamilyLearning" component={FamilyLearningScreen} />
+      <Stack.Screen name="FamilyStoryTime" component={SafeFamilyStoryTimeScreen} />
       <Stack.Screen name="Vocabulary" component={VocabularyScreen} />
       <Stack.Screen name="Story" component={StoryScreen} />
       <Stack.Screen name="LivingLanguage" component={LivingLanguageScreen} />

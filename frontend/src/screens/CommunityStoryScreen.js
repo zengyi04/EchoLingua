@@ -21,6 +21,8 @@ import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
 const SEEN_STORIES_KEY = '@echolingua_seen_stories';
+const STORIES_STORAGE_KEY = '@echolingua_stories';
+const LEGACY_COMMUNITY_STORIES_KEY = 'communityStories';
 
 export default function CommunityStoryScreen({ navigation }) {
   const { theme } = useTheme();
@@ -66,7 +68,7 @@ export default function CommunityStoryScreen({ navigation }) {
   
   const markStoriesAsSeen = async () => {
     try {
-      const stored = await AsyncStorage.getItem('communityStories');
+      const stored = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
       if (stored) {
         const allStories = JSON.parse(stored);
         const storyIds = allStories.map(s => s.id);
@@ -98,9 +100,16 @@ export default function CommunityStoryScreen({ navigation }) {
 
   const loadStories = async () => {
     try {
-      const stored = await AsyncStorage.getItem('communityStories');
+      const primary = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+      const legacy = await AsyncStorage.getItem(LEGACY_COMMUNITY_STORIES_KEY);
+      const stored = primary || legacy;
+
       if (stored) {
-        setStories(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        setStories(parsed);
+        if (!primary && legacy) {
+          await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(parsed));
+        }
       } else {
         // Sample stories
         const sampleStories = [
@@ -156,7 +165,8 @@ export default function CommunityStoryScreen({ navigation }) {
             commentsList: [],
           },
         ];
-        await AsyncStorage.setItem('communityStories', JSON.stringify(sampleStories));
+        await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(sampleStories));
+        await AsyncStorage.setItem(LEGACY_COMMUNITY_STORIES_KEY, JSON.stringify(sampleStories));
         setStories(sampleStories);
       }
     } catch (error) {
@@ -166,7 +176,8 @@ export default function CommunityStoryScreen({ navigation }) {
 
   const saveStories = async (updatedStories) => {
     try {
-      await AsyncStorage.setItem('communityStories', JSON.stringify(updatedStories));
+      await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(updatedStories));
+      await AsyncStorage.setItem(LEGACY_COMMUNITY_STORIES_KEY, JSON.stringify(updatedStories));
       setStories(updatedStories);
     } catch (error) {
       console.error('Error saving stories:', error);
@@ -606,7 +617,10 @@ export default function CommunityStoryScreen({ navigation }) {
       <FlatList
         data={filteredStories}
         renderItem={renderStoryCard}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => {
+          const sourcePrefix = item.audioUri ? 'archive' : 'community';
+          return `${sourcePrefix}-${String(item.id)}-${index}`;
+        }}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={

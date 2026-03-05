@@ -15,8 +15,9 @@ import { useTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
-export default function ProgressTrackerScreen({ navigation }) {
+export default function ProgressTrackerScreen({ navigation, route }) {
   const { theme } = useTheme();
+  const selectedFamilyAccount = route?.params?.familyAccount || null;
   const [progressData, setProgressData] = useState({
     vocabularyLearned: 0,
     totalVocabulary: 500,
@@ -491,6 +492,12 @@ export default function ProgressTrackerScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {selectedFamilyAccount && (
+        <View style={[styles.familyContextBanner, { backgroundColor: theme.surfaceVariant, borderBottomColor: theme.border }]}> 
+          <Text style={[styles.familyContextText, { color: theme.text }]}>Viewing: {selectedFamilyAccount.avatar} {selectedFamilyAccount.name} ({selectedFamilyAccount.role})</Text>
+        </View>
+      )}
+
       {/* Tabs */}
       <View style={styles.tabContainer}>
         {[
@@ -548,6 +555,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
+  },
+  familyContextBanner: {
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.s,
+    borderBottomWidth: 1,
+  },
+  familyContextText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   tabContainer: {
     flexDirection: 'row',

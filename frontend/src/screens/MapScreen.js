@@ -76,7 +76,7 @@ const CULTURAL_LOCATIONS = [
     longitude: 111.4645,
     type: 'Cultural Center',
     languages: ['Iban'],
-    icon: 'home-modern',
+    icon: 'home-outline',
     color: '#4CAF50',
   },
   {

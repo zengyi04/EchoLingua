@@ -305,7 +305,7 @@ export default function HomeScreen({ navigation }) {
             }}
           />
           <QuickAction 
-            title="Stories" 
+            title="Voice Archive" 
             icon={<Ionicons name="library" size={24} />}
             color="#009688" // Teal
             onPress={() => navigation.navigate('StoriesTab')}

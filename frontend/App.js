@@ -1,12 +1,18 @@
 import 'react-native-gesture-handler';
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Image, StyleSheet, Text, ActivityIndicator, AppState } from 'react-native';
+import { View, Image, StyleSheet, Text, ActivityIndicator, AppState, LogBox } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { StatusBar } from 'expo-status-bar';
 import { COLORS } from './src/constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+
+// Temporary: hide expo-av deprecation warning while audio screens are migrated to expo-audio.
+LogBox.ignoreLogs([
+  '[expo-av]: Expo AV has been deprecated',
+  'Expo AV has been deprecated',
+]);
 
 function AppContent() {
   const { theme, isDark } = useTheme();

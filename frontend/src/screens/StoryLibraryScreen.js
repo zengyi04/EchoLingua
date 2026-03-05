@@ -9,6 +9,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
 const STORIES_STORAGE_KEY = '@echolingua_stories';
+const USER_STORAGE_KEY = '@echolingua_current_user';
 
 export default function StoryLibraryScreen() {
   const { theme } = useTheme();
@@ -20,11 +21,26 @@ export default function StoryLibraryScreen() {
   const loadCommunityStories = async () => {
     try {
       const storiesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
-      if (storiesJson) {
-        const loadedStories = JSON.parse(storiesJson);
-        console.log(`📚 Loaded ${loadedStories.length} community stories`);
-        setCommunityStories(loadedStories);
+      const loadedStories = storiesJson ? JSON.parse(storiesJson) : [];
+
+      const currentUserRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      let receivedStories = [];
+      if (currentUserRaw) {
+        const currentUser = JSON.parse(currentUserRaw);
+        if (currentUser?.id) {
+          const receivedKey = `@echolingua_received_stories_${currentUser.id}`;
+          const receivedRaw = await AsyncStorage.getItem(receivedKey);
+          receivedStories = receivedRaw ? JSON.parse(receivedRaw) : [];
+        }
       }
+
+      const allLoaded = [...receivedStories, ...loadedStories];
+      const deduped = allLoaded.filter((item, index, arr) => {
+        return index === arr.findIndex((candidate) => candidate.id === item.id);
+      });
+
+      console.log(`📚 Loaded ${deduped.length} stories (${receivedStories.length} received)`);
+      setCommunityStories(deduped);
     } catch (error) {
       console.error('Failed to load community stories:', error);
     }
@@ -93,6 +109,9 @@ export default function StoryLibraryScreen() {
                           {item.language || 'Community'}
                         </Text>
                     </View>
+                    {item.sentByLabel && (
+                      <Text style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}> • {item.sentByLabel}</Text>
+                    )}
                   </>
                 ) : (
                   <>
@@ -148,7 +167,10 @@ export default function StoryLibraryScreen() {
       
       <FlatList
         data={allStories}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item, index) => {
+          const sourcePrefix = item.audioUri ? 'community' : 'default';
+          return `${sourcePrefix}-${String(item.id)}-${index}`;
+        }}
         renderItem={renderStoryItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}

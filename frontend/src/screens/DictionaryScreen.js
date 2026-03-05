@@ -15,13 +15,20 @@ import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { WORLD_LANGUAGES } from '../constants/languages';
 
-// Sample dictionary data
-const DICTIONARY_DATA = [
+const CORE_WORD_TEMPLATES = [
+  { key: 'hello', word: 'Hello', translation: 'Hello', pronunciation: 'heh-loh', partOfSpeech: 'Greeting', category: 'Greetings' },
+  { key: 'thanks', word: 'Thank you', translation: 'Thank you', pronunciation: 'thangk-yoo', partOfSpeech: 'Expression', category: 'Expressions' },
+  { key: 'family', word: 'Family', translation: 'Family', pronunciation: 'fa-muh-lee', partOfSpeech: 'Noun', category: 'Family' },
+  { key: 'learn', word: 'Learn', translation: 'Learn', pronunciation: 'lurn', partOfSpeech: 'Verb', category: 'Learning' },
+];
+
+const BORNEO_LANGUAGE_ENTRIES = [
   {
-    id: '1',
+    id: 'borneo-kadazan-1',
     word: 'Kotobian',
-    language: 'Kadazandusun',
+    language: 'Kadazan-Dusun',
     translation: 'Good morning',
     pronunciation: 'koh-toh-bee-ahn',
     partOfSpeech: 'Greeting',
@@ -30,160 +37,77 @@ const DICTIONARY_DATA = [
     category: 'Greetings',
   },
   {
-    id: '2',
-    word: 'Aramai',
-    language: 'Kadazandusun',
-    translation: 'Thank you',
-    pronunciation: 'ah-rah-my',
-    partOfSpeech: 'Expression',
-    examples: ['Aramai dii - Thank you very much'],
-    relatedWords: ['Kopiodop - Please', 'Simpuru - Excuse me'],
-    category: 'Expressions',
-  },
-  {
-    id: '3',
-    word: 'Padi',
-    language: 'Kadazandusun',
-    translation: 'Rice (plant)',
-    pronunciation: 'pah-dee',
+    id: 'borneo-kadazan-2',
+    word: 'Kaamatan',
+    language: 'Kadazan-Dusun',
+    translation: 'Harvest festival',
+    pronunciation: 'kah-ah-mah-tahn',
     partOfSpeech: 'Noun',
-    examples: ['Padi diti - This rice', 'Maganu padi - Plant rice'],
-    relatedWords: ['Boros - Rice (cooked)', 'Humod - Farm'],
-    category: 'Agriculture',
+    examples: ['Pesta Kaamatan - Harvest Festival'],
+    relatedWords: ['Padi - Rice', 'Sumazau - Dance'],
+    category: 'Culture',
   },
   {
-    id: '4',
-    word: 'Selamat pagi',
-    language: 'Iban',
-    translation: 'Good morning',
-    pronunciation: 'seh-lah-mat pah-gee',
-    partOfSpeech: 'Greeting',
-    examples: ['Selamat pagi kitai - Good morning to all of us'],
-    relatedWords: ['Selamat petang - Good afternoon'],
-    category: 'Greetings',
-  },
-  {
-    id: '5',
-    word: 'Terima kasih',
-    language: 'Iban',
-    translation: 'Thank you',
-    pronunciation: 'teh-ree-mah kah-seh',
-    partOfSpeech: 'Expression',
-    examples: ['Terima kasih bukai - Thank you very much'],
-    relatedWords: ['Tolong - Please'],
-    category: 'Expressions',
-  },
-  {
-    id: '6',
+    id: 'borneo-iban-1',
     word: 'Ngajat',
     language: 'Iban',
     translation: 'Traditional warrior dance',
     pronunciation: 'ngah-jaht',
     partOfSpeech: 'Noun',
     examples: ['Bengar ngajat - Dance the ngajat'],
-    relatedWords: ['Gawai - Festival', 'Pua kumbu - Traditional cloth'],
+    relatedWords: ['Gawai - Festival', 'Pua Kumbu - Textile'],
     category: 'Culture',
   },
   {
-    id: '7',
-    word: 'Kassianti',
-    language: 'Bajau',
-    translation: 'Good morning',
-    pronunciation: 'kah-see-ahn-tee',
-    partOfSpeech: 'Greeting',
-    examples: ['Kassianti kam - Good morning to you'],
-    relatedWords: ['Salamat - Thank you'],
-    category: 'Greetings',
-  },
-  {
-    id: '8',
-    word: 'Lepa',
-    language: 'Bajau',
-    translation: 'Traditional boat',
-    pronunciation: 'leh-pah',
+    id: 'borneo-bidayuh-1',
+    word: 'Gawai',
+    language: 'Bidayuh',
+    translation: 'Festival celebration',
+    pronunciation: 'gah-why',
     partOfSpeech: 'Noun',
-    examples: ['Lepa ditu magayat - The boat is sailing'],
-    relatedWords: ['Layag - Sail', 'Laut - Sea'],
-    category: 'Maritime',
-  },
-  {
-    id: '9',
-    word: 'Pangalay',
-    language: 'Bajau',
-    translation: 'Traditional fingernail dance',
-    pronunciation: 'pahn-gah-lie',
-    partOfSpeech: 'Noun',
-    examples: ['Igal pangalay - Dance the pangalay'],
-    relatedWords: ['Igal - Dance', 'Kulintangan - Gong music'],
+    examples: ['Hari Gawai disambut setiap tahun.'],
+    relatedWords: ['Tapai - Rice wine', 'Bamboo dance'],
     category: 'Culture',
   },
   {
-    id: '10',
-    word: 'Osonong',
-    language: 'Murut',
-    translation: 'Good morning',
-    pronunciation: 'oh-soh-nohng',
-    partOfSpeech: 'Greeting',
-    examples: ['Osonong kito - Good morning everyone'],
-    relatedWords: ['Tabulud - Thank you'],
-    category: 'Greetings',
-  },
-  {
-    id: '11',
+    id: 'borneo-murut-1',
     word: 'Lansaran',
     language: 'Murut',
-    translation: 'Traditional trampoline',
+    translation: 'Traditional spring platform',
     pronunciation: 'lahn-sah-rahn',
     partOfSpeech: 'Noun',
-    examples: ['Minsibut di lansaran - Jump on the trampoline'],
-    relatedWords: ['Magunatip - Warrior dance', 'Sompoton - Bamboo instrument'],
+    examples: ['Minsibut di lansaran - Jump on the platform'],
+    relatedWords: ['Magunatip - Dance', 'Sompoton - Instrument'],
     category: 'Culture',
   },
   {
-    id: '12',
-    word: 'Monggit',
-    language: 'Kadazandusun',
-    translation: 'Beautiful',
-    pronunciation: 'mohng-geet',
-    partOfSpeech: 'Adjective',
-    examples: ['Monggit tanak - Beautiful child', 'Sunduan monggit - Very beautiful'],
-    relatedWords: ['Otuson - Good', 'Korikatan - Happy'],
-    category: 'Descriptive',
-  },
-  {
-    id: '13',
-    word: 'Kaamatan',
-    language: 'Kadazandusun',
-    translation: 'Harvest (festival)',
-    pronunciation: 'kah-ah-mah-tahn',
+    id: 'borneo-penan-1',
+    word: 'Belian',
+    language: 'Penan',
+    translation: 'Traditional healer',
+    pronunciation: 'beh-lee-ahn',
     partOfSpeech: 'Noun',
-    examples: ['Pesta Kaamatan - Harvest Festival'],
-    relatedWords: ['Padi - Rice', 'Bobohizan - High priestess'],
+    examples: ['Belian memimpin upacara komuniti.'],
+    relatedWords: ['Ritual', 'Heritage'],
     category: 'Culture',
-  },
-  {
-    id: '14',
-    word: 'Oku',
-    language: 'Kadazandusun',
-    translation: 'I/Me',
-    pronunciation: 'oh-koo',
-    partOfSpeech: 'Pronoun',
-    examples: ['Oku tomod - I am coming', 'Ngaran ku - My name is'],
-    relatedWords: ['Kita - We', 'Ko - You', 'Toi - They'],
-    category: 'Grammar',
-  },
-  {
-    id: '15',
-    word: 'Apat',
-    language: 'Kadazandusun',
-    translation: 'Four',
-    pronunciation: 'ah-paht',
-    partOfSpeech: 'Number',
-    examples: ['Apat om tanak - Four children'],
-    relatedWords: ['Iso - One', 'Duvo - Two', 'Tolu - Three', 'Limo - Five'],
-    category: 'Numbers',
   },
 ];
+
+const GENERATED_WORLD_LANGUAGE_ENTRIES = WORLD_LANGUAGES.flatMap((language) =>
+  CORE_WORD_TEMPLATES.map((template) => ({
+    id: `world-${language.id}-${template.key}`,
+    word: template.word,
+    language: language.label,
+    translation: template.translation,
+    pronunciation: template.pronunciation,
+    partOfSpeech: template.partOfSpeech,
+    examples: [`${template.word} in ${language.label} context.`],
+    relatedWords: ['Culture', 'Community', 'Heritage'],
+    category: template.category,
+  }))
+);
+
+const DICTIONARY_DATA = [...BORNEO_LANGUAGE_ENTRIES, ...GENERATED_WORLD_LANGUAGE_ENTRIES];
 
 export default function DictionaryScreen({ navigation }) {
   const { theme } = useTheme();
@@ -377,7 +301,7 @@ export default function DictionaryScreen({ navigation }) {
   }
 
   const categories = ['all', ...new Set(DICTIONARY_DATA.map((w) => w.category))];
-  const languages = ['all', 'Kadazandusun', 'Iban', 'Bajau', 'Murut'];
+  const languages = ['all', ...new Set(DICTIONARY_DATA.map((w) => w.language))];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>

@@ -35,6 +35,8 @@ const RECORDINGS_STORAGE_KEY = '@echolingua_recordings';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
 const COMMUNITY_STORIES_KEY = '@echolingua_stories'; // For StoryLibraryScreen (Community Archive)
 const USERS_DB_KEY = '@echolingua_users_database';
+const USER_STORAGE_KEY = '@echolingua_current_user';
+const CONTACT_SHARES_KEY = '@echolingua_contact_shares';
 
 export default function RecordScreen() {
   const { theme } = useTheme();
@@ -74,8 +76,11 @@ export default function RecordScreen() {
   const [selectedRecordingToShare, setSelectedRecordingToShare] = useState(null);
   const [shareTitle, setShareTitle] = useState('');
   const [shareDescription, setShareDescription] = useState('');
+  const [shareTranscript, setShareTranscript] = useState('');
   const [shareCategory, setShareCategory] = useState('Story');
   const [isSharingToCommunity, setIsSharingToCommunity] = useState(false);
+  const [showShareRecipientModal, setShowShareRecipientModal] = useState(false);
+  const [shareRecipients, setShareRecipients] = useState(['community']);
   
   // NEW: Recipient selection
   const [showRecipientModal, setShowRecipientModal] = useState(false);
@@ -83,6 +88,8 @@ export default function RecordScreen() {
   const [emergencyContacts, setEmergencyContacts] = useState([]);
   const [emergencyContactsWithApp, setEmergencyContactsWithApp] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+
+  const getContactRecipientKey = (contact) => `contact:${contact.id}:${contact.appUser?.id || contact.linkedUserId || 'app'}`;
   
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveHeights = useRef(Array(20).fill(0).map(() => new Animated.Value(20))).current;
@@ -115,9 +122,23 @@ export default function RecordScreen() {
         const updated = [newRecording, ...recordings];
         await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updated));
         setRecordings(updated);
+
+        // Treat imported audio as the active recording so user can select language and generate transcript.
+        setRecordingUri(asset.uri);
+        setHasRecording(true);
+        setIsRecording(false);
+        setIsPaused(false);
+        setRecordingTime(30);
+        setTranscript('');
+        setSelectedLanguage('');
+        setShowLanguageSelector(true);
+        setShareTranscript('');
         
         playSound('complete');
-        Alert.alert('File Imported', 'Audio file saved to Previous Recordings!');
+        Alert.alert(
+          'File Imported',
+          'Audio saved. Please select language and generate transcript before sharing.'
+        );
       }
     } catch (error) {
       if (error.code !== 'DOCUMENT_PICKER_CANCELLED') {
@@ -125,13 +146,13 @@ export default function RecordScreen() {
         Alert.alert('Error', 'Failed to pick audio file. Please try again.');
         playSound('incorrect');
       }
-    loadUserData();
     }
   };
 
   // Load recordings from local storage on mount
   useEffect(() => {
     loadRecordingsFromStorage();
+    loadUserData();
   }, []);
 
   // Initialize audio mode
@@ -250,16 +271,53 @@ export default function RecordScreen() {
         const usersDb = await AsyncStorage.getItem(USERS_DB_KEY);
         const appUsers = usersDb ? JSON.parse(usersDb) : [];
         
-        const filteredContacts = (user.emergencyContacts || []).filter(contact => {
-          // Check if contact exists in app users database by email or phone
-          return appUsers.some(appUser => 
-            appUser.email?.toLowerCase() === contact.email?.toLowerCase() ||
-            appUser.phone === contact.phone
-          );
+        const filteredContacts = (user.emergencyContacts || [])
+          .map((contact) => {
+            const normalizedUsername = contact.username?.trim().toLowerCase();
+            const normalizedEmail = contact.email?.trim().toLowerCase();
+            const normalizedPhone = contact.phone?.trim();
+
+            const matchedUser = appUsers.find((appUser) => {
+              return (
+                (contact.linkedUserId && appUser.id === contact.linkedUserId) ||
+                (normalizedEmail && appUser.email?.toLowerCase() === normalizedEmail) ||
+                (normalizedPhone && appUser.phone === normalizedPhone) ||
+                (normalizedUsername && (
+                  appUser.username?.toLowerCase() === normalizedUsername ||
+                  appUser.fullName?.toLowerCase() === normalizedUsername
+                ))
+              );
+            });
+
+            if (!matchedUser) {
+              return null;
+            }
+
+            return {
+              ...contact,
+              linkedUserId: matchedUser.id,
+              linkedUserName: matchedUser.fullName,
+              hasAppAccount: true,
+              appUser: {
+                id: matchedUser.id,
+                fullName: matchedUser.fullName,
+                email: matchedUser.email,
+                username: matchedUser.username || null,
+              },
+            };
+          })
+          .filter(Boolean);
+
+        const uniqueFilteredContacts = filteredContacts.filter((contact, index, arr) => {
+          const key = `${contact.id}-${contact.appUser?.id || contact.linkedUserId || 'unknown'}`;
+          return index === arr.findIndex((candidate) => {
+            const candidateKey = `${candidate.id}-${candidate.appUser?.id || candidate.linkedUserId || 'unknown'}`;
+            return candidateKey === key;
+          });
         });
         
-        setEmergencyContactsWithApp(filteredContacts);
-        console.log(`📱 Found ${filteredContacts.length} emergency contacts with app accounts out of ${user.emergencyContacts?.length || 0} total`);
+        setEmergencyContactsWithApp(uniqueFilteredContacts);
+        console.log(`📱 Found ${uniqueFilteredContacts.length} emergency contacts with app accounts out of ${user.emergencyContacts?.length || 0} total`);
       }
     } catch (error) {
       console.error('Failed to load user data:', error);
@@ -269,12 +327,49 @@ export default function RecordScreen() {
   // NEW: Save recording to storage
   const saveRecordingToStorage = async (newRecording) => {
     try {
-      const updated = [...recordings, newRecording];
+      const existingRaw = await AsyncStorage.getItem(RECORDINGS_STORAGE_KEY);
+      const existing = existingRaw ? JSON.parse(existingRaw) : [];
+      const updated = [newRecording, ...existing];
       await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updated));
       console.log('💾 Recording saved to local storage');
       setRecordings(updated);
     } catch (error) {
       console.error('Failed to save recording:', error);
+    }
+  };
+
+  const updateRecordingMetadata = async (recordingId, updates) => {
+    try {
+      const existingRaw = await AsyncStorage.getItem(RECORDINGS_STORAGE_KEY);
+      const existing = existingRaw ? JSON.parse(existingRaw) : recordings;
+
+      const updatedRecordings = existing.map((item) => {
+        if (item.id !== recordingId) {
+          return item;
+        }
+        return {
+          ...item,
+          ...updates,
+        };
+      });
+
+      setRecordings(updatedRecordings);
+      await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updatedRecordings));
+      return updatedRecordings.find((item) => item.id === recordingId) || null;
+    } catch (error) {
+      console.error('Failed to update recording metadata:', error);
+      return null;
+    }
+  };
+
+  const getRecordingByIdFromStorage = async (recordingId) => {
+    try {
+      const raw = await AsyncStorage.getItem(RECORDINGS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return parsed.find((item) => item.id === recordingId) || null;
+    } catch (error) {
+      console.error('Failed to fetch recording from storage:', error);
+      return null;
     }
   };
 
@@ -294,65 +389,232 @@ export default function RecordScreen() {
   // NEW: Open share modal for a recording
   const openShareModal = (recording) => {
     setSelectedRecordingToShare(recording);
-    setShareTitle('');
-    setShareDescription('');
+    setShareTitle(
+      recording?.title ||
+      (recording?.fileName ? `Recording: ${recording.fileName}` : `Recording ${new Date(recording.timestamp).toLocaleDateString()}`)
+    );
+    setShareDescription(recording?.description || '');
+    setShareTranscript(recording?.transcript || '');
     setShareCategory('Story');
+    setShareRecipients([]);
+    setShowShareRecipientModal(false);
     setShowShareModal(true);
     playSound('select');
   };
 
-  // NEW: Share recording to community
-  const handleShareToCommunity = async () => {
+  useEffect(() => {
+    if (!showShareModal || !selectedRecordingToShare) {
+      return;
+    }
+
+    const refreshedRecording = recordings.find((item) => item.id === selectedRecordingToShare.id);
+    if (!refreshedRecording?.transcript) {
+      return;
+    }
+
+    if (refreshedRecording.transcript !== shareTranscript) {
+      setShareTranscript(refreshedRecording.transcript);
+    }
+  }, [recordings, showShareModal, selectedRecordingToShare?.id]);
+
+  const toggleShareRecipient = (recipient) => {
+    setShareRecipients((current) => {
+      if (current.includes(recipient)) {
+        return current.filter((item) => item !== recipient);
+      }
+      return [...current, recipient];
+    });
+  };
+
+  const handleShareRecording = async () => {
     if (!shareTitle.trim()) {
       Alert.alert('Title Required', 'Please enter a title for your story');
       playSound('incorrect');
       return;
     }
 
-    if (!shareDescription.trim()) {
-      Alert.alert('Description Required', 'Please add a description');
+    if (!shareTranscript.trim()) {
+      Alert.alert('Transcript Required', 'Please include transcript before sharing.');
+      playSound('incorrect');
+      return;
+    }
+
+    if (shareRecipients.length === 0) {
+      Alert.alert('Recipient Required', 'Please choose at least one destination.');
       playSound('incorrect');
       return;
     }
 
     setIsSharingToCommunity(true);
-    console.log('📤 Sharing recording to community...');
+    console.log('📤 Sharing recording...');
 
     try {
-      // Load existing community stories
-      const storedStories = await AsyncStorage.getItem(COMMUNITY_STORIES_KEY);
-      const existingStories = storedStories ? JSON.parse(storedStories) : [];
+      const persistedSourceRecording = selectedRecordingToShare?.id
+        ? await getRecordingByIdFromStorage(selectedRecordingToShare.id)
+        : null;
+      const sourceRecording =
+        persistedSourceRecording ||
+        recordings.find((item) => item.id === selectedRecordingToShare?.id) ||
+        selectedRecordingToShare;
 
-      // Get language name
-      const languageName = WORLD_LANGUAGES.find(l => l.id === selectedRecordingToShare.language)?.label || 'Unknown';
+      if (!sourceRecording) {
+        throw new Error('Selected recording not found.');
+      }
 
-      // Create new community story
+      const persistedTitle = (shareTitle || sourceRecording.title || '').trim();
+      const persistedDescription = (shareDescription || sourceRecording.description || '').trim();
+      const persistedTranscript = (shareTranscript || sourceRecording.transcript || '').trim();
+      const persistedLanguageId = sourceRecording.language || selectedLanguage || null;
+      const languageName = WORLD_LANGUAGES.find(l => l.id === persistedLanguageId)?.label || 'Unknown';
+
+      if (!persistedTitle) {
+        Alert.alert('Title Required', 'Please enter a title for your story');
+        playSound('incorrect');
+        setIsSharingToCommunity(false);
+        return;
+      }
+
+      if (!persistedTranscript) {
+        Alert.alert('Transcript Required', 'Please generate transcript before sharing.');
+        playSound('incorrect');
+        setIsSharingToCommunity(false);
+        return;
+      }
+
+      const savedRecording = await updateRecordingMetadata(sourceRecording.id, {
+        title: persistedTitle,
+        description: persistedDescription,
+        transcript: persistedTranscript,
+        language: persistedLanguageId,
+        lastSharedAt: new Date().toISOString(),
+      });
+
+      const recordingForShare = savedRecording || {
+        ...sourceRecording,
+        title: persistedTitle,
+        description: persistedDescription,
+        transcript: persistedTranscript,
+        language: persistedLanguageId,
+      };
+
+      const explicitlySelectedContacts = emergencyContactsWithApp.filter((contact) =>
+        shareRecipients.includes(getContactRecipientKey(contact))
+      );
+      const communitySelected = shareRecipients.includes('community');
+      const selectedEmergencyContacts = [...explicitlySelectedContacts].filter(
+        (contact, index, arr) => {
+          const key = `${contact.id}-${contact.appUser?.id || contact.linkedUserId || 'app'}`;
+          return (
+            index ===
+            arr.findIndex((candidate) => {
+              const candidateKey = `${candidate.id}-${candidate.appUser?.id || candidate.linkedUserId || 'app'}`;
+              return candidateKey === key;
+            })
+          );
+        }
+      );
+
+      if (!communitySelected && selectedEmergencyContacts.length === 0) {
+        Alert.alert(
+          'Recipient Required',
+          'Choose Community Archive and/or at least one emergency contact app user.'
+        );
+        playSound('incorrect');
+        setIsSharingToCommunity(false);
+        return;
+      }
+
       const newStory = {
         id: Date.now().toString(),
-        title: shareTitle.trim(),
-        description: shareDescription.trim(),
-        author: 'You', // Could be replaced with actual user name
+        title: recordingForShare.title,
+        description: recordingForShare.description || '',
+        transcript: recordingForShare.transcript,
+        author: currentUser?.fullName || 'Unknown User',
+        userId: currentUser?.id || null,
+        authorId: currentUser?.id || null,
+        authorRole: currentUser?.role || 'learner',
+        senderHasAppAccount: Boolean(currentUser?.id),
+        sentByLabel: currentUser?.fullName
+          ? `Sent by ${currentUser.fullName} (${currentUser.role || 'learner'})`
+          : 'Sent by App User',
         language: languageName,
+        languageId: recordingForShare.language || null,
         category: shareCategory,
-        audioUri: selectedRecordingToShare.uri,
-        duration: selectedRecordingToShare.duration,
+        audioUri: recordingForShare.uri,
+        duration: recordingForShare.duration,
         likes: 0,
         commentsList: [],
         bookmarks: 0,
         timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         isFollowing: false,
+        recipients: shareRecipients,
+        sharedWithContacts: selectedEmergencyContacts.map((contact) => ({
+          id: contact.id,
+          name: contact.name,
+          relation: contact.relation,
+          appUserId: contact.appUser?.id,
+          appUserName: contact.appUser?.fullName,
+        })),
       };
 
-      // Add to community stories
-      const updatedStories = [newStory, ...existingStories];
-      await AsyncStorage.setItem(COMMUNITY_STORIES_KEY, JSON.stringify(updatedStories));
+      if (communitySelected) {
+        const existingCommunityStoriesRaw = await AsyncStorage.getItem(COMMUNITY_STORIES_KEY);
+        const existingCommunityStories = existingCommunityStoriesRaw ? JSON.parse(existingCommunityStoriesRaw) : [];
+        const updatedCommunityStories = [newStory, ...existingCommunityStories];
+        await AsyncStorage.setItem(COMMUNITY_STORIES_KEY, JSON.stringify(updatedCommunityStories));
+      }
 
-      console.log('✅ Recording shared to community successfully!');
+      if (selectedEmergencyContacts.length > 0) {
+        const existingShares = await AsyncStorage.getItem(CONTACT_SHARES_KEY);
+        const parsedShares = existingShares ? JSON.parse(existingShares) : [];
+        const deliveries = selectedEmergencyContacts.map((contact) => ({
+          id: `${newStory.id}-${contact.id}`,
+          sentAt: new Date().toISOString(),
+          toContactId: contact.id,
+          toContactName: contact.name,
+          toAppUserId: contact.appUser?.id || null,
+          fromUserId: currentUser?.id || null,
+          fromUserName: currentUser?.fullName || 'Unknown User',
+          payload: newStory,
+        }));
+        await AsyncStorage.setItem(CONTACT_SHARES_KEY, JSON.stringify([...deliveries, ...parsedShares]));
+
+        for (const contact of selectedEmergencyContacts) {
+          if (!contact.appUser?.id) {
+            continue;
+          }
+
+          const recipientStory = {
+            ...newStory,
+            id: `${newStory.id}-to-${contact.appUser.id}`,
+            sharedViaEmergency: true,
+            toUserId: contact.appUser.id,
+            toUserName: contact.appUser.fullName,
+            receivedAt: new Date().toISOString(),
+          };
+
+          const recipientArchiveKey = `@echolingua_received_stories_${contact.appUser.id}`;
+          const existingRecipientStories = await AsyncStorage.getItem(recipientArchiveKey);
+          const parsedRecipientStories = existingRecipientStories ? JSON.parse(existingRecipientStories) : [];
+          await AsyncStorage.setItem(recipientArchiveKey, JSON.stringify([recipientStory, ...parsedRecipientStories]));
+        }
+      }
+
+      console.log('✅ Recording shared successfully!');
       playSound('complete');
+
+      const recipientSummary = [];
+      if (communitySelected) {
+        recipientSummary.push('Community Archive');
+      }
+      if (selectedEmergencyContacts.length > 0) {
+        recipientSummary.push(`${selectedEmergencyContacts.length} Emergency Contact(s)`);
+      }
 
       Alert.alert(
         'Shared Successfully! 🎉',
-        `"${shareTitle}" has been shared to the Story Library (Community Archive). Thank you for contributing!`,
+        `"${shareTitle}" was shared with: ${recipientSummary.join(', ')}\n\n${newStory.sentByLabel}`,
         [
           {
             text: 'View in Library',
@@ -369,11 +631,14 @@ export default function RecordScreen() {
       );
 
       // Reset modal
+      setShowShareRecipientModal(false);
       setShareTitle('');
       setShareDescription('');
+      setShareTranscript('');
       setSelectedRecordingToShare(null);
+      setShareRecipients([]);
     } catch (error) {
-      console.error('❌ Failed to share to community:', error);
+      console.error('❌ Failed to share recording:', error);
       Alert.alert('Share Failed', 'Could not share your recording. Please try again.');
       playSound('incorrect');
     } finally {
@@ -464,6 +729,9 @@ export default function RecordScreen() {
         timestamp: new Date().toISOString(),
         language: selectedLanguage,
         transcript: '',
+        title: '',
+        description: '',
+        fileName: `Recording ${new Date().toLocaleDateString()}`,
       };
 
       saveRecordingToStorage(newRecording);
@@ -750,16 +1018,30 @@ export default function RecordScreen() {
         
         generatedTranscript = `${greeting}${intro}${ending}`.trim();
         
-        // NEW: Translate transcript to selected language if not already in that language
-        console.log('🔄 Translating transcript to', selectedLanguage);
+        // Always provide transcript plus an English translation block for sharing clarity.
+        console.log('🔄 Preparing transcript translation blocks');
         let translatedTranscript = generatedTranscript;
-        
-        // Only translate if the selected language is not one of the template languages
+        let englishTranslation = generatedTranscript;
+
+        // If the selected language is outside templates, translate content to that language first.
         if (!languageGreetings[selectedLanguage]) {
-          translatedTranscript = await translateText(generatedTranscript, selectedLanguage);
-          console.log('✅ Translation complete');
-        } else {
-          console.log('ℹ️ Transcript already in selected language');
+          try {
+            translatedTranscript = await translateText(generatedTranscript, selectedLanguage);
+            console.log('✅ Target-language translation complete');
+          } catch (translationError) {
+            console.warn('Target-language translation failed, using original transcript.', translationError);
+          }
+        }
+
+        // Add English translation for any non-English selected language.
+        if (selectedLanguage !== 'english') {
+          try {
+            englishTranslation = await translateText(translatedTranscript, 'english');
+            console.log('✅ English translation complete');
+          } catch (translationError) {
+            console.warn('English translation failed, using generated transcript as fallback.', translationError);
+            englishTranslation = generatedTranscript;
+          }
         }
         
         // Add metadata header with both original and translated versions
@@ -771,10 +1053,10 @@ export default function RecordScreen() {
 🌐 Language: ${selectedLang?.label || 'Unknown'}
 ━━━━━━━━━━━━━━━━━━
 
-📄 Transcribed Text:
+📄 Transcribed Text (${selectedLang?.label || 'Selected Language'}):
 ${translatedTranscript}
 
-${generatedTranscript !== translatedTranscript ? `\n📝 Original (English):\n${generatedTranscript}` : ''}
+${selectedLanguage !== 'english' ? `\n🌐 English Translation:\n${englishTranslation}` : ''}
 
 ${recordingTime < 5 ? '\n⚠️ Note: Short recording detected. For better accuracy, please record at least 10 seconds.' : ''}
 ${recordingTime >= 10 && recordingTime < 30 ? '\n✅ Good recording length. Transcript quality should be accurate.' : ''}
@@ -783,6 +1065,32 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
 💡 Tip: This is a simulated transcript. In production, this would use ${selectedLang?.label} speech recognition AI to analyze your actual recorded audio.`;
         
         setTranscript(metadata);
+
+        const activeRecording = recordings.find((item) => item.uri === recordingUri);
+        if (activeRecording?.id) {
+          await updateRecordingMetadata(activeRecording.id, {
+            transcript: metadata,
+            language: selectedLanguage,
+          });
+        } else {
+          const updatedRecordings = recordings.map((item) => {
+            if (item.uri === recordingUri) {
+              return {
+                ...item,
+                transcript: metadata,
+                language: selectedLanguage,
+              };
+            }
+            return item;
+          });
+          setRecordings(updatedRecordings);
+          await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updatedRecordings));
+        }
+
+        if (showShareModal && selectedRecordingToShare && selectedRecordingToShare.uri === recordingUri) {
+          setShareTranscript(metadata);
+        }
+
         setIsGenerating(false);
         playSound('complete');
         console.log('✅ Transcript generated and translated successfully');
@@ -932,88 +1240,99 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
         </View>
         
         <View style={styles.content}>
-          {/* Timer Display */}
-          <View style={styles.timerContainer}>
-            <Text style={[styles.timerText, { color: theme.text }]}>{formatTime(recordingTime)}</Text>
-            {isRecording && (
-              <View style={styles.recordingIndicator}>
-                <View style={[styles.redDot, { backgroundColor: theme.error }]} />
-                <Text style={[styles.recordingText, { color: theme.error }]}>{isPaused ? 'PAUSED' : 'RECORDING'}</Text>
+          <View style={[styles.recordingStudioCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+            <View style={styles.studioHeaderRow}>
+              <Text style={[styles.studioTitle, { color: theme.text }]}>Recording Studio</Text>
+              <View style={[styles.studioStatusPill, { backgroundColor: isRecording ? (theme.error || '#EF4444') + '20' : theme.surfaceVariant }]}> 
+                <Text style={[styles.studioStatusText, { color: isRecording ? (theme.error || '#EF4444') : theme.textSecondary }]}>
+                  {isRecording ? (isPaused ? 'Paused' : 'Recording') : 'Ready'}
+                </Text>
               </View>
-            )}
-          </View>
+            </View>
 
-          {/* Waveform Visualization */}
-          <View style={styles.waveformContainer}>
-            {waveHeights.map((height, index) => (
-              <Animated.View
-                key={index}
-                style={[
-                  styles.waveBar,
-                  {
-                    height: height,
-                    backgroundColor: isRecording ? theme.error : theme.textSecondary,
-                  },
-                ]}
-              />
-            ))}
-          </View>
+            {/* Timer Display */}
+            <View style={styles.timerContainer}>
+              <Text style={[styles.timerText, { color: theme.text }]}>{formatTime(recordingTime)}</Text>
+              {isRecording && (
+                <View style={styles.recordingIndicator}>
+                  <View style={[styles.redDot, { backgroundColor: theme.error }]} />
+                  <Text style={[styles.recordingText, { color: theme.error }]}>{isPaused ? 'PAUSED' : 'RECORDING'}</Text>
+                </View>
+              )}
+            </View>
 
-          {/* Main Record Button */}
-          <View style={[styles.controlsContainer, { backgroundColor: theme.surface }]}>
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <TouchableOpacity
-                style={[
-                  styles.recordButton,
-                  isRecording && [styles.recordButtonActive, { backgroundColor: theme.error }],
-                  !isRecording && { backgroundColor: theme.primary }
-                ]}
-                onPress={handleRecord}
-                disabled={isRecording}
-              >
-                <Ionicons
-                  name="mic"
-                  size={64}
-                  color={theme.onPrimary || '#FFFFFF'}
+            {/* Waveform Visualization */}
+            <View style={[styles.waveformContainer, { backgroundColor: theme.background, borderColor: theme.border }]}> 
+              {waveHeights.map((height, index) => (
+                <Animated.View
+                  key={index}
+                  style={[
+                    styles.waveBar,
+                    {
+                      height: height,
+                      backgroundColor: isRecording ? theme.error : theme.textSecondary,
+                    },
+                  ]}
                 />
-              </TouchableOpacity>
-            </Animated.View>
+              ))}
+            </View>
 
-            {/* Control Buttons */}
-            {isRecording && (
-              <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: theme.surface }]} 
-                  onPress={handlePause}
+            {/* Main Record Button */}
+            <View style={[styles.controlsContainer, { backgroundColor: theme.surface }]}> 
+              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                <TouchableOpacity
+                  style={[
+                    styles.recordButton,
+                    isRecording && [styles.recordButtonActive, { backgroundColor: theme.error }],
+                    !isRecording && { backgroundColor: theme.primary }
+                  ]}
+                  onPress={handleRecord}
+                  disabled={isRecording}
+                >
+                  <Ionicons
+                    name="mic"
+                    size={64}
+                    color={theme.onPrimary || '#FFFFFF'}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Control Buttons */}
+              {isRecording && (
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: theme.background, borderColor: theme.border }]} 
+                    onPress={handlePause}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={isPaused ? "play" : "pause"} size={28} color={theme.primary} />
+                    <Text style={[styles.actionButtonText, { color: theme.primary }]}>{isPaused ? 'Resume' : 'Pause'}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.stopButton, { backgroundColor: theme.background, borderColor: theme.error }]} 
+                    onPress={handleStop}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="stop" size={28} color={theme.error} />
+                    <Text style={[styles.actionButtonText, { color: theme.error }]}>Stop</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Upload Audio File Button */}
+              {!isRecording && !hasRecording && (
+                <TouchableOpacity
+                  style={[styles.uploadAudioButton, { backgroundColor: theme.glassMedium, borderColor: theme.primary }]}
+                  onPress={handlePickAudioFile}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name={isPaused ? "play" : "pause"} size={28} color={theme.primary} />
-                  <Text style={[styles.actionButtonText, { color: theme.primary }]}>{isPaused ? 'Resume' : 'Pause'}</Text>
+                  <Ionicons name="folder-open" size={24} color={theme.primary} />
+                  <Text style={[styles.uploadAudioButtonText, { color: theme.primary }]}>Or Pick from Phone</Text>
                 </TouchableOpacity>
+              )}
 
-                <TouchableOpacity 
-                  style={[styles.actionButton, styles.stopButton, { backgroundColor: theme.surface }]} 
-                  onPress={handleStop}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="stop" size={28} color={theme.error} />
-                  <Text style={[styles.actionButtonText, { color: theme.error }]}>Stop</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Upload Audio File Button */}
-            {!isRecording && !hasRecording && (
-              <TouchableOpacity
-                style={[styles.uploadAudioButton, { backgroundColor: theme.glassMedium, borderColor: theme.primary }]}
-                onPress={handlePickAudioFile}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="folder-open" size={24} color={theme.primary} />
-                <Text style={[styles.uploadAudioButtonText, { color: theme.primary }]}>Or Pick from Phone</Text>
-              </TouchableOpacity>
-            )}
-
+            </View>
           </View>
 
           {/* NEW: Playback Controls - Redesigned */}
@@ -1387,8 +1706,8 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
           <View style={[styles.shareModalContainer, { backgroundColor: theme.surface }]}>
             <View style={[styles.shareModalHeader, { borderBottomColor: theme.border }]}>
               <View>
-                <Text style={[styles.shareModalTitle, { color: theme.text }]}>Share to Community</Text>
-                <Text style={[styles.shareModalSubtitle, { color: theme.textSecondary }]}>Add details to your recording</Text>
+                <Text style={[styles.shareModalTitle, { color: theme.text }]}>Share Recording</Text>
+                <Text style={[styles.shareModalSubtitle, { color: theme.textSecondary }]}>Share recording + transcript + details</Text>
               </View>
               <TouchableOpacity
                 style={styles.closeModalButton}
@@ -1414,7 +1733,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
 
               {/* Description Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Description *</Text>
+                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Description (Optional)</Text>
                 <TextInput
                   style={[styles.shareInput, styles.shareTextArea, { backgroundColor: theme.inputBackground, color: theme.text, borderColor: theme.border }]}
                   placeholder="Describe your recording, add context, or share its cultural significance..."
@@ -1458,6 +1777,21 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 </View>
               </View>
 
+              {/* Transcript Input */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Transcript *</Text>
+                <TextInput
+                  style={[styles.shareInput, styles.shareTranscriptArea, { backgroundColor: theme.inputBackground, color: theme.text, borderColor: theme.border }]}
+                  placeholder="Auto-filled by AI generated transcript"
+                  placeholderTextColor={theme.textSecondary}
+                  value={shareTranscript}
+                  editable={false}
+                  multiline
+                  numberOfLines={6}
+                  textAlignVertical="top"
+                />
+              </View>
+
               {/* Recording Info */}
               {selectedRecordingToShare && (
                 <View style={styles.recordingInfoCard}>
@@ -1469,6 +1803,9 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                       {selectedRecordingToShare.language ? 
                         WORLD_LANGUAGES.find(l => l.id === selectedRecordingToShare.language)?.label : 
                         'Language not set'}
+                    </Text>
+                    <Text style={styles.recordingInfoDetails}>
+                      Sender: {currentUser?.fullName || 'Unknown User'} ({currentUser?.role || 'learner'})
                     </Text>
                   </View>
                 </View>
@@ -1489,7 +1826,28 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                   styles.shareButton,
                   isSharingToCommunity && styles.shareButtonDisabled
                 ]}
-                onPress={handleShareToCommunity}
+                onPress={() => {
+                  const latestTranscript =
+                    selectedRecordingToShare?.transcript ||
+                    recordings.find((item) => item.id === selectedRecordingToShare?.id)?.transcript ||
+                    transcript ||
+                    '';
+
+                  if (!latestTranscript.trim()) {
+                    Alert.alert(
+                      'Transcript Required',
+                      'Please generate AI transcript first. The transcript and translation will be auto-filled for recipient sharing.'
+                    );
+                    playSound('incorrect');
+                    return;
+                  }
+
+                  if (latestTranscript !== shareTranscript) {
+                    setShareTranscript(latestTranscript);
+                  }
+
+                  setShowShareRecipientModal(true);
+                }}
                 disabled={isSharingToCommunity}
               >
                 {isSharingToCommunity ? (
@@ -1497,11 +1855,125 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 ) : (
                   <>
                     <Ionicons name="share-social" size={20} color={COLORS.surface} />
-                    <Text style={styles.shareButtonText}>Share to Community</Text>
+                    <Text style={styles.shareButtonText}>Next: Choose Recipients</Text>
                   </>
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Recipient Selection for Share Icon Flow */}
+      <Modal
+        visible={showShareRecipientModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowShareRecipientModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.recipientModalContainer, { backgroundColor: theme.surface }]}> 
+            <View style={[styles.shareModalHeader, { borderBottomColor: theme.border }]}> 
+              <View>
+                <Text style={[styles.shareModalTitle, { color: theme.text }]}>Choose Recipients</Text>
+                <Text style={[styles.shareModalSubtitle, { color: theme.textSecondary }]}>Select Community Archive and/or Emergency Contacts</Text>
+              </View>
+              <TouchableOpacity style={styles.closeModalButton} onPress={() => setShowShareRecipientModal(false)}>
+                <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.recipientModalContent} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[
+                  styles.recipientOption,
+                  { backgroundColor: theme.glassMedium, borderColor: theme.border },
+                  shareRecipients.includes('community') && [styles.recipientOptionActive, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }],
+                ]}
+                onPress={() => toggleShareRecipient('community')}
+              >
+                <View style={[styles.recipientIconContainer, { backgroundColor: theme.primary + '20' }]}>
+                  <Ionicons name="globe" size={24} color={theme.primary} />
+                </View>
+                <View style={styles.recipientInfo}>
+                  <Text style={[styles.recipientTitle, { color: theme.text }]}>Community Archive</Text>
+                  <Text style={[styles.recipientDescription, { color: theme.textSecondary }]}>Share to your own community archive.</Text>
+                </View>
+                <Ionicons
+                  name={shareRecipients.includes('community') ? 'checkbox' : 'square-outline'}
+                  size={28}
+                  color={shareRecipients.includes('community') ? theme.primary : theme.textSecondary}
+                />
+              </TouchableOpacity>
+
+              <View style={styles.sectionDivider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.sectionDividerText}>Emergency Contacts With App</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {emergencyContactsWithApp.length === 0 && (
+                <View style={styles.noContactsBanner}>
+                  <Ionicons name="people-outline" size={24} color={theme.textSecondary} />
+                  <Text style={styles.noContactsText}>No emergency contacts with app account found.</Text>
+                </View>
+              )}
+
+              {emergencyContactsWithApp.map((contact, index) => {
+                const recipientKey = getContactRecipientKey(contact);
+                return (
+                  <TouchableOpacity
+                    key={`share-recipient-${contact.id}-${contact.appUser?.id || 'app'}-${index}`}
+                    style={[
+                      styles.recipientOption,
+                      { backgroundColor: theme.glassMedium, borderColor: theme.border },
+                      shareRecipients.includes(recipientKey) && [styles.recipientOptionActive, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }],
+                    ]}
+                    onPress={() => toggleShareRecipient(recipientKey)}
+                  >
+                    <View style={[styles.recipientIconContainer, { backgroundColor: theme.accent + '20' }]}>
+                      <Ionicons name="person-circle" size={24} color={theme.accent} />
+                    </View>
+                    <View style={styles.recipientInfo}>
+                      <Text style={[styles.recipientTitle, { color: theme.text }]}>{contact.name}</Text>
+                      <Text style={[styles.recipientDescription, { color: theme.textSecondary }]}>
+                        {contact.relation} • App User: {contact.appUser?.fullName || contact.linkedUserName || 'Linked'}
+                      </Text>
+                      {(contact.username || contact.appUser?.email || contact.email) && (
+                        <Text style={[styles.recipientDescription, { color: theme.textSecondary }]}> 
+                          @{contact.username || contact.appUser?.username || 'user'} • {contact.appUser?.email || contact.email}
+                        </Text>
+                      )}
+                    </View>
+                    <Ionicons
+                      name={shareRecipients.includes(recipientKey) ? 'checkbox' : 'square-outline'}
+                      size={28}
+                      color={shareRecipients.includes(recipientKey) ? theme.primary : theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+
+              {currentUser && (
+                <View style={[styles.authorLabelBanner, { backgroundColor: theme.primary + '20' }]}> 
+                  <Ionicons name="information-circle" size={20} color={theme.primary} />
+                  <Text style={[styles.authorLabelText, { color: theme.text }]}>This share will be marked as sent by {currentUser.fullName} ({currentUser.role || 'learner'}).</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[
+                styles.saveRecipientButton,
+                shareRecipients.length === 0 && styles.saveRecipientButtonDisabled,
+                { backgroundColor: theme.primary },
+              ]}
+              onPress={handleShareRecording}
+              disabled={shareRecipients.length === 0 || isSharingToCommunity}
+            >
+              <Text style={[styles.saveRecipientButtonText, { color: theme.onPrimary || '#FFFFFF' }]}>Share Now ({shareRecipients.length})</Text>
+              <Ionicons name="checkmark-circle" size={24} color={theme.onPrimary || '#FFFFFF'} />
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1514,7 +1986,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
         onRequestClose={() => setShowRecipientModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.shareModalContainer, { backgroundColor: theme.surface }]}>
+          <View style={[styles.recipientModalContainer, { backgroundColor: theme.surface }]}> 
             <View style={[styles.shareModalHeader, { borderBottomColor: theme.border }]}>
               <View>
                 <Text style={[styles.shareModalTitle, { color: theme.text }]}>Share Recording</Text>
@@ -1528,7 +2000,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.shareModalContent} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.recipientModalContent} showsVerticalScrollIndicator={false}>
               {/* Private Library Option */}
               <TouchableOpacity
                 style={[
@@ -1596,9 +2068,9 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                     <View style={styles.dividerLine} />
                   </View>
 
-                  {emergencyContactsWithApp.map((contact) => (
+                  {emergencyContactsWithApp.map((contact, index) => (
                     <TouchableOpacity
-                      key={contact.id}
+                      key={`save-recipient-${contact.id}-${contact.appUser?.id || 'app'}-${index}`}
                       style={[
                         styles.recipientOption,
                         selectedRecipients.includes(contact.id) && styles.recipientOptionActive
@@ -1713,12 +2185,38 @@ const styles = StyleSheet.create({
   content: {
     padding: SPACING.l,
   },
+  recordingStudioCard: {
+    borderWidth: 1,
+    borderRadius: SPACING.l,
+    padding: SPACING.l,
+    marginBottom: SPACING.l,
+    ...SHADOWS.medium,
+  },
+  studioHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  studioTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  studioStatusPill: {
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  studioStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   timerContainer: {
     alignItems: 'center',
-    marginVertical: SPACING.l,
+    marginBottom: SPACING.m,
   },
   timerText: {
-    fontSize: 48,
+    fontSize: 44,
     fontWeight: 'bold',
     color: COLORS.primary,
     fontVariant: ['tabular-nums'],
@@ -1747,7 +2245,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 80,
     gap: 3,
-    marginVertical: SPACING.l,
+    marginBottom: SPACING.l,
     backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
     borderWidth: 1,
@@ -1761,7 +2259,7 @@ const styles = StyleSheet.create({
   },
   controlsContainer: {
     alignItems: 'center',
-    marginVertical: SPACING.xl,
+    marginVertical: 0,
   },
   recordButton: {
     width: 140,
@@ -1780,10 +2278,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginTop: SPACING.l,
     gap: SPACING.m,
+    width: '100%',
+    justifyContent: 'center',
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: SPACING.s,
     backgroundColor: COLORS.glassLight,
     borderWidth: 1,
@@ -1792,6 +2293,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.l,
     borderRadius: SPACING.m,
     ...SHADOWS.small,
+    minWidth: 130,
   },
   stopButton: {
     borderWidth: 1,
@@ -1819,6 +2321,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: COLORS.primary,
+  },
+  uploadAudioButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    marginTop: SPACING.l,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.l,
+    borderRadius: SPACING.m,
+    borderWidth: 1.5,
+  },
+  uploadAudioButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   playbackContainer: {
     width: '100%',
@@ -2357,8 +2874,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: SPACING.l,
     borderTopRightRadius: SPACING.l,
-    maxHeight: '85%',
-    paddingBottom: SPACING.l,
+    maxHeight: '74%',
+    paddingBottom: SPACING.m,
   },
   shareModalHeader: {
     flexDirection: 'row',
@@ -2369,24 +2886,37 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   shareModalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
     marginBottom: 4,
   },
   shareModalSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
   },
   closeModalButton: {
     padding: SPACING.xs,
   },
   shareModalContent: {
-    padding: SPACING.l,
-    maxHeight: '60%',
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    maxHeight: '52%',
+  },
+  recipientModalContainer: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: SPACING.l,
+    borderTopRightRadius: SPACING.l,
+    maxHeight: '64%',
+    paddingBottom: SPACING.s,
+  },
+  recipientModalContent: {
+    paddingHorizontal: SPACING.s,
+    paddingVertical: SPACING.xs,
+    maxHeight: '48%',
   },
   inputGroup: {
-    marginBottom: SPACING.l,
+    marginBottom: SPACING.m,
   },
   inputLabel: {
     fontSize: 15,
@@ -2405,6 +2935,10 @@ const styles = StyleSheet.create({
   },
   shareTextArea: {
     height: 100,
+    paddingTop: SPACING.m,
+  },
+  shareTranscriptArea: {
+    height: 160,
     paddingTop: SPACING.m,
   },
   characterCount: {
@@ -2464,7 +2998,8 @@ const styles = StyleSheet.create({
   shareModalFooter: {
     flexDirection: 'row',
     gap: SPACING.m,
-    padding: SPACING.l,
+    paddingHorizontal: SPACING.m,
+    paddingTop: SPACING.s,
     paddingBottom: 0,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,

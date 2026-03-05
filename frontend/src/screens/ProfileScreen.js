@@ -34,7 +34,8 @@ export default function ProfileScreen() {
   const [mediumAvg, setMediumAvg] = useState(0);
   const [hardAvg, setHardAvg] = useState(0);
   const [showLangOptions, setShowLangOptions] = useState(false);
-  const [currentLang, setCurrentLang] = useState('Kadazan-Dusun');
+  const [currentLang, setCurrentLang] = useState('');
+  const [emergencyContacts, setEmergencyContacts] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -58,6 +59,13 @@ export default function ProfileScreen() {
       if (userData) {
         const user = JSON.parse(userData);
         setCurrentUser(user);
+        const storedLanguages = Array.isArray(user.languages)
+          ? user.languages
+          : typeof user.languages === 'string' && user.languages.trim()
+            ? user.languages.split(',').map((item) => item.trim()).filter(Boolean)
+            : [];
+        setCurrentLang(storedLanguages[0] || 'Not set');
+        setEmergencyContacts(user.emergencyContacts || []);
       }
 
       const profile = await getUserProfile();
@@ -73,6 +81,73 @@ export default function ProfileScreen() {
       setHardAvg(hard);
     } catch (error) {
       console.error('Failed to load user profile:', error);
+    }
+  };
+
+  const persistCurrentUser = async (updatedUser) => {
+    await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    const usersData = await AsyncStorage.getItem(USERS_DB_KEY);
+    if (usersData) {
+      const users = JSON.parse(usersData);
+      const userIndex = users.findIndex((user) => user.id === updatedUser.id);
+      if (userIndex !== -1) {
+        users[userIndex] = {
+          ...users[userIndex],
+          ...updatedUser,
+        };
+        await AsyncStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+      }
+    }
+  };
+
+  const handleLanguagePreferenceChange = async (languageLabel) => {
+    try {
+      setCurrentLang(languageLabel);
+      setShowLangOptions(false);
+
+      if (!currentUser) {
+        return;
+      }
+
+      const existingLanguages = Array.isArray(currentUser.languages)
+        ? currentUser.languages
+        : typeof currentUser.languages === 'string' && currentUser.languages.trim()
+          ? currentUser.languages.split(',').map((item) => item.trim()).filter(Boolean)
+          : [];
+
+      const mergedLanguages = [languageLabel, ...existingLanguages.filter((item) => item !== languageLabel)];
+      const updatedUser = {
+        ...currentUser,
+        languages: mergedLanguages,
+      };
+
+      setCurrentUser(updatedUser);
+      await persistCurrentUser(updatedUser);
+    } catch (error) {
+      console.error('Failed to update language preference:', error);
+      Alert.alert('Error', 'Could not update language preference.');
+    }
+  };
+
+  const handleCallEmergencyContact = async (contact) => {
+    if (!contact?.phone) {
+      Alert.alert('No Phone Number', 'This contact does not have a phone number.');
+      return;
+    }
+
+    const sanitized = contact.phone.replace(/[^+\d]/g, '');
+    const phoneUrl = `tel:${sanitized}`;
+
+    try {
+      const supported = await Linking.canOpenURL(phoneUrl);
+      if (!supported) {
+        Alert.alert('Call Not Supported', 'Your device cannot open the phone dialer.');
+        return;
+      }
+      await Linking.openURL(phoneUrl);
+    } catch (error) {
+      console.error('Failed to call emergency contact:', error);
+      Alert.alert('Call Failed', 'Unable to place the call right now.');
     }
   };
 
@@ -186,10 +261,7 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     key={lang.id}
                     style={styles.langOption}
-                    onPress={() => {
-                      setCurrentLang(lang.label);
-                      setShowLangOptions(false);
-                    }}
+                    onPress={() => handleLanguagePreferenceChange(lang.label)}
                   >
                     <Text style={styles.langFlag}>{lang.flag}</Text>
                     <Text style={[styles.langOptionText, { color: theme.text }]}>{lang.label}</Text>
@@ -254,12 +326,18 @@ export default function ProfileScreen() {
                   <Ionicons name="language" size={18} color={theme.primary} />
                   <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>Languages</Text>
                 </View>
-                <Text style={[styles.infoValue, { color: theme.text }]}>{Array.isArray(currentUser.languages) && currentUser.languages.length > 0 ? currentUser.languages.join(', ') : 'Not set'}</Text>
+                <Text style={[styles.infoValue, { color: theme.text }]}>
+                  {Array.isArray(currentUser.languages) && currentUser.languages.length > 0
+                    ? currentUser.languages.join(', ')
+                    : typeof currentUser.languages === 'string' && currentUser.languages.trim()
+                      ? currentUser.languages
+                      : 'Not set'}
+                </Text>
               </View>
               <View style={[styles.infoDivider, { backgroundColor: theme.border }]} />
               <View style={styles.infoRow}>
                 <View style={styles.infoLabelContainer}>
-                  <Ionicons name="cake-outline" size={18} color={theme.primary} />
+                  <Ionicons name="ribbon-outline" size={18} color={theme.primary} />
                   <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>Age</Text>
                 </View>
                 <Text style={[styles.infoValue, { color: theme.text }]}>{currentUser.age || 'Not set'}</Text>
@@ -276,6 +354,49 @@ export default function ProfileScreen() {
                     : 'Not set'}
                 </Text>
               </View>
+            </View>
+
+            <Text style={[styles.userInfoSectionTitle, { color: theme.text, marginTop: SPACING.l }]}>Emergency Contacts</Text>
+            <View style={[styles.userInfoCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+              {emergencyContacts.length === 0 ? (
+                <Text style={[styles.emptyEmergencyText, { color: theme.textSecondary }]}>No emergency contacts yet. Add one to call quickly when needed.</Text>
+              ) : (
+                emergencyContacts.map((contact) => (
+                  <View key={contact.id} style={[styles.emergencyRow, { borderBottomColor: theme.border }]}> 
+                    <View style={styles.emergencyMainInfo}>
+                      <Text style={[styles.emergencyName, { color: theme.text }]}>{contact.name || 'Unknown Contact'}</Text>
+                      <Text style={[styles.emergencyRelation, { color: theme.primary }]}>{contact.relation || 'Other'}</Text>
+                      {contact.username && (
+                        <Text style={[styles.emergencyDetail, { color: theme.textSecondary }]}>@{contact.username}</Text>
+                      )}
+                      {contact.email && (
+                        <Text style={[styles.emergencyDetail, { color: theme.textSecondary }]}>{contact.email}</Text>
+                      )}
+                      <Text style={[styles.emergencyDetail, { color: theme.textSecondary }]}>
+                        {contact.phone || contact.email || 'No contact details'}
+                      </Text>
+                      <Text style={[styles.emergencyAccountStatus, { color: contact.hasAppAccount ? theme.success || '#10B981' : theme.error }]}> 
+                        {contact.hasAppAccount ? 'Linked App Account' : 'Not linked to app account'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.callButton, { backgroundColor: theme.success || '#10B981' }]}
+                      onPress={() => handleCallEmergencyContact(contact)}
+                    >
+                      <Ionicons name="call" size={16} color={theme.surface} />
+                      <Text style={[styles.callButtonText, { color: theme.surface }]}>Call</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+
+              <TouchableOpacity
+                style={[styles.manageEmergencyButton, { borderColor: theme.primary }]}
+                onPress={() => navigation.navigate('EmergencyContacts')}
+              >
+                <Ionicons name="create-outline" size={18} color={theme.primary} />
+                <Text style={[styles.manageEmergencyButtonText, { color: theme.primary }]}>Update Emergency Contacts</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -611,6 +732,66 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
   infoValue: { fontSize: 13, color: COLORS.text, fontWeight: '700', textAlign: 'right', flex: 1, marginLeft: SPACING.s },
   infoDivider: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)' },
+  emptyEmergencyText: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: SPACING.m,
+  },
+  emergencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.s,
+    borderBottomWidth: 1,
+  },
+  emergencyMainInfo: {
+    flex: 1,
+    marginRight: SPACING.s,
+  },
+  emergencyName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emergencyRelation: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  emergencyDetail: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  emergencyAccountStatus: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  callButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  callButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  manageEmergencyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: SPACING.s,
+    paddingVertical: SPACING.s,
+    marginTop: SPACING.m,
+    gap: SPACING.xs,
+  },
+  manageEmergencyButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   achievementPassed: { backgroundColor: COLORS.glassMedium, borderColor: COLORS.success, borderWidth: 2 },
   achievementEmoji: { fontSize: 32 },
   achievementInfo: { flex: 1 },
