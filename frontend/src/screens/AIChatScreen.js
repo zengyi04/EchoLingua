@@ -8,8 +8,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { prepareSingleRecording, stopAndReleaseRecording } from '../services/recordingService';
 
-const GEMINI_API_KEY = 'AIzaSyDsYXxNrLpzniaFWzs0Po7W8aXvWq9EBns';
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL || 'gemini-2.0-flash';
 const CHAT_HISTORY_KEY = '@echolingua_ai_chat_history';
 
 const SYSTEM_CONTEXT = `You are an AI assistant for EchoLingua, a language learning app focused on indigenous languages of Borneo (Kadazandusun, Iban, Bajau, Murut). Help users with:
@@ -36,6 +36,12 @@ function toBase64(bytes) {
     result += c === undefined ? '=' : chars[triplet & 63];
   }
   return result;
+}
+
+function assertGeminiConfig() {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY in environment variables.');
+  }
 }
 
 export default function AIChatScreen({ navigation }) {
@@ -89,6 +95,8 @@ export default function AIChatScreen({ navigation }) {
   }, [messages, historyLoaded]);
 
   const requestGemini = async (parts, includeHistory = true) => {
+    assertGeminiConfig();
+
     // Build conversation history for context
     const conversationHistory = includeHistory
       ? messages.slice(-10).map((msg) => ({
@@ -205,7 +213,7 @@ export default function AIChatScreen({ navigation }) {
       // Use Gemini to transcribe audio to text
       console.log('🎤 Transcribing audio to text...');
       const transcriptionResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
