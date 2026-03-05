@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -149,6 +150,13 @@ export default function SignUpScreen({ navigation }) {
             >
               <Ionicons name="arrow-back" size={24} color={COLORS.text} />
             </TouchableOpacity>
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/appLogo.png')}
+                style={styles.appLogo}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join our language preservation community</Text>
           </View>
@@ -367,6 +375,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: SPACING.m,
+  },
+  logoContainer: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.m,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    alignSelf: 'center',
+  },
+  appLogo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 44,
   },
   title: {
     fontSize: 28,
