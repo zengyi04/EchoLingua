@@ -150,6 +150,54 @@ export default function FamilyLearningScreen({ navigation }) {
     );
   };
 
+  // Family Activities Handlers
+  const handleGroupPractice = () => {
+    if (!activeAccount) {
+      Alert.alert('Select Account', 'Please select an active account first');
+      return;
+    }
+    navigation.navigate('VocabularyScreen');
+  };
+
+  const handleFamilyChallenge = () => {
+    if (!activeAccount) {
+      Alert.alert('Select Account', 'Please select an active account first');
+      return;
+    }
+    navigation.navigate('QuizScreen');
+  };
+
+  const handleStoryTime = () => {
+    if (!activeAccount) {
+      Alert.alert('Select Account', 'Please select an active account first');
+      return;
+    }
+    navigation.navigate('StoryLibraryScreen');
+  };
+
+  const handleFamilyProgress = () => {
+    if (!activeAccount) {
+      Alert.alert('Select Account', 'Please select an active account first');
+      return;
+    }
+    
+    // Calculate combined family progress
+    const totalWords = accounts.reduce((sum, acc) => sum + acc.progress.wordsLearned, 0);
+    const totalQuizzes = accounts.reduce((sum, acc) => sum + acc.progress.quizzesTaken, 0);
+    const totalStories = accounts.reduce((sum, acc) => sum + acc.progress.storiesRead, 0);
+    const maxStreak = Math.max(...accounts.map(acc => acc.progress.streak));
+
+    const progressMessage = `Family Achievements:\n\n` +
+      `👥 ${accounts.length} Family Members\n` +
+      `📚 ${totalWords} Total Words Learned\n` +
+      `✅ ${totalQuizzes} Total Quizzes Completed\n` +
+      `📖 ${totalStories} Stories Read Together\n` +
+      `🔥 ${maxStreak} Day Best Streak\n\n` +
+      `Keep learning together!`;
+
+    Alert.alert('Family Progress', progressMessage);
+  };
+
   const renderAccountCard = (account) => {
     const isActive = activeAccount?.id === account.id;
 
@@ -257,7 +305,7 @@ export default function FamilyLearningScreen({ navigation }) {
         <View style={styles.activitiesSection}>
           <Text style={styles.sectionTitle}>Family Activities</Text>
 
-          <TouchableOpacity style={styles.activityCard}>
+          <TouchableOpacity style={styles.activityCard} onPress={handleGroupPractice} activeOpacity={0.7}>
             <View style={styles.activityIcon}>
               <Ionicons name="people" size={28} color={COLORS.primary} />
             </View>
@@ -268,7 +316,7 @@ export default function FamilyLearningScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.activityCard}>
+          <TouchableOpacity style={styles.activityCard} onPress={handleFamilyChallenge} activeOpacity={0.7}>
             <View style={styles.activityIcon}>
               <Ionicons name="trophy" size={28} color="#FFD93D" />
             </View>
@@ -279,7 +327,7 @@ export default function FamilyLearningScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.activityCard}>
+          <TouchableOpacity style={styles.activityCard} onPress={handleStoryTime} activeOpacity={0.7}>
             <View style={styles.activityIcon}>
               <Ionicons name="book-outline" size={28} color={COLORS.secondary} />
             </View>
@@ -290,7 +338,7 @@ export default function FamilyLearningScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.activityCard}>
+          <TouchableOpacity style={styles.activityCard} onPress={handleFamilyProgress} activeOpacity={0.7}>
             <View style={styles.activityIcon}>
               <Ionicons name="bar-chart" size={28} color="#4ECDC4" />
             </View>

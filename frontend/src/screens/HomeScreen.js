@@ -29,7 +29,7 @@ const QuickAction = ({ title, icon, color, onPress }) => (
 
 export default function HomeScreen({ navigation }) {
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
-  const [showLangModal, setShowLangModal] = useState(true); // Onboarding: Show on first launch
+  const [showLangModal, setShowLangModal] = useState(false); // Language selector hidden by default
 
   return (
     <SafeAreaView style={styles.container}>
