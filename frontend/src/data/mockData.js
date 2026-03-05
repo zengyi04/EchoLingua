@@ -177,7 +177,250 @@ export const quizQuestions = [
   }
 ];
 
-// Comprehensive Quiz Structure by Language, Difficulty, and Quiz Number
+// ===== COMPREHENSIVE LANGUAGE-BASED QUIZ SYSTEM =====
+// Questions and answers are in the selected language with proper difficulty calibration
+
+// Helper function to generate language-specific quizzes
+const generateLanguageSpecificQuizzes = () => {
+  const languageQuizData = {
+    // MANDARIN CHINESE - Questions in Mandarin
+    mandarin: {
+      easy: {
+        quiz1: [
+          { question: '这个词是什么意思: 房子 (fángzi)?', options: ['汽车', '房子', '树', '河'], correctAnswer: '房子' },
+          { question: '"吃" 的英文是什么?', options: ['喝', '睡', '吃', '走'], correctAnswer: '吃' },
+          { question: '水的中文怎么说?', options: ['火', '水', '风', '土'], correctAnswer: '水' },
+          { question: '"米" 是什么?', options: ['玉米', '大米', '小麦', '豆'], correctAnswer: '大米' },
+          { question: '你住在哪里?', options: ['米', '房子', '水', '吃'], correctAnswer: '房子' }
+        ],
+        quiz2: [
+          { question: '你每天做什么? (关于食物)', options: ['睡觉', '吃饭', '走路', '跑步'], correctAnswer: '吃饭' },
+          { question: '生命需要什么?', options: ['房子', '水', '米', '车'], correctAnswer: '水' },
+          { question: '农民种什么?', options: ['水', '房子', '米', '车'], correctAnswer: '米' },
+          { question: '家人聚在哪里?', options: ['米', '房子', '水', '吃'], correctAnswer: '房子' },
+          { question: '最基本的需要是什么?', options: ['书', '电脑', '水', '车'], correctAnswer: '水' }
+        ],
+        quiz3: [
+          { question: '数字1怎么说?', options: ['一', '二', '三', '四'], correctAnswer: '一' },
+          { question: '数字2怎么说?', options: ['一', '二', '三', '四'], correctAnswer: '二' },
+          { question: '数字3怎么说?', options: ['一', '二', '三', '四'], correctAnswer: '三' },
+          { question: 'sun的中文是什么?', options: ['月亮', '星星', '太阳', '天空'], correctAnswer: '太阳' },
+          { question: 'moon的中文是什么?', options: ['太阳', '月亮', '星星', '天空'], correctAnswer: '月亮' }
+        ],
+        quiz4: [
+          { question: 'cat的中文怎么说?', options: ['狗', '猫', '鸟', '鱼'], correctAnswer: '猫' },
+          { question: '的中文怎么说?', options: ['猫', '狗', '鸟', '鱼'], correctAnswer: '狗' },
+          { question: '鸟的中文怎么说?', options: ['猫', '狗', '鸟', '鱼'], correctAnswer: '鸟' },
+          { question: '鱼的中文怎么说?', options: ['猫', '狗', '鸟', '鱼'], correctAnswer: '鱼' },
+          { question: '树的中文怎么说?', options: ['花', '树', '草', '叶'], correctAnswer: '树' }
+        ],
+        quiz5: [
+          { question: '妈妈的中文怎么说?', options: ['爸爸', '妈妈', '孩子', '家人'], correctAnswer: '妈妈' },
+          { question: '爸爸的中文怎么说?', options: ['妈妈', '爸爸', '孩子', '家人'], correctAnswer: '爸爸' },
+          { question: '孩子的中文怎么说?', options: ['妈妈', '爸爸', '孩子', '家人'], correctAnswer: '孩子' },
+          { question: '火的中文怎么说?', options: ['水', '火', '风', '土'], correctAnswer: '火' },
+          { question: '天空的中文怎么说?', options: ['地', '天空', '山', '河'], correctAnswer: '天空' }
+        ]
+      },
+      medium: {
+        quiz1: [
+          { question: '早上好用中文怎么说?', options: ['晚上好', '早上好', '下午好', '你好'], correctAnswer: '早上好' },
+          { question: '谢谢你的中文是什么?', options: ['对不起', '谢谢', '你好', '再见'], correctAnswer: '谢谢' },
+          { question: '你好吗?应该怎么回答?', options: ['谢谢', '我很好', '对不起', '再见'], correctAnswer: '我很好' },
+          { question: '今天的中文是什么?', options: ['昨天', '今天', '明天', '现在'], correctAnswer: '今天' },
+          { question: '明天的中文是什么?', options: ['昨天', '今天', '明天', '现在'], correctAnswer: '明天' }
+        ],
+        quiz2: [
+          { question: '多少钱?用中文怎么说?', options: ['多少钱', '什么时候', '在哪里', '为什么'], correctAnswer: '多少钱' },
+          { question: '在哪里?的意思是什么?', options: ['多少', '哪里', '什么时候', '谁'], correctAnswer: '哪里' },
+          { question: '什么时候?用中文怎么说?', options: ['在哪里', '什么时候', '多少钱', '为什么'], correctAnswer: '什么时候' },
+          { question: '我饿了的中文是什么?', options: ['我渴了', '我饿了', '我累了', '我病了'], correctAnswer: '我饿了' },
+          { question: '我渴了的中文是什么?', options: ['我饿了', '我渴了', '我累了', '我病了'], correctAnswer: '我渴了' }
+        ],
+        quiz3: [
+          { question: '朋友的中文怎么说?', options: ['家人', '朋友', '老师', '学生'], correctAnswer: '朋友' },
+          { question: '家人的中文是什么?', options: ['朋友', '家人', '老师', '学生'], correctAnswer: '家人' },
+          { question: '村庄的中文怎么说?', options: ['城市', '村庄', '国家', '世界'], correctAnswer: '村庄' },
+          { question: '很好用中文怎么说?', options: ['不好', '很好', '一般', '太好了'], correctAnswer: '很好' },
+          { question: '太贵了用中文怎么说?', options: ['便宜', '免费', '太贵了', '合理'], correctAnswer: '太贵了' }
+        ],
+        quiz4: [
+          { question: '热的中文怎么说?', options: ['冷', '热', '温暖', '凉'], correctAnswer: '热' },
+          { question: '冷的中文怎么说?', options: ['热', '冷', '温暖', '凉'], correctAnswer: '冷' },
+          { question: '快的中文怎么说?', options: ['慢', '快', '停', '走'], correctAnswer: '快' },
+          { question: '慢的中文怎么说?', options: ['快', '慢', '停', '走'], correctAnswer: '慢' },
+          { question: '下雨的中文怎么说?', options: ['晴天', '下雨', '下雪', '刮风'], correctAnswer: '下雨' }
+        ],
+        quiz5: [
+          { question: '早上的中文是什么?', options: ['中午', '早上', '晚上', '夜里'], correctAnswer: '早上' },
+          { question: '晚上的中文是什么?', options: ['早上', '中午', '下午', '晚上'], correctAnswer: '晚上' },
+          { question: '现在的中文怎么说?', options: ['以前', '现在', '以后', '过去'], correctAnswer: '现在' },
+          { question: '以后的中文怎么说?', options: ['以前', '现在', '以后', '过去'], correctAnswer: '以后' },
+          { question: '对不起用中文怎么说?', options: ['谢谢', '对不起', '你好', '再见'], correctAnswer: '对不起' }
+        ]
+      },
+      hard: {
+        quiz1: [
+          { question: '讲述传统故事用中文怎么说?', options: ['吃传统故事', '讲传统故事', '建传统故事', '种传统故事'], correctAnswer: '讲传统故事' },
+          { question: '保护文化用中文怎么说?', options: ['破坏文化', '保护文化', '忘记文化', '改变文化'], correctAnswer: '保护文化' },
+          { question: '祖先的遗产用中文怎么说?', options: ['现代遗产', '祖先遗产', '外国遗产', '未来遗产'], correctAnswer: '祖先遗产' },
+          { question: '传统仪式用中文怎么说?', options: ['现代仪式', '传统仪式', '西方仪式', '新仪式'], correctAnswer: '传统仪式' },
+          { question: '古老信仰用中文怎么说?', options: ['新信仰', '古老信仰', '现代信仰', '西方信仰'], correctAnswer: '古老信仰' }
+        ],
+        quiz2: [
+          { question: '民间传说用中文怎么说?', options: ['现代故事', '民间传说', '科幻故事', '新闻'], correctAnswer: '民间传说' },
+          { question: '本地智慧用中文怎么说?', options: ['外国智慧', '本地智慧', '现代智慧', '科技智慧'], correctAnswer: '本地智慧' },
+          { question: '传统舞蹈用中文怎么说?', options: ['现代舞', '传统舞蹈', '西方舞', '流行舞'], correctAnswer: '传统舞蹈' },
+          { question: '传统音乐用中文怎么说?', options: ['流行音乐', '传统音乐', '西方音乐', '电子音乐'], correctAnswer: '传统音乐' },
+          { question: '传统服装用中文怎么说?', options: ['现代服装', '传统服装', '西装', '运动服'], correctAnswer: '传统服装' }
+        ],
+        quiz3: [
+          { question: '文化遗产需要什么?', options: ['破坏', '保护', '忘记', '改变'], correctAnswer: '保护' },
+          { question: '传统故事来自谁?', options: ['外国人', '年轻人', '祖先', '现代人'], correctAnswer: '祖先' },
+          { question: '语言复兴用中文怎么说?', options: ['语言死亡', '语言复兴', '语言改变', '语言翻译'], correctAnswer: '语言复兴' },
+          { question: '语言教学用中文怎么说?', options: ['语言忘记', '语言教学', '语言破坏', '语言改变'], correctAnswer: '语言教学' },
+          { question: '文化保护需要什么?', options: ['金钱', '努力', '时间', '全部'], correctAnswer: '全部' }
+        ],
+        quiz4: [
+          { question: '复杂的文化概念是什么?', options: ['食物', '遗产', '水', '房子'], correctAnswer: '遗产' },
+          { question: '传统故事教什么?', options: ['数学', '价值观', '体育', '游戏'], correctAnswer: '价值观' },
+          { question: '文化保护很重要吗?', options: ['不重要', '有点重要', '很重要', '非常重要'], correctAnswer: '非常重要' },
+          { question: '谁应该保护文化?', options: ['政府', '社区', '长者', '所有人'], correctAnswer: '所有人' },
+          { question: '传统知识包括什么?', options: ['语言', '故事', '习俗', '全部'], correctAnswer: '全部' }
+        ],
+        quiz5: [
+          { question: '文化认同来自什么?', options: ['金钱', '遗产', '权力', '名声'], correctAnswer: '遗产' },
+          { question: '传统故事为什么重要?', options: ['娱乐', '教育', '保护', '全部'], correctAnswer: '全部' },
+          { question: '语言保护需要什么?', options: ['一次', '定期', '持续', '从不'], correctAnswer: '持续' },
+          { question: '下一代依靠什么?', options: ['金钱', '遗产', '科技', '名声'], correctAnswer: '遗产' },
+          { question: '文化传承是谁的责任?', options: ['政府', '老人', '年轻人', '每个人'], correctAnswer: '每个人' }
+        ]
+      }
+    },
+
+    // SPANISH - Questions in Spanish
+    spanish: {
+      easy: {
+        quiz1: [
+          { question: '¿Qué significa "Casa"?', options: ['Coche', 'Casa', 'Árbol', 'Río'], correctAnswer: 'Casa' },
+          { question: '¿Cómo se dice "Eat" en español?', options: ['Beber', 'Dormir', 'Comer', 'Caminar'], correctAnswer: 'Comer' },
+          { question: '¿Qué es "Agua"?', options: ['Fuego', 'Agua', 'Viento', 'Tierra'], correctAnswer: 'Agua' },
+          { question: '¿Qué significa "Arroz"?', options: ['Maíz', 'Arroz', 'Trigo', 'Frijoles'], correctAnswer: 'Arroz' },
+          { question: '¿Dónde vives?', options: ['Arroz', 'Casa', 'Agua', 'Comer'], correctAnswer: 'Casa' }
+        ],
+        quiz2: [
+          { question: '¿Qué haces todos los días? (sobre comida)', options: ['Dormir', 'Comer', 'Caminar', 'Correr'], correctAnswer: 'Comer' },
+          { question: '¿Qué necesitas para vivir?', options: ['Casa', 'Agua', 'Arroz', 'Coche'], correctAnswer: 'Agua' },
+          { question: '¿Qué cultivan los agricultores?', options: ['Agua', 'Casa', 'Arroz', 'Coche'], correctAnswer: 'Arroz' },
+          { question: '¿Dónde se reúne la familia?', options: ['Arroz', 'Casa', 'Agua', 'Comer'], correctAnswer: 'Casa' },
+          { question: '¿Cuál es la necesidad más básica?', options: ['Libro', 'Computadora', 'Agua', 'Coche'], correctAnswer: 'Agua' }
+        ],
+        quiz3: [
+          { question: '¿Cómo se dice el número uno?', options: ['Uno', 'Dos', 'Tres', 'Cuatro'], correctAnswer: 'Uno' },
+          { question: '¿Cómo se dice el número dos?', options: ['Uno', 'Dos', 'Tres', 'Cuatro'], correctAnswer: 'Dos' },
+          { question: '¿Cómo se dice el número tres?', options: ['Uno', 'Dos', 'Tres', 'Cuatro'], correctAnswer: 'Tres' },
+          { question: '¿Qué es "Sol"?', options: ['Luna', 'Estrella', 'Sol', 'Cielo'], correctAnswer: 'Sol' },
+          { question: '¿Qué es "Luna"?', options: ['Sol', 'Luna', 'Estrella', 'Cielo'], correctAnswer: 'Luna' }
+        ],
+        quiz4: [
+          { question: '¿Cómo se dice "Cat"?', options: ['Perro', 'Gato', 'Pájaro', 'Pez'], correctAnswer: 'Gato' },
+          { question: '¿Cómo se dice "Dog"?', options: ['Gato', 'Perro', 'Pájaro', 'Pez'], correctAnswer: 'Perro' },
+          { question: '¿Cómo se dice "Bird"?', options: ['Gato', 'Perro', 'Pájaro', 'Pez'], correctAnswer: 'Pájaro' },
+          { question: '¿Cómo se dice "Fish"?', options: ['Gato', 'Perro', 'Pájaro', 'Pez'], correctAnswer: 'Pez' },
+          { question: '¿Cómo se dice "Tree"?', options: ['Flor', 'Árbol', 'Hierba', 'Hoja'], correctAnswer: 'Árbol' }
+        ],
+        quiz5: [
+          { question: '¿Cómo se dice "Mother"?', options: ['Padre', 'Madre', 'Niño', 'Familia'], correctAnswer: 'Madre' },
+          { question: '¿Cómo se dice "Father"?', options: ['Madre', 'Padre', 'Niño', 'Familia'], correctAnswer: 'Padre' },
+          { question: '¿Cómo se dice "Child"?', options: ['Madre', 'Padre', 'Niño', 'Familia'], correctAnswer: 'Niño' },
+          { question: '¿Cómo se dice "Fire"?', options: ['Agua', 'Fuego', 'Viento', 'Tierra'], correctAnswer: 'Fuego' },
+          { question: '¿Cómo se dice "Sky"?', options: ['Tierra', 'Cielo', 'Montaña', 'Río'], correctAnswer: 'Cielo' }
+        ]
+      },
+      medium: {
+        quiz1: [
+          { question: '¿Cómo se dice "Good morning"?', options: ['Buenas noches', 'Buenos días', 'Buenas tardes', 'Hola'], correctAnswer: 'Buenos días' },
+          { question: '¿Qué significa "Gracias"?', options: ['Lo siento', 'Gracias', 'Hola', 'Adiós'], correctAnswer: 'Gracias' },
+          { question: '¿Cómo responder a "¿Cómo estás?"?', options: ['Gracias', 'Bien', 'Lo siento', 'Adiós'], correctAnswer: 'Bien' },
+          { question: '¿Qué significa "Hoy"?', options: ['Ayer', 'Hoy', 'Mañana', 'Ahora'], correctAnswer: 'Hoy' },
+          { question: '¿Qué significa "Mañana"?', options: ['Ayer', 'Hoy', 'Mañana', 'Ahora'], correctAnswer: 'Mañana' }
+        ],
+        quiz2: [
+          { question: '¿Cómo se dice "How much?"?', options: ['¿Cuánto cuesta?', '¿Cuándo?', '¿Dónde?', '¿Por qué?'], correctAnswer: '¿Cuánto cuesta?' },
+          { question: '¿Qué significa "¿Dónde?"?', options: ['Cuánto', 'Dónde', 'Cuándo', 'Quién'], correctAnswer: 'Dónde' },
+          { question: '¿Cómo se dice "When?"?', options: ['¿Dónde?', '¿Cuándo?', '¿Cuánto?', '¿Por qué?'], correctAnswer: '¿Cuándo?' },
+          { question: '¿Cómo se dice "I am hungry"?', options: ['Tengo sed', 'Tengo hambre', 'Estoy cansado', 'Estoy enfermo'], correctAnswer: 'Tengo hambre' },
+          { question: '¿Cómo se dice "I am thirsty"?', options: ['Tengo hambre', 'Tengo sed', 'Estoy cansado', 'Estoy enfermo'], correctAnswer: 'Tengo sed' }
+        ],
+        quiz3: [
+          { question: '¿Cómo se dice "Friend"?', options: ['Familia', 'Amigo', 'Maestro', 'Estudiante'], correctAnswer: 'Amigo' },
+          { question: '¿Qué significa "Familia"?', options: ['Amigo', 'Familia', 'Maestro', 'Estudiante'], correctAnswer: 'Familia' },
+          { question: '¿Cómo se dice "Village"?', options: ['Ciudad', 'Pueblo', 'País', 'Mundo'], correctAnswer: 'Pueblo' },
+          { question: '¿Cómo se dice "Very good"?', options: ['Malo', 'Muy bien', 'Normal', 'Excelente'], correctAnswer: 'Muy bien' },
+          { question: '¿Cómo se dice "Too expensive"?', options: ['Barato', 'Gratis', 'Demasiado caro', 'Razonable'], correctAnswer: 'Demasiado caro' }
+        ],
+        quiz4: [
+          { question: '¿Cómo se dice "Hot"?', options: ['Frío', 'Caliente', 'Tibio', 'Fresco'], correctAnswer: 'Caliente' },
+          { question: '¿Cómo se dice "Cold"?', options: ['Caliente', 'Frío', 'Tibio', 'Fresco'], correctAnswer: 'Frío' },
+          { question: '¿Cómo se dice "Fast"?', options: ['Lento', 'Rápido', 'Parar', 'Ir'], correctAnswer: 'Rápido' },
+          { question: '¿Cómo se dice "Slow"?', options: ['Rápido', 'Lento', 'Parar', 'Ir'], correctAnswer: 'Lento' },
+          { question: '¿Cómo se dice "Rain"?', options: ['Sol', 'Lluvia', 'Nieve', 'Viento'], correctAnswer: 'Lluvia' }
+        ],
+        quiz5: [
+          { question: '¿Qué significa "Mañana"? (tiempo del día)', options: ['Mediodía', 'Mañana', 'Noche', 'Tarde'], correctAnswer: 'Mañana' },
+          { question: '¿Qué significa "Noche"?', options: ['Mañana', 'Mediodía', 'Tarde', 'Noche'], correctAnswer: 'Noche' },
+          { question: '¿Cómo se dice "Now"?', options: ['Antes', 'Ahora', 'Después', 'Pasado'], correctAnswer: 'Ahora' },
+          { question: '¿Cómo se dice "Later"?', options: ['Antes', 'Ahora', 'Después', 'Pasado'], correctAnswer: 'Después' },
+          { question: '¿Cómo se dice "Sorry"?', options: ['Gracias', 'Lo siento', 'Hola', 'Adiós'], correctAnswer: 'Lo siento' }
+        ]
+      },
+      hard: {
+        quiz1: [
+          { question: '¿Cómo se dice "Telling traditional story"?', options: ['Comer historias', 'Contar historias tradicionales', 'Construir historias', 'Plantar historias'], correctAnswer: 'Contar historias tradicionales' },
+          { question: '¿Qué significa "Preservar la cultura"?', options: ['Destruir cultura', 'Preservar cultura', 'Olvidar cultura', 'Cambiar cultura'], correctAnswer: 'Preservar cultura' },
+          { question: '¿Cómo se dice "Ancestral heritage"?', options: ['Herencia moderna', 'Herencia ancestral', 'Herencia extranjera', 'Herencia futura'], correctAnswer: 'Herencia ancestral' },
+          { question: '¿Qué significa "Ceremonia tradicional"?', options: ['Ceremonia moderna', 'Ceremonia tradicional', 'Ceremonia occidental', 'Ceremonia nueva'], correctAnswer: 'Ceremonia tradicional' },
+          { question: '¿Cómo se dice "Ancient beliefs"?', options: ['Creencias nuevas', 'Creencias antiguas', 'Creencias modernas', 'Creencias occidentales'], correctAnswer: 'Creencias antiguas' }
+        ],
+        quiz2: [
+          { question: '¿Cómo se dice "Folk tales"?', options: ['Historias modernas', 'Cuentos populares', 'Ciencia ficción', 'Noticias'], correctAnswer: 'Cuentos populares' },
+          { question: '¿Qué significa "Sabiduría local"?', options: ['Sabiduría extranjera', 'Sabiduría local', 'Sabiduría moderna', 'Sabiduría tecnológica'], correctAnswer: 'Sabiduría local' },
+          { question: '¿Cómo se dice "Traditional dance"?', options: ['Danza moderna', 'Danza tradicional', 'Danza occidental', 'Danza popular'], correctAnswer: 'Danza tradicional' },
+          { question: '¿Qué significa "Música tradicional"?', options: ['Música pop', 'Música tradicional', 'Música occidental', 'Música electrónica'], correctAnswer: 'Música tradicional' },
+          { question: '¿Cómo se dice "Traditional clothing"?', options: ['Ropa moderna', 'Ropa tradicional', 'Traje', 'Ropa deportiva'], correctAnswer: 'Ropa tradicional' }
+        ],
+        quiz3: [
+          { question: '¿Qué necesita la herencia cultural?', options: ['Destrucción', 'Preservación', 'Olvido', 'Cambio'], correctAnswer: 'Preservación' },
+          { question: '¿De quién vienen las historias tradicionales?', options: ['Extranjeros', 'Jóvenes', 'Antepasados', 'Modernos'], correctAnswer: 'Antepasados' },
+          { question: '¿Cómo se dice "Language revitalization"?', options: ['Muerte del idioma', 'Revitalización del idioma', 'Cambio del idioma', 'Traducción'], correctAnswer: 'Revitalización del idioma' },
+          { question: '¿Qué significa "Enseñanza del idioma"?', options: ['Olvidar idioma', 'Enseñanza del idioma', 'Destruir idioma', 'Cambiar idioma'], correctAnswer: 'Enseñanza del idioma' },
+          { question: '¿Qué necesita la protección cultural?', options: ['Dinero', 'Esfuerzo', 'Tiempo', 'Todo'], correctAnswer: 'Todo' }
+        ],
+        quiz4: [
+          { question: '¿Cuál es un concepto cultural complejo?', options: ['Comida', 'Herencia', 'Agua', 'Casa'], correctAnswer: 'Herencia' },
+          { question: '¿Qué enseñan las historias tradicionales?', options: ['Matemáticas', 'Valores', 'Deportes', 'Juegos'], correctAnswer: 'Valores' },
+          { question: '¿Es importante la protección cultural?', options: ['No importante', 'Poco importante', 'Muy importante', 'Crítico'], correctAnswer: 'Crítico' },
+          { question: '¿Quién debe proteger la cultura?', options: ['Gobierno', 'Comunidad', 'Ancianos', 'Todos'], correctAnswer: 'Todos' },
+          { question: '¿Qué incluye el conocimiento tradicional?', options: ['Idioma', 'Historias', 'Costumbres', 'Todo'], correctAnswer: 'Todo' }
+        ],
+        quiz5: [
+          { question: '¿De dónde viene la identidad cultural?', options: ['Dinero', 'Herencia', 'Poder', 'Fama'], correctAnswer: 'Herencia' },
+          { question: '¿Por qué son importantes las historias tradicionales?', options: ['Entretenimiento', 'Educación', 'Preservación', 'Todo'], correctAnswer: 'Todo' },
+          { question: '¿Qué necesita la protección del idioma?', options: ['Una vez', 'Periódico', 'Continuo', 'Nunca'], correctAnswer: 'Continuo' },
+          { question: '¿En qué confía la próxima generación?', options: ['Dinero', 'Herencia', 'Tecnología', 'Fama'], correctAnswer: 'Herencia' },
+          { question: '¿De quién es la responsabilidad de la transmisión cultural?', options: ['Gobierno', 'Ancianos', 'Jóvenes', 'Todos'], correctAnswer: 'Todos' }
+        ]
+      }
+    }
+  };
+
+  return languageQuizData;
+};
+
+// Generate the quiz data
+const LANGUAGE_SPECIFIC_QUIZZES = generateLanguageSpecificQuizzes();
+
+// Export comprehensive quiz system that includes both English questions and language-specific ones
 export const quizzesByLanguageAndDifficulty = {
   iban: {
     easy: {
@@ -1343,3 +1586,168 @@ export const quizzesByLanguageAndDifficulty = {
   polish: { easy: { quiz1: [{ question: 'Polish sample', options: ['A', 'B', 'C', 'D'], correctAnswer: 'A' }], quiz2: [], quiz3: [], quiz4: [], quiz5: [] }, medium: { quiz1: [], quiz2: [], quiz3: [], quiz4: [], quiz5: [] }, hard: { quiz1: [], quiz2: [], quiz3: [], quiz4: [], quiz5: [] } },
   dutch: { easy: { quiz1: [{ question: 'Dutch sample', options: ['A', 'B', 'C', 'D'], correctAnswer: 'A' }], quiz2: [], quiz3: [], quiz4: [], quiz5: [] }, medium: { quiz1: [], quiz2: [], quiz3: [], quiz4: [], quiz5: [] }, hard: { quiz1: [], quiz2: [], quiz3: [], quiz4: [], quiz5: [] } }
 };
+
+// Merge explicitly localized packs first (e.g., Mandarin, Spanish) so they override legacy English prompts.
+Object.entries(LANGUAGE_SPECIFIC_QUIZZES).forEach(([languageId, quizPack]) => {
+  quizzesByLanguageAndDifficulty[languageId] = quizPack;
+});
+
+const QUIZ_LANGUAGE_LABELS = {
+  iban: 'Iban',
+  bidayuh: 'Bidayuh',
+  kadazan: 'Kadazan',
+  murut: 'Murut',
+  malay: 'Bahasa Melayu',
+  english: 'English',
+  spanish: 'Espanol',
+  french: 'Francais',
+  mandarin: 'Mandarin',
+  arabic: 'Arabic',
+  hindi: 'Hindi',
+  portuguese: 'Portugues',
+  bengali: 'Bangla',
+  russian: 'Russkiy',
+  japanese: 'Nihongo',
+  german: 'Deutsch',
+  korean: 'Hangugeo',
+  vietnamese: 'Tieng Viet',
+  thai: 'Thai',
+  indonesian: 'Bahasa Indonesia',
+  tagalog: 'Tagalog',
+  italian: 'Italiano',
+  turkish: 'Turkce',
+  polish: 'Polski',
+  dutch: 'Nederlands',
+};
+
+const QUIZ_DIFFICULTIES = ['easy', 'medium', 'hard'];
+const QUIZ_NUMBERS = ['quiz1', 'quiz2', 'quiz3', 'quiz4', 'quiz5'];
+
+const buildLanguageDependentQuestions = (languageId, languageLabel, difficulty, quizKey) => {
+  const setIndex = Number(quizKey.replace('quiz', ''));
+  const base = {
+    easy: [
+      {
+        question: `[${languageLabel}] Basic ${setIndex}: What does "house" mean in ${languageLabel}?`,
+        options: [`${languageLabel} car`, `${languageLabel} house`, `${languageLabel} tree`, `${languageLabel} river`],
+        correctAnswer: `${languageLabel} house`,
+      },
+      {
+        question: `[${languageLabel}] Basic ${setIndex}: Choose the ${languageLabel} word for "eat".`,
+        options: [`${languageLabel} drink`, `${languageLabel} sleep`, `${languageLabel} eat`, `${languageLabel} walk`],
+        correctAnswer: `${languageLabel} eat`,
+      },
+      {
+        question: `[${languageLabel}] Basic ${setIndex}: Which one means "water" in ${languageLabel}?`,
+        options: [`${languageLabel} fire`, `${languageLabel} water`, `${languageLabel} wind`, `${languageLabel} earth`],
+        correctAnswer: `${languageLabel} water`,
+      },
+      {
+        question: `[${languageLabel}] Basic ${setIndex}: Select the ${languageLabel} word for "thank you".`,
+        options: [`${languageLabel} hello`, `${languageLabel} thank you`, `${languageLabel} goodbye`, `${languageLabel} sorry`],
+        correctAnswer: `${languageLabel} thank you`,
+      },
+      {
+        question: `[${languageLabel}] Basic ${setIndex}: Select the ${languageLabel} word for "good morning".`,
+        options: [`${languageLabel} good night`, `${languageLabel} good morning`, `${languageLabel} good afternoon`, `${languageLabel} hello`],
+        correctAnswer: `${languageLabel} good morning`,
+      },
+    ],
+    medium: [
+      {
+        question: `[${languageLabel}] Intermediate ${setIndex}: Choose a polite greeting phrase.`,
+        options: [`${languageLabel} food`, `${languageLabel} polite greeting`, `${languageLabel} house`, `${languageLabel} rice`],
+        correctAnswer: `${languageLabel} polite greeting`,
+      },
+      {
+        question: `[${languageLabel}] Intermediate ${setIndex}: Which phrase asks "How are you?"`,
+        options: [`${languageLabel} where`, `${languageLabel} how are you`, `${languageLabel} how much`, `${languageLabel} when`],
+        correctAnswer: `${languageLabel} how are you`,
+      },
+      {
+        question: `[${languageLabel}] Intermediate ${setIndex}: Complete the phrase for showing gratitude.`,
+        options: [`${languageLabel} thank you`, `${languageLabel} no`, `${languageLabel} maybe`, `${languageLabel} later`],
+        correctAnswer: `${languageLabel} thank you`,
+      },
+      {
+        question: `[${languageLabel}] Intermediate ${setIndex}: Which phrase is used when asking price?`,
+        options: [`${languageLabel} where`, `${languageLabel} price question`, `${languageLabel} weather`, `${languageLabel} family`],
+        correctAnswer: `${languageLabel} price question`,
+      },
+      {
+        question: `[${languageLabel}] Intermediate ${setIndex}: Choose the best response for a morning greeting.`,
+        options: [`${languageLabel} goodbye`, `${languageLabel} good morning response`, `${languageLabel} no response`, `${languageLabel} silence`],
+        correctAnswer: `${languageLabel} good morning response`,
+      },
+    ],
+    hard: [
+      {
+        question: `[${languageLabel}] Advanced ${setIndex}: Which phrase best matches preserving cultural heritage?`,
+        options: [`${languageLabel} forget culture`, `${languageLabel} preserve culture`, `${languageLabel} replace culture`, `${languageLabel} ignore culture`],
+        correctAnswer: `${languageLabel} preserve culture`,
+      },
+      {
+        question: `[${languageLabel}] Advanced ${setIndex}: Traditional storytelling is mainly used for:`,
+        options: [`${languageLabel} only fun`, `${languageLabel} cultural transfer`, `${languageLabel} business`, `${languageLabel} transport`],
+        correctAnswer: `${languageLabel} cultural transfer`,
+      },
+      {
+        question: `[${languageLabel}] Advanced ${setIndex}: Which phrase means intergenerational language transmission?`,
+        options: [`${languageLabel} language loss`, `${languageLabel} language transmission`, `${languageLabel} language conflict`, `${languageLabel} language silence`],
+        correctAnswer: `${languageLabel} language transmission`,
+      },
+      {
+        question: `[${languageLabel}] Advanced ${setIndex}: Choose the phrase most related to ancestral knowledge.`,
+        options: [`${languageLabel} new trend`, `${languageLabel} ancestral knowledge`, `${languageLabel} market price`, `${languageLabel} game score`],
+        correctAnswer: `${languageLabel} ancestral knowledge`,
+      },
+      {
+        question: `[${languageLabel}] Advanced ${setIndex}: Cultural continuity depends on:`,
+        options: [`${languageLabel} one-time effort`, `${languageLabel} continuous community practice`, `${languageLabel} no participation`, `${languageLabel} random chance`],
+        correctAnswer: `${languageLabel} continuous community practice`,
+      },
+    ],
+  };
+
+  return base[difficulty];
+};
+
+const isIncompleteQuiz = (quiz) => {
+  if (!Array.isArray(quiz) || quiz.length < 5) {
+    return true;
+  }
+
+  return quiz.some((item) => {
+    if (!item || !item.question || !Array.isArray(item.options) || item.options.length < 2 || !item.correctAnswer) {
+      return true;
+    }
+
+    const q = String(item.question).toLowerCase();
+    return q.includes('sample question') || q.includes('sample');
+  });
+};
+
+// Guarantee every language has easy/medium/hard and quiz1-quiz5 with non-empty question+answer content.
+Object.entries(QUIZ_LANGUAGE_LABELS).forEach(([languageId, languageLabel]) => {
+  if (!quizzesByLanguageAndDifficulty[languageId]) {
+    quizzesByLanguageAndDifficulty[languageId] = {};
+  }
+
+  QUIZ_DIFFICULTIES.forEach((difficulty) => {
+    if (!quizzesByLanguageAndDifficulty[languageId][difficulty]) {
+      quizzesByLanguageAndDifficulty[languageId][difficulty] = {};
+    }
+
+    QUIZ_NUMBERS.forEach((quizKey) => {
+      const currentQuiz = quizzesByLanguageAndDifficulty[languageId][difficulty][quizKey];
+      if (isIncompleteQuiz(currentQuiz)) {
+        quizzesByLanguageAndDifficulty[languageId][difficulty][quizKey] = buildLanguageDependentQuestions(
+          languageId,
+          languageLabel,
+          difficulty,
+          quizKey
+        );
+      }
+    });
+  });
+});

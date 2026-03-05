@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { quizzesByLanguageAndDifficulty } from '../data/mockData';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { playSound } from '../services/soundService';
+
+const QUIZ_STATE_STORAGE_KEY = '@echolingua_quiz_state';
+const QUIZ_HISTORY_STORAGE_KEY = '@echolingua_quiz_history';
 
 const LANGUAGES = [
   // Borneo Indigenous Languages
@@ -56,12 +60,111 @@ export default function QuizScreen({ navigation }) {
   const [selectedOption, setSelectedOption] = useState(null);
   const [quizQuestions, setQuizQuestions] = useState([]);
 
+  const persistQuizState = async (overrides = {}) => {
+    try {
+      const statePayload = {
+        selectedLanguageId: selectedLanguage?.id || null,
+        selectedDifficultyId: selectedDifficulty?.id || null,
+        selectedQuiz,
+        currentQuestionIndex,
+        score,
+        quizFinished,
+        updatedAt: new Date().toISOString(),
+        ...overrides,
+      };
+      await AsyncStorage.setItem(QUIZ_STATE_STORAGE_KEY, JSON.stringify(statePayload));
+    } catch (error) {
+      console.error('Failed to persist quiz state:', error);
+    }
+  };
+
+  const saveQuizResult = async (result) => {
+    try {
+      const existing = await AsyncStorage.getItem(QUIZ_HISTORY_STORAGE_KEY);
+      const history = existing ? JSON.parse(existing) : [];
+      const updatedHistory = [result, ...history].slice(0, 100);
+      await AsyncStorage.setItem(QUIZ_HISTORY_STORAGE_KEY, JSON.stringify(updatedHistory));
+    } catch (error) {
+      console.error('Failed to save quiz result:', error);
+    }
+  };
+
+  useEffect(() => {
+    const loadPersistedQuizState = async () => {
+      try {
+        const rawState = await AsyncStorage.getItem(QUIZ_STATE_STORAGE_KEY);
+        if (!rawState) {
+          return;
+        }
+
+        const parsed = JSON.parse(rawState);
+        const restoredLanguage = LANGUAGES.find((lang) => lang.id === parsed.selectedLanguageId) || null;
+        const restoredDifficulty = DIFFICULTIES.find((level) => level.id === parsed.selectedDifficultyId) || null;
+
+        if (restoredLanguage) {
+          setSelectedLanguage(restoredLanguage);
+        }
+        if (restoredDifficulty) {
+          setSelectedDifficulty(restoredDifficulty);
+        }
+
+        if (restoredLanguage && restoredDifficulty && parsed.selectedQuiz) {
+          const quizData = quizzesByLanguageAndDifficulty?.[restoredLanguage.id]?.[restoredDifficulty.id]?.[`quiz${parsed.selectedQuiz}`];
+          if (Array.isArray(quizData) && quizData.length > 0) {
+            setSelectedQuiz(parsed.selectedQuiz);
+            setQuizQuestions(quizData);
+            setCurrentQuestionIndex(Math.min(parsed.currentQuestionIndex || 0, quizData.length - 1));
+            setScore(parsed.score || 0);
+            setQuizFinished(Boolean(parsed.quizFinished));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to restore quiz state:', error);
+      }
+    };
+
+    loadPersistedQuizState();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedLanguage && !selectedDifficulty && !selectedQuiz && quizQuestions.length === 0) {
+      return;
+    }
+    persistQuizState();
+  }, [selectedLanguage, selectedDifficulty, selectedQuiz, currentQuestionIndex, score, quizFinished, quizQuestions.length]);
+
+  useEffect(() => {
+    if (!quizFinished || !selectedLanguage || !selectedDifficulty || !selectedQuiz) {
+      return;
+    }
+
+    const total = quizQuestions.length;
+    const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+    saveQuizResult({
+      id: Date.now().toString(),
+      languageId: selectedLanguage.id,
+      languageLabel: selectedLanguage.label,
+      difficultyId: selectedDifficulty.id,
+      difficultyLabel: selectedDifficulty.label,
+      quizNumber: selectedQuiz,
+      score,
+      total,
+      percentage,
+      completedAt: new Date().toISOString(),
+    });
+  }, [quizFinished]);
+
   const handleLanguageSelect = (language) => {
     console.log(`🌍 Selected language: ${language.label}`);
     playSound('select');
     setSelectedLanguage(language);
     setSelectedDifficulty(null);
     setSelectedQuiz(null);
+    setQuizQuestions([]);
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setQuizFinished(false);
+    setSelectedOption(null);
   };
 
   const handleDifficultySelect = (difficulty) => {
@@ -69,6 +172,11 @@ export default function QuizScreen({ navigation }) {
     playSound('select');
     setSelectedDifficulty(difficulty);
     setSelectedQuiz(null);
+    setQuizQuestions([]);
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setQuizFinished(false);
+    setSelectedOption(null);
   };
 
   const handleQuizSelect = (quizNumber) => {
@@ -115,6 +223,15 @@ export default function QuizScreen({ navigation }) {
     setScore(0);
     setQuizFinished(false);
     setSelectedOption(null);
+
+    persistQuizState({
+      selectedLanguageId: selectedLanguage.id,
+      selectedDifficultyId: selectedDifficulty.id,
+      selectedQuiz: quizNumber,
+      currentQuestionIndex: 0,
+      score: 0,
+      quizFinished: false,
+    });
   };
 
   const handleAnswer = (option) => {
@@ -153,19 +270,35 @@ export default function QuizScreen({ navigation }) {
     setScore(0);
     setQuizFinished(false);
     setSelectedOption(null);
+    persistQuizState({ currentQuestionIndex: 0, score: 0, quizFinished: false });
   };
 
   const goBack = (level) => {
     playSound('back');
     if (level === 'quiz') {
       setSelectedQuiz(null);
+      setQuizQuestions([]);
+      setCurrentQuestionIndex(0);
+      setScore(0);
+      setQuizFinished(false);
+      setSelectedOption(null);
     } else if (level === 'difficulty') {
       setSelectedDifficulty(null);
       setSelectedQuiz(null);
+      setQuizQuestions([]);
+      setCurrentQuestionIndex(0);
+      setScore(0);
+      setQuizFinished(false);
+      setSelectedOption(null);
     } else if (level === 'language') {
       setSelectedLanguage(null);
       setSelectedDifficulty(null);
       setSelectedQuiz(null);
+      setQuizQuestions([]);
+      setCurrentQuestionIndex(0);
+      setScore(0);
+      setQuizFinished(false);
+      setSelectedOption(null);
     }
   };
 

@@ -1,132 +1,318 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
+import { useRoute } from '@react-navigation/native';
 
 const SCENARIOS = [
   {
-    id: '1',
+    id: 'home',
     title: 'At Home',
     icon: 'home',
-    iconType: 'Ionicons',
     color: '#4CAF50',
-    conversations: [
-      { id: '1', indigenous: 'Selamat pagi! Suka ka nginum kopi?', translation: 'Good morning! Would you like some coffee?', speaker: 'elder' },
-      { id: '2', indigenous: 'Iya, terima kasih banyak.', translation: 'Yes, thank you very much.', speaker: 'user' },
-      { id: '3', indigenous: 'Apa khabar keluarga nuan?', translation: 'How is your family?', speaker: 'elder' },
-      { id: '4', indigenous: 'Semua sihat, terima kasih!', translation: 'Everyone is healthy, thank you!', speaker: 'user' },
+    cases: [
+      {
+        id: 'morning-routine',
+        title: 'Morning Routine',
+        conversations: [
+          { id: '1', indigenous: 'Selamat pagi! Suka ka nginum kopi?', translation: 'Good morning! Would you like some coffee?', speaker: 'elder' },
+          { id: '2', indigenous: 'Iya, terima kasih banyak.', translation: 'Yes, thank you very much.', speaker: 'user' },
+          { id: '3', indigenous: 'Apa khabar keluarga nuan?', translation: 'How is your family?', speaker: 'elder' },
+          { id: '4', indigenous: 'Semua sihat, terima kasih.', translation: 'Everyone is healthy, thank you.', speaker: 'user' },
+        ],
+      },
+      {
+        id: 'meal-time',
+        title: 'Meal Time',
+        conversations: [
+          { id: '1', indigenous: 'Kita makai tengah hari sama-sama.', translation: 'Let us have lunch together.', speaker: 'elder' },
+          { id: '2', indigenous: 'Baik, saya tolong susun pinggan.', translation: 'Okay, I will help arrange the plates.', speaker: 'user' },
+          { id: '3', indigenous: 'Ambik nasi, sayur, enggau ikan.', translation: 'Take rice, vegetables, and fish.', speaker: 'elder' },
+          { id: '4', indigenous: 'Sedap amat masakan tok.', translation: 'This food is very delicious.', speaker: 'user' },
+        ],
+      },
     ],
   },
   {
-    id: '2',
+    id: 'market',
     title: 'At Market',
     icon: 'basket',
-    iconType: 'Ionicons',
     color: '#FF9800',
-    conversations: [
-      { id: '1', indigenous: 'Berapa ringgit sayur tu?', translation: 'How much are these vegetables?', speaker: 'user' },
-      { id: '2', indigenous: 'Tiga ringgit sekilo.', translation: 'Three ringgit per kilo.', speaker: 'elder' },
-      { id: '3', indigenous: 'Boleh kurang sikit?', translation: 'Can you reduce the price a bit?', speaker: 'user' },
-      { id: '4', indigenous: 'Okay, dua ringgit lima puluh.', translation: 'Okay, two ringgit fifty.', speaker: 'elder' },
+    cases: [
+      {
+        id: 'buy-vegetables',
+        title: 'Buy Vegetables',
+        conversations: [
+          { id: '1', indigenous: 'Berapa ringgit sayur tu?', translation: 'How much are these vegetables?', speaker: 'user' },
+          { id: '2', indigenous: 'Tiga ringgit sekilo.', translation: 'Three ringgit per kilo.', speaker: 'elder' },
+          { id: '3', indigenous: 'Boleh kurang sikit?', translation: 'Can you reduce the price a bit?', speaker: 'user' },
+          { id: '4', indigenous: 'Boleh, dua ringgit lima puluh.', translation: 'Okay, two ringgit fifty.', speaker: 'elder' },
+        ],
+      },
+      {
+        id: 'buy-fish',
+        title: 'Buy Fish',
+        conversations: [
+          { id: '1', indigenous: 'Ikan tok segar ka?', translation: 'Is this fish fresh?', speaker: 'user' },
+          { id: '2', indigenous: 'Sangat segar, ditangkap pagi tok.', translation: 'Very fresh, caught this morning.', speaker: 'elder' },
+          { id: '3', indigenous: 'Aku ambik dua kilo.', translation: 'I will take two kilos.', speaker: 'user' },
+          { id: '4', indigenous: 'Terima kasih, sila datang agi.', translation: 'Thank you, please come again.', speaker: 'elder' },
+        ],
+      },
     ],
   },
   {
-    id: '3',
+    id: 'elders',
     title: 'Greeting Elders',
     icon: 'people',
-    iconType: 'Ionicons',
     color: '#9C27B0',
-    conversations: [
-      { id: '1', indigenous: 'Selamat datang! Lama sudah sik datai.', translation: 'Welcome! It has been a long time since you visited.', speaker: 'elder' },
-      { id: '2', indigenous: 'Terima kasih, pak. Apa khabar?', translation: 'Thank you, sir. How are you?', speaker: 'user' },
-      { id: '3', indigenous: 'Alhamdulillah, baik. Duduk, duduk!', translation: 'Alhamdulillah, I am well. Sit, sit!', speaker: 'elder' },
-      { id: '4', indigenous: 'Terima kasih. Saya ada bawa buah tangan.', translation: 'Thank you. I brought some gifts.', speaker: 'user' },
+    cases: [
+      {
+        id: 'visit-grandparents',
+        title: 'Visit Grandparents',
+        conversations: [
+          { id: '1', indigenous: 'Selamat datai, lama kitak sik datai.', translation: 'Welcome, it has been a long time since you visited.', speaker: 'elder' },
+          { id: '2', indigenous: 'Terima kasih. Apa khabar aki ngan ini?', translation: 'Thank you. How are grandpa and grandma?', speaker: 'user' },
+          { id: '3', indigenous: 'Kami sihat, syukur.', translation: 'We are healthy, grateful.', speaker: 'elder' },
+          { id: '4', indigenous: 'Bagus, saya gaga datai nuan hari tok.', translation: 'Great, I am happy to visit you today.', speaker: 'user' },
+        ],
+      },
+      {
+        id: 'ask-blessing',
+        title: 'Ask for Blessing',
+        conversations: [
+          { id: '1', indigenous: 'Pak, minta doa sebelum aku berangkat.', translation: 'Sir, I ask for your prayer before I leave.', speaker: 'user' },
+          { id: '2', indigenous: 'Semoga nuan selamat di perjalanan.', translation: 'May you be safe on your journey.', speaker: 'elder' },
+          { id: '3', indigenous: 'Terima kasih atas nasihat nuan.', translation: 'Thank you for your advice.', speaker: 'user' },
+          { id: '4', indigenous: 'Ingat adat enggau hormat selalu.', translation: 'Always remember tradition and respect.', speaker: 'elder' },
+        ],
+      },
     ],
   },
   {
-    id: '4',
+    id: 'school',
+    title: 'At School',
+    icon: 'school',
+    color: '#3F51B5',
+    cases: [
+      {
+        id: 'introduce-yourself',
+        title: 'Introduce Yourself',
+        conversations: [
+          { id: '1', indigenous: 'Nama aku Daniel. Nama nuan sapa?', translation: 'My name is Daniel. What is your name?', speaker: 'user' },
+          { id: '2', indigenous: 'Nama aku Lina. Aku ari kampung seberang.', translation: 'My name is Lina. I am from the village across the river.', speaker: 'elder' },
+          { id: '3', indigenous: 'Kelas kitak mulai pukul berapa?', translation: 'What time does your class begin?', speaker: 'user' },
+          { id: '4', indigenous: 'Pukul lapan pagi, jangan lambat.', translation: 'At eight in the morning, do not be late.', speaker: 'elder' },
+        ],
+      },
+      {
+        id: 'ask-teacher-help',
+        title: 'Ask Teacher Help',
+        conversations: [
+          { id: '1', indigenous: 'Cikgu, aku sik faham latihan tok.', translation: 'Teacher, I do not understand this exercise.', speaker: 'user' },
+          { id: '2', indigenous: 'Baik, kita belajar langkah demi langkah.', translation: 'Okay, we will learn step by step.', speaker: 'elder' },
+          { id: '3', indigenous: 'Terima kasih cikgu, aku cuba agi.', translation: 'Thank you teacher, I will try again.', speaker: 'user' },
+          { id: '4', indigenous: 'Bagus, teruskan usaha nuan.', translation: 'Good, keep up your effort.', speaker: 'elder' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'clinic',
+    title: 'At Clinic',
+    icon: 'medkit',
+    color: '#F44336',
+    cases: [
+      {
+        id: 'register-counter',
+        title: 'Register Counter',
+        conversations: [
+          { id: '1', indigenous: 'Aku datang berubat, di sini ka daftar?', translation: 'I came for treatment, do I register here?', speaker: 'user' },
+          { id: '2', indigenous: 'Iya, sila isi borang tok.', translation: 'Yes, please fill this form.', speaker: 'elder' },
+          { id: '3', indigenous: 'Bilik doktor nombor berapa?', translation: 'What is the doctor room number?', speaker: 'user' },
+          { id: '4', indigenous: 'Nombor tiga, tunggu giliran.', translation: 'Number three, wait for your turn.', speaker: 'elder' },
+        ],
+      },
+      {
+        id: 'describe-symptom',
+        title: 'Describe Symptom',
+        conversations: [
+          { id: '1', indigenous: 'Sejak semalam aku demam enggau batuk.', translation: 'Since yesterday I have fever and cough.', speaker: 'user' },
+          { id: '2', indigenous: 'Baik, aku periksa suhu nuan dulu.', translation: 'Okay, I will check your temperature first.', speaker: 'elder' },
+          { id: '3', indigenous: 'Perlu ubat berapa kali sehari?', translation: 'How many times per day should I take medicine?', speaker: 'user' },
+          { id: '4', indigenous: 'Tiga kali selepas makan.', translation: 'Three times after meals.', speaker: 'elder' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'festival',
     title: 'Festival',
     icon: 'musical-notes',
-    iconType: 'Ionicons',
     color: '#E91E63',
-    conversations: [
-      { id: '1', indigenous: 'Gawai Dayak sudah tiba!', translation: 'Gawai Dayak has arrived!', speaker: 'elder' },
-      { id: '2', indigenous: 'Mari kita rayakan bersama!', translation: 'Let us celebrate together!', speaker: 'user' },
-      { id: '3', indigenous: 'Jangan lupa tuak dan penganan tradisional.', translation: 'Do not forget the rice wine and traditional delicacies.', speaker: 'elder' },
-      { id: '4', indigenous: 'Saya akan bawa kuih sarang semut.', translation: 'I will bring kuih sarang semut.', speaker: 'user' },
+    cases: [
+      {
+        id: 'festival-prep',
+        title: 'Festival Preparation',
+        conversations: [
+          { id: '1', indigenous: 'Gawai Dayak sudah dekat.', translation: 'Gawai Dayak is near.', speaker: 'elder' },
+          { id: '2', indigenous: 'Mari kita siap rumah panjang.', translation: 'Let us prepare the longhouse.', speaker: 'user' },
+          { id: '3', indigenous: 'Jangan lupa penganan tradisional.', translation: 'Do not forget traditional delicacies.', speaker: 'elder' },
+          { id: '4', indigenous: 'Baik, aku bawa kuih dari rumah.', translation: 'Okay, I will bring cakes from home.', speaker: 'user' },
+        ],
+      },
+      {
+        id: 'festival-greeting',
+        title: 'Festival Greeting',
+        conversations: [
+          { id: '1', indigenous: 'Selamat Gawai, gayu guru gerai nyamai.', translation: 'Happy Gawai, long life and prosperity.', speaker: 'elder' },
+          { id: '2', indigenous: 'Selamat Gawai! Semoga tahun tok lebih manah.', translation: 'Happy Gawai! May this year be better.', speaker: 'user' },
+          { id: '3', indigenous: 'Mari kita menari bersama.', translation: 'Let us dance together.', speaker: 'elder' },
+          { id: '4', indigenous: 'Iya, aku ikut menari.', translation: 'Yes, I will join the dance.', speaker: 'user' },
+        ],
+      },
     ],
   },
 ];
 
 export default function LivingLanguageScreen() {
+  const route = useRoute();
   const [selectedScenario, setSelectedScenario] = useState(null);
+  const [selectedCase, setSelectedCase] = useState(null);
   const [showTranslation, setShowTranslation] = useState(true);
   const [currentStep, setCurrentStep] = useState(0);
   const [playingAudio, setPlayingAudio] = useState(null);
-  const [sound, setSound] = useState(null);
 
   // Initialize audio
   useEffect(() => {
     (async () => {
       await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
+        shouldDuckAndroid: false,
       });
     })();
 
     return () => {
-      if (sound) {
-        sound.unloadAsync();
-      }
+      Speech.stop();
     };
-  }, [sound]);
+  }, []);
+
+  useEffect(() => {
+    const routeKey = route.params?.scenario;
+    if (!routeKey) {
+      return;
+    }
+
+    const normalized = routeKey === 'tamu' ? 'market' : routeKey;
+    const found = SCENARIOS.find((item) => item.id === normalized);
+    if (found) {
+      setSelectedScenario(found);
+      setSelectedCase(found.cases[0]);
+      setCurrentStep(0);
+    }
+  }, [route.params]);
+
+  const activeConversations = useMemo(() => selectedCase?.conversations || [], [selectedCase]);
 
   const handleScenarioSelect = (scenario) => {
     console.log('🎯 Scenario selected - Sound: tap');
     setSelectedScenario(scenario);
+    setSelectedCase(scenario.cases[0]);
     setCurrentStep(0);
+    setPlayingAudio(null);
+    Speech.stop();
   };
 
   const handleBack = () => {
     setSelectedScenario(null);
+    setSelectedCase(null);
     setCurrentStep(0);
+    setPlayingAudio(null);
+    Speech.stop();
   };
 
   const handleSwitchScenario = (scenario) => {
     console.log('🔄 Switching scenario - Sound: swoosh');
     setSelectedScenario(scenario);
+    setSelectedCase(scenario.cases[0]);
     setCurrentStep(0);
+    setPlayingAudio(null);
+    Speech.stop();
   };
 
-  const handlePlayAudio = async (conversationId) => {
+  const handleSwitchCase = (caseItem) => {
+    setSelectedCase(caseItem);
+    setCurrentStep(0);
+    setPlayingAudio(null);
+    Speech.stop();
+  };
+
+  const handlePlayAudio = async (conversationId, text) => {
     try {
-      console.log('🔊 Playing audio - Sound: speech');
-      setPlayingAudio(conversationId);
-      
-      // Simulate audio playback
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        require('../../../assets/appLogo.png'), // Placeholder - in production use actual audio files
-        { shouldPlay: false }
-      ).catch(() => ({ sound: null }));
-      
-      if (newSound) {
-        setSound(newSound);
+      if (!text) {
+        return;
       }
-      
-      setTimeout(() => {
+
+      if (playingAudio === conversationId) {
+        Speech.stop();
         setPlayingAudio(null);
-        console.log('✅ Audio finished');
-      }, 2000);
-    } catch (error) {
-      console.log('Audio playback simulated');
+        return;
+      }
+
+      console.log('🔊 Playing audio - Speech');
       setPlayingAudio(conversationId);
-      setTimeout(() => setPlayingAudio(null), 2000);
+      Speech.stop();
+      Speech.speak(text, {
+        language: 'ms-MY',
+        rate: 0.9,
+        pitch: 1,
+        onDone: () => {
+          setPlayingAudio(null);
+          console.log('✅ Audio finished');
+        },
+        onStopped: () => {
+          setPlayingAudio(null);
+        },
+        onError: () => {
+          setPlayingAudio(null);
+          Alert.alert('Audio Error', 'Could not play this sentence.');
+        },
+      });
+    } catch (error) {
+      console.log('Audio playback failed:', error);
+      Alert.alert('Audio Error', 'Playback failed. Please try again.');
+      setPlayingAudio(null);
     }
   };
 
+  const handlePlayCase = () => {
+    if (!activeConversations.length) {
+      return;
+    }
+
+    const lines = activeConversations.map((item) => item.indigenous).join(' . ');
+    setPlayingAudio('case-all');
+    Speech.stop();
+    Speech.speak(lines, {
+      language: 'ms-MY',
+      rate: 0.9,
+      onDone: () => {
+        setPlayingAudio(null);
+      },
+      onStopped: () => setPlayingAudio(null),
+      onError: () => {
+        setPlayingAudio(null);
+        Alert.alert('Audio Error', 'Could not play this case audio.');
+      },
+    });
+  };
+
   const handleNext = () => {
-    if (selectedScenario && currentStep < selectedScenario.conversations.length - 1) {
+    if (activeConversations.length && currentStep < activeConversations.length - 1) {
       console.log('➡️ Next - Sound: swoosh');
       setCurrentStep(currentStep + 1);
     }
@@ -182,7 +368,7 @@ export default function LivingLanguageScreen() {
               {isElderSpeaking ? '👴 Elder' : '👤 You'}
             </Text>
             <TouchableOpacity
-              onPress={() => handlePlayAudio(conversation.id)}
+              onPress={() => handlePlayAudio(conversation.id, conversation.indigenous)}
               style={styles.audioButton}
             >
               <Ionicons
@@ -217,7 +403,7 @@ export default function LivingLanguageScreen() {
           <View style={styles.infoCard}>
             <MaterialCommunityIcons name="information" size={24} color={COLORS.accent} />
             <Text style={styles.infoText}>
-              Select a scenario to practice conversations in indigenous Bornean languages
+              Select a scenario, then choose a case and press play to hear each sentence.
             </Text>
           </View>
 
@@ -242,7 +428,7 @@ export default function LivingLanguageScreen() {
         <View style={styles.headerCenter}>
           <Text style={styles.conversationTitle}>{selectedScenario.title}</Text>
           <Text style={styles.conversationProgress}>
-            {currentStep + 1} / {selectedScenario.conversations.length}
+            {selectedCase?.title || 'Case'} • {currentStep + 1} / {activeConversations.length || 1}
           </Text>
         </View>
         <TouchableOpacity
@@ -288,9 +474,50 @@ export default function LivingLanguageScreen() {
         ))}
       </ScrollView>
 
+      {/* Case Selector */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.caseSelectorContainer}
+        contentContainerStyle={styles.scenarioSelectorContent}
+      >
+        {(selectedScenario.cases || []).map((caseItem) => (
+          <TouchableOpacity
+            key={caseItem.id}
+            style={[
+              styles.caseSelectorButton,
+              selectedCase?.id === caseItem.id && styles.caseSelectorActive,
+              { borderColor: selectedScenario.color },
+            ]}
+            onPress={() => handleSwitchCase(caseItem)}
+          >
+            <Text
+              style={[
+                styles.caseSelectorText,
+                selectedCase?.id === caseItem.id && styles.caseSelectorTextActive,
+              ]}
+              numberOfLines={1}
+            >
+              {caseItem.title}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <View style={styles.casePlayRow}>
+        <TouchableOpacity style={styles.casePlayButton} onPress={handlePlayCase}>
+          <Ionicons
+            name={playingAudio === 'case-all' ? 'pause-circle' : 'play-circle'}
+            size={22}
+            color={COLORS.surface}
+          />
+          <Text style={styles.casePlayText}>Play Full Case</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView style={styles.conversationContent} showsVerticalScrollIndicator={false}>
         <View style={styles.conversationList}>
-          {selectedScenario.conversations.map((conv, index) => 
+          {activeConversations.map((conv, index) => 
             renderConversationBubble(conv, index)
           )}
         </View>
@@ -323,10 +550,10 @@ export default function LivingLanguageScreen() {
             <TouchableOpacity
               style={[
                 styles.rolePlayButton,
-                currentStep === selectedScenario.conversations.length - 1 && styles.disabledButton,
+                currentStep === activeConversations.length - 1 && styles.disabledButton,
               ]}
               onPress={handleNext}
-              disabled={currentStep === selectedScenario.conversations.length - 1}
+              disabled={currentStep === activeConversations.length - 1}
             >
               <Text style={styles.rolePlayButtonText}>Next</Text>
               <Ionicons name="play-forward" size={20} color={COLORS.surface} />
@@ -564,6 +791,53 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+  },
+  caseSelectorContainer: {
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  caseSelectorButton: {
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: SPACING.m,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    marginRight: SPACING.s,
+  },
+  caseSelectorActive: {
+    backgroundColor: COLORS.secondary + '20',
+    borderWidth: 2,
+  },
+  caseSelectorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    maxWidth: 140,
+  },
+  caseSelectorTextActive: {
+    color: COLORS.secondary,
+    fontWeight: 'bold',
+  },
+  casePlayRow: {
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+  },
+  casePlayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    backgroundColor: COLORS.primary,
+    borderRadius: SPACING.m,
+    paddingVertical: SPACING.s,
+    ...SHADOWS.small,
+  },
+  casePlayText: {
+    color: COLORS.surface,
+    fontWeight: '700',
+    fontSize: 13,
   },
   scenarioSelectorContent: {
     paddingHorizontal: SPACING.m,

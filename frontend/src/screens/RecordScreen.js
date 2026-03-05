@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, TextInput, Alert, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
 import { playSound } from '../services/soundService';
+import { translateText } from '../services/translationService';
+import {
+  forceCleanupActiveRecording,
+  prepareSingleRecording,
+  stopAndReleaseRecording,
+  releaseRecordingReference,
+} from '../services/recordingService';
 import { WORLD_LANGUAGES, getBorneoLanguages, getLanguagesByRegion } from '../constants/languages';
 
 // Group languages by region for better organization
@@ -22,8 +31,12 @@ const LANGUAGE_GROUPS = [
 ];
 
 const RECORDINGS_STORAGE_KEY = '@echolingua_recordings';
+const STORIES_STORAGE_KEY = '@echolingua_stories';
 
 export default function RecordScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const isStoryMode = route.params?.createStory === true;
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -48,8 +61,13 @@ export default function RecordScreen() {
   // NEW: Search state for language selector
   const [languageSearch, setLanguageSearch] = useState('');
   
+  // NEW: Story creation mode
+  const [storyTitle, setStoryTitle] = useState('');
+  const [isSavingStory, setIsSavingStory] = useState(false);
+  
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveHeights = useRef(Array(20).fill(0).map(() => new Animated.Value(20))).current;
+  const isRecordingActionInFlightRef = useRef(false);
 
   // Load recordings from local storage on mount
   useEffect(() => {
@@ -73,11 +91,14 @@ export default function RecordScreen() {
     return () => {
       // Cleanup
       if (recording) {
-        recording.stopAndUnloadAsync();
+        stopAndReleaseRecording(recording).catch(() => {
+          releaseRecordingReference(recording);
+        });
       }
       if (sound) {
         sound.unloadAsync();
       }
+      forceCleanupActiveRecording().catch(() => {});
     };
   }, []);
 
@@ -176,8 +197,13 @@ export default function RecordScreen() {
   };
 
   const handleRecord = async () => {
+    if (isRecording || recording || isRecordingActionInFlightRef.current) {
+      return;
+    }
+
     if (!isRecording) {
       try {
+        isRecordingActionInFlightRef.current = true;
         console.log('🔴 Starting recording...');
         
         // Request permissions
@@ -196,9 +222,7 @@ export default function RecordScreen() {
         });
 
         console.log('📱 Creating recording...');
-        const { recording: newRecording } = await Audio.Recording.createAsync(
-          Audio.RecordingOptionsPresets.HIGH_QUALITY
-        );
+        const newRecording = await prepareSingleRecording();
         
         console.log('✅ Recording created successfully!');
         playSound('start');
@@ -217,12 +241,19 @@ export default function RecordScreen() {
         console.error('❌ Failed to start recording:', error);
         playSound('incorrect');
         Alert.alert('Recording Error', `Could not start recording: ${error.message}`);
+      } finally {
+        isRecordingActionInFlightRef.current = false;
       }
     }
   };
 
   const handleStop = async () => {
+    if (isRecordingActionInFlightRef.current) {
+      return;
+    }
+
     try {
+      isRecordingActionInFlightRef.current = true;
       console.log('⏹️ Stopping recording...');
       
       if (!recording) {
@@ -230,8 +261,11 @@ export default function RecordScreen() {
         return;
       }
 
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      const uri = await stopAndReleaseRecording(recording);
+
+      if (!uri) {
+        throw new Error('Recording URI was not created. Please try again.');
+      }
       
       console.log('✅ Recording stopped successfully!');
       console.log('📁 Recording saved at:', uri);
@@ -260,6 +294,72 @@ export default function RecordScreen() {
       console.error('❌ Failed to stop recording:', error);
       playSound('incorrect');
       Alert.alert('Stop Error', `Could not stop recording: ${error.message}`);
+    } finally {
+      isRecordingActionInFlightRef.current = false;
+    }
+  };
+
+  // NEW: Pick audio file from phone
+  const handlePickAudioFile = async () => {
+    try {
+      console.log('📁 Opening file picker for audio files...');
+      playSound('tap');
+
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*'],
+      });
+
+      if (result.canceled) {
+        console.log('⚠️ File selection canceled');
+        return;
+      }
+
+      if (!result.assets || result.assets.length === 0) {
+        Alert.alert('No File', 'Please select an audio file');
+        return;
+      }
+
+      const selectedFile = result.assets[0];
+      console.log('✅ Audio file selected:', selectedFile.name);
+      console.log('📁 URI:', selectedFile.uri);
+      console.log('📏 Size:', selectedFile.size, 'bytes');
+
+      // Validate audio file
+      if (!selectedFile.uri) {
+        Alert.alert('Invalid File', 'Could not access the selected file');
+        return;
+      }
+
+      playSound('complete');
+
+      // Set up the recording with picked file
+      setRecordingUri(selectedFile.uri);
+      setHasRecording(true);
+      setShowLanguageSelector(true);
+      setRecordingTime(0); // We don't know actual duration yet
+      
+      // Create recording object for storage
+      const newRecording = {
+        id: Date.now().toString(),
+        uri: selectedFile.uri,
+        duration: 0,
+        timestamp: new Date().toISOString(),
+        language: selectedLanguage || '',
+        transcript: '',
+        fileName: selectedFile.name, // NEW: Store original filename
+      };
+
+      saveRecordingToStorage(newRecording);
+
+      Alert.alert(
+        'Audio File Selected! ✓',
+        `File: ${selectedFile.name}\n\nNow select a language and generate transcript.`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('❌ File picker error:', error);
+      playSound('incorrect');
+      Alert.alert('File Selection Error', `Could not select audio file: ${error.message}`);
     }
   };
 
@@ -498,7 +598,19 @@ export default function RecordScreen() {
         
         generatedTranscript = `${greeting}${intro}${ending}`.trim();
         
-        // Add metadata header
+        // NEW: Translate transcript to selected language if not already in that language
+        console.log('🔄 Translating transcript to', selectedLanguage);
+        let translatedTranscript = generatedTranscript;
+        
+        // Only translate if the selected language is not one of the template languages
+        if (!languageGreetings[selectedLanguage]) {
+          translatedTranscript = await translateText(generatedTranscript, selectedLanguage);
+          console.log('✅ Translation complete');
+        } else {
+          console.log('ℹ️ Transcript already in selected language');
+        }
+        
+        // Add metadata header with both original and translated versions
         const metadata = `🎙️ Recording Analysis
 ━━━━━━━━━━━━━━━━━━
 📏 Duration: ${formatTime(recordingTime)}
@@ -508,7 +620,9 @@ export default function RecordScreen() {
 ━━━━━━━━━━━━━━━━━━
 
 📄 Transcribed Text:
-${generatedTranscript}
+${translatedTranscript}
+
+${generatedTranscript !== translatedTranscript ? `\n📝 Original (English):\n${generatedTranscript}` : ''}
 
 ${recordingTime < 5 ? '\n⚠️ Note: Short recording detected. For better accuracy, please record at least 10 seconds.' : ''}
 ${recordingTime >= 10 && recordingTime < 30 ? '\n✅ Good recording length. Transcript quality should be accurate.' : ''}
@@ -519,7 +633,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
         setTranscript(metadata);
         setIsGenerating(false);
         playSound('complete');
-        console.log('✅ Transcript generated from recording analysis');
+        console.log('✅ Transcript generated and translated successfully');
       } catch (error) {
         console.error('Failed to analyze recording:', error);
         playSound('incorrect');
@@ -527,6 +641,75 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
         setIsGenerating(false);
       }
     }, 2500);
+  };
+
+  // NEW: Save recording as story for community archive
+  const handleSaveAsStory = async () => {
+    if (!storyTitle.trim()) {
+      Alert.alert('Title Required', 'Please enter a title for your story');
+      return;
+    }
+
+    if (!recordingUri || !transcript) {
+      Alert.alert('Incomplete Story', 'Please record audio and generate transcript first');
+      return;
+    }
+
+    setIsSavingStory(true);
+    console.log('💾 Saving story to community archive...');
+
+    try {
+      // Load existing stories
+      const existingStoriesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+      const existingStories = existingStoriesJson ? JSON.parse(existingStoriesJson) : [];
+
+      // Create new story object
+      const newStory = {
+        id: Date.now().toString(),
+        title: storyTitle.trim(),
+        audioUri: recordingUri,
+        transcript: transcript,
+        language: WORLD_LANGUAGES.find(l => l.id === selectedLanguage)?.label || 'Unknown',
+        languageId: selectedLanguage,
+        duration: recordingTime,
+        createdAt: new Date().toISOString(),
+        category: 'Community Contribution',
+      };
+
+      // Add to stories array
+      const updatedStories = [newStory, ...existingStories];
+      await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(updatedStories));
+
+      console.log('✅ Story saved successfully!');
+      playSound('complete');
+
+      Alert.alert(
+        'Story Published! 🎉',
+        `"${storyTitle}" has been added to the Community Archive. Thank you for sharing your cultural knowledge!`,
+        [
+          {
+            text: 'View in Archive',
+            onPress: () => {
+              navigation.navigate('MainTabs', { screen: 'StoriesTab' });
+            }
+          }
+        ]
+      );
+
+      // Reset form
+      setStoryTitle('');
+      setTranscript('');
+      setRecordingUri(null);
+      setHasRecording(false);
+      setSelectedLanguage('');
+      setRecordingTime(0);
+      
+    } catch (error) {
+      console.error('❌ Failed to save story:', error);
+      Alert.alert('Save Failed', 'Could not save your story. Please try again.');
+    } finally {
+      setIsSavingStory(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -631,6 +814,18 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                 </TouchableOpacity>
               </View>
             )}
+
+            {/* NEW: Pick from Phone Button - Show when not recording */}
+            {!isRecording && !hasRecording && (
+              <TouchableOpacity
+                style={styles.pickAudioButton}
+                onPress={handlePickAudioFile}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="folder-open" size={20} color={COLORS.primary} />
+                <Text style={styles.pickAudioButtonText}>Or Pick from Phone</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* NEW: Playback Controls - Redesigned */}
@@ -692,13 +887,45 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                   </Text>
                 </View>
               </View>
+
+              {/* Search Bar for Languages */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search 70+ languages..."
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={languageSearch}
+                  onChangeText={setLanguageSearch}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {languageSearch.length > 0 && (
+                  <TouchableOpacity 
+                    onPress={() => setLanguageSearch('')}
+                    style={styles.clearSearchButton}
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+                  </TouchableOpacity>
+                )}
+              </View>
               
               <ScrollView 
                 style={styles.languageScrollContainer} 
                 nestedScrollEnabled
                 showsVerticalScrollIndicator={false}
               >
-                {LANGUAGE_GROUPS.filter(group => group.languages.length > 0).map((group, groupIndex) => (
+                {LANGUAGE_GROUPS
+                  .map(group => ({
+                    ...group,
+                    languages: group.languages.filter(lang => 
+                      lang.label.toLowerCase().includes(languageSearch.toLowerCase()) ||
+                      lang.id.toLowerCase().includes(languageSearch.toLowerCase())
+                    )
+                  }))
+                  .filter(group => group.languages.length > 0)
+                  .map((group, groupIndex) => (
                   <View key={groupIndex} style={styles.languageGroup}>
                     <View style={styles.languageGroupHeader}>
                       <Text style={styles.languageGroupTitle}>{group.title}</Text>
@@ -797,6 +1024,39 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                   placeholderTextColor={COLORS.textSecondary}
                 />
               </ScrollView>
+
+              {/* Story Creation Mode: Title Input and Save Button */}
+              {isStoryMode && (
+                <View style={styles.storyCreationSection}>
+                  <View style={styles.storyInputHeader}>
+                    <MaterialCommunityIcons name="book-edit" size={24} color={COLORS.secondary} />
+                    <Text style={styles.storyInputLabel}>Story Title</Text>
+                  </View>
+                  <TextInput
+                    style={styles.storyTitleInput}
+                    value={storyTitle}
+                    onChangeText={setStoryTitle}
+                    placeholder="Enter a title for your folktale..."
+                    placeholderTextColor={COLORS.textSecondary}
+                    maxLength={100}
+                  />
+                  <TouchableOpacity
+                    style={[styles.saveStoryButton, isSavingStory && styles.saveStoryButtonDisabled]}
+                    onPress={handleSaveAsStory}
+                    disabled={isSavingStory}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons 
+                      name={isSavingStory ? "loading" : "cloud-upload"} 
+                      size={24} 
+                      color={COLORS.surface} 
+                    />
+                    <Text style={styles.saveStoryButtonText}>
+                      {isSavingStory ? 'Saving to Archive...' : 'Publish to Community Archive'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 
@@ -1044,6 +1304,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.text,
   },
+  pickAudioButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    marginTop: SPACING.l,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.l,
+    backgroundColor: '#E8F5E9',
+    borderRadius: SPACING.m,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    justifyContent: 'center',
+  },
+  pickAudioButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
   playbackContainer: {
     width: '100%',
     alignItems: 'center',
@@ -1149,6 +1427,53 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.surface,
   },
+  // NEW: Story Creation Styles
+  storyCreationSection: {
+    marginTop: SPACING.l,
+    paddingTop: SPACING.l,
+    borderTopWidth: 2,
+    borderTopColor: COLORS.secondary + '30',
+  },
+  storyInputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    marginBottom: SPACING.s,
+  },
+  storyInputLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+  },
+  storyTitleInput: {
+    backgroundColor: COLORS.background,
+    borderRadius: SPACING.m,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.m,
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: SPACING.m,
+  },
+  saveStoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.secondary,
+    paddingVertical: SPACING.l,
+    borderRadius: SPACING.m,
+    gap: SPACING.s,
+    ...SHADOWS.large,
+  },
+  saveStoryButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveStoryButtonText: {
+    color: COLORS.surface,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   infoCard: {
     flexDirection: 'row',
     backgroundColor: '#FFF9E6',
@@ -1204,6 +1529,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
     lineHeight: 16,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: SPACING.m,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.m,
+    marginBottom: SPACING.m,
+    height: 48,
+  },
+  searchIcon: {
+    marginRight: SPACING.s,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
+    paddingVertical: SPACING.s,
+  },
+  clearSearchButton: {
+    padding: SPACING.xs,
+    marginLeft: SPACING.s,
   },
   languageScrollContainer: {
     maxHeight: 400,

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { MaterialIcons, Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { stories } from '../data/mockData';
@@ -10,30 +12,174 @@ import { playSound } from '../services/soundService';
 export default function StoryScreen() {
   const navigation = useNavigation();
   const [showTranslation, setShowTranslation] = useState(false);
-  const [isChildrenMode, setIsChildrenMode] = useState(false);
+  const [isElderMode, setIsElderMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [audioSound, setAudioSound] = useState(null);
+  const [audioSource, setAudioSource] = useState(null); // 'recorded' or 'tts'
 
   const route = useRoute();
-  const { storyId } = route.params || {};
-  const story = stories.find(s => s.id === storyId) || stories[0]; 
+  const { storyId, story: passedStory } = route.params || {};
+  const story = passedStory || stories.find(s => s.id === storyId) || stories[0]; 
+  
+  // Check if this is a community story (has audioUri) or default story (has pages)
+  const isCommunityStory = !!story.audioUri; 
 
-  const toggleAudio = () => {
-    if (isPlaying) {
-      console.log('⏸️ Pausing story audio');
-      playSound('pause');
-      setIsPlaying(false);
-    } else {
-      console.log('▶️ Playing story audio');
-      playSound('play');
-      setIsPlaying(true);
-      // Simulate audio playback - in production, use expo-av Audio.Sound
-      setTimeout(() => {
+  const buildReadableStoryText = () => {
+    if (isCommunityStory) {
+      return story.transcript || 'No transcript available for this story yet.';
+    }
+
+    if (Array.isArray(story.pages) && story.pages.length > 0) {
+      return story.pages.map((page) => page.text).join(' ');
+    }
+
+    return story.title || 'Story content unavailable.';
+  };
+
+  const getSpeechLanguageCode = () => {
+    const langId = story.languageId || '';
+    const map = {
+      english: 'en-US',
+      malay: 'ms-MY',
+      indonesian: 'id-ID',
+      mandarin: 'zh-CN',
+      spanish: 'es-ES',
+      french: 'fr-FR',
+      arabic: 'ar-SA',
+      japanese: 'ja-JP',
+      korean: 'ko-KR',
+      german: 'de-DE',
+      portuguese: 'pt-PT',
+      thai: 'th-TH',
+      vietnamese: 'vi-VN',
+      russian: 'ru-RU',
+      italian: 'it-IT',
+      turkish: 'tr-TR',
+      hindi: 'hi-IN',
+    };
+
+    return map[langId] || 'en-US';
+  };
+
+  const speakStoryFallback = async () => {
+    const text = buildReadableStoryText();
+    if (!text || text.trim().length === 0) {
+      Alert.alert('Audio Unavailable', 'No readable story content found.');
+      return;
+    }
+
+    setIsPlaying(true);
+    setAudioSource('tts'); // Mark as TTS
+    playSound('play');
+
+    Speech.stop();
+    Speech.speak(text, {
+      language: getSpeechLanguageCode(),
+      rate: 0.9,
+      pitch: 1.0,
+      onDone: () => {
         setIsPlaying(false);
         playSound('complete');
-        console.log('✅ Story audio completed');
-      }, 5000); // Auto-stop after 5 seconds (demo)
+      },
+      onStopped: () => {
+        setIsPlaying(false);
+      },
+      onError: () => {
+        setIsPlaying(false);
+        Alert.alert('Audio Error', 'Text-to-speech failed for this story.');
+      },
+    });
+  };
+
+  const toggleAudio = async () => {
+    try {
+      // If playing, pause
+      if (isPlaying && audioSound) {
+        console.log('⏸️ Pausing story audio');
+        await audioSound.pauseAsync();
+        playSound('pause');
+        setIsPlaying(false);
+      }
+      // If paused, resume
+      else if (isPlaying && !audioSound && audioSource === 'tts') {
+        // TTS is being paused via Speech API
+        Speech.stop();
+        setIsPlaying(false);
+      }
+      // If already has sound but not playing, resume
+      else if (audioSound && !isPlaying) {
+        console.log('▶️ Resuming story audio');
+        await audioSound.playAsync();
+        playSound('play');
+        setIsPlaying(true);
+      }
+      // Otherwise start fresh playback
+      else {
+        console.log('▶️ Loading and playing story audio');
+
+        // Stop any TTS that might be playing
+        if (audioSource === 'tts') {
+          Speech.stop();
+        }
+
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: false,
+        });
+        
+        // Check if story has audio URI
+        if (story.audioUri) {
+          // Load and play actual audio file
+          try {
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: story.audioUri },
+              { shouldPlay: true, volume: 1.0 },
+              (status) => {
+                if (status.didJustFinish) {
+                  console.log('✅ Story audio completed');
+                  setIsPlaying(false);
+                  playSound('complete');
+                }
+              }
+            );
+            setAudioSound(sound);
+            setAudioSource('recorded'); // Mark as recorded audio
+            setIsPlaying(true);
+            playSound('play');
+          } catch (audioError) {
+            console.log('⚠️ Could not play recorded audio, falling back to TTS');
+            await speakStoryFallback();
+          }
+        } else {
+          // Fallback for stories without recorded audio: read the story via TTS.
+          console.log('ℹ️ No story audio file - using TTS fallback');
+          await speakStoryFallback();
+        }
+      }
+    } catch (error) {
+      console.error('❌ Audio playback error:', error);
+      // Final fallback path for playback failures.
+      try {
+        await speakStoryFallback();
+      } catch (_) {
+        Alert.alert('Audio Error', 'Could not play story audio: ' + error.message);
+        setIsPlaying(false);
+      }
     }
   };
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioSound) {
+        console.log('🧹 Cleaning up audio sound');
+        audioSound.unloadAsync();
+      }
+      Speech.stop();
+    };
+  }, [audioSound]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -69,12 +215,12 @@ export default function StoryScreen() {
           </View>
           <View style={styles.divider} />
           <View style={styles.controlRow}>
-            <Text style={styles.controlLabel}>Children's Mode</Text>
+            <Text style={styles.controlLabel}>Elder Mode (Larger Text)</Text>
             <Switch 
               trackColor={{ false: "#e0e0e0", true: COLORS.secondary }}
               thumbColor={COLORS.surface}
-              value={isChildrenMode} 
-              onValueChange={setIsChildrenMode} 
+              value={isElderMode} 
+              onValueChange={setIsElderMode} 
             />
           </View>
         </View>
@@ -85,35 +231,73 @@ export default function StoryScreen() {
              <MaterialIcons name={isPlaying ? "pause" : "play-arrow"} size={32} color={COLORS.surface} />
            </View>
            <View style={styles.audioInfo}>
-             <Text style={styles.audioTitle}>Listen to Legend</Text>
-             <Text style={styles.audioSubtitle}>Narrated by Elder Kambera</Text>
+             <Text style={styles.audioTitle}>
+               {isCommunityStory ? 'Listen to Recording' : 'Listen to Legend'}
+             </Text>
+             <Text style={styles.audioSubtitle}>
+               {isCommunityStory ? `Community Story • ${story.language}` : 'Narrated by Elder Kambera'}
+             </Text>
+             {audioSource && isPlaying && (
+               <Text style={styles.audioSourceLabel}>
+                 🔊 {audioSource === 'recorded' ? '🎙️ Recorded Audio' : '🗣️ Voice Reading (TTS)'}
+               </Text>
+             )}
            </View>
            <Feather name="headphones" size={24} color={COLORS.primary} style={{ opacity: 0.5 }} />
         </TouchableOpacity>
 
         {/* Story Content */}
         <View style={styles.contentCard}>
-          {story.pages.map((page, index) => (
-            <View key={index} style={styles.pageContainer}>
+          {isCommunityStory ? (
+            // Community story: Show transcript
+            <View style={styles.pageContainer}>
                <Text style={[
                  styles.storyText, 
-                 isChildrenMode && styles.kidsText
+                 isElderMode && styles.elderText
                ]}>
-                  {page.text}
+                  {story.transcript || 'No transcript available.'}
                </Text>
                
                {showTranslation && (
                  <View style={styles.translationBox}>
                    <Text style={styles.translationLabel}>Translation:</Text>
-                   <Text style={styles.translationText}>{page.translation}</Text>
+                   <Text style={styles.translationText}>
+                     Translation feature coming soon...
+                     {/* TODO: Implement dynamic translation based on user language preference */}
+                   </Text>
                  </View>
                )}
             </View>
-          ))}
+          ) : (
+            // Default story: Show pages
+            story.pages?.map((page, index) => (
+              <View key={index} style={styles.pageContainer}>
+                 <Text style={[
+                   styles.storyText, 
+                   isElderMode && styles.elderText
+                 ]}>
+                    {page.text}
+                 </Text>
+                 
+                 {showTranslation && (
+                   <View style={styles.translationBox}>
+                     <Text style={styles.translationLabel}>Translation:</Text>
+                     <Text style={styles.translationText}>
+                       {page.translation}
+                       {/* TODO: Implement dynamic translation based on user language preference */}
+                     </Text>
+                   </View>
+                 )}
+              </View>
+            ))
+          )}
         </View>
         
         {/* Create Your Own Story CTA */}
-        <TouchableOpacity style={styles.createStoryButton} onPress={() => alert('Opening Folktale Builder (Demo)')}>
+        <TouchableOpacity 
+          style={styles.createStoryButton} 
+          onPress={() => navigation.navigate('Record', { createStory: true })}
+        >
            <FontAwesome5 name="pencil-alt" size={20} color={COLORS.surface} />
            <Text style={styles.createStoryText}>Create Your Own Folktale</Text>
         </TouchableOpacity>
@@ -226,6 +410,12 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
   },
+  audioSourceLabel: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: SPACING.xs,
+  },
   contentCard: {
     backgroundColor: COLORS.surface,
     padding: SPACING.l,
@@ -245,10 +435,10 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: FONTS.medium, // In real app, use a serif font here
   },
-  kidsText: {
+  elderText: {
     fontSize: 26,
     lineHeight: 38,
-    fontFamily: 'monospace', // Or a rounded font
+    fontWeight: '600',
     color: '#2C3E50',
   },
   translationBox: {

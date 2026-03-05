@@ -4,6 +4,12 @@ import { Audio } from 'expo-av';
 import { AntDesign, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { playSound } from '../services/soundService';
+import {
+  forceCleanupActiveRecording,
+  prepareSingleRecording,
+  stopAndReleaseRecording,
+  releaseRecordingReference,
+} from '../services/recordingService';
 import * as Speech from 'expo-speech';
 
 // Accuracy levels for testing
@@ -25,6 +31,7 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
   
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const isPreparingRecordingRef = useRef(false);
 
   // Initialize audio
   useEffect(() => {
@@ -46,8 +53,11 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
         sound.unloadAsync();
       }
       if (recording) {
-        recording.stopAndUnloadAsync();
+        stopAndReleaseRecording(recording).catch(() => {
+          releaseRecordingReference(recording);
+        });
       }
+      forceCleanupActiveRecording().catch(() => {});
     };
   }, []);
 
@@ -110,7 +120,12 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
 
   // Start recording pronunciation
   const startRecording = async () => {
+    if (isRecording || isPreparingRecordingRef.current) {
+      return;
+    }
+
     try {
+      isPreparingRecordingRef.current = true;
       console.log('🎤 Recording started for:', word.original);
       await playSound('recording');
       setIsRecording(true);
@@ -130,9 +145,7 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
         shouldDuckAndroid: false,
       });
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      const newRecording = await prepareSingleRecording();
 
       setRecording(newRecording);
       console.log('🔴 Recording active - speak now');
@@ -156,6 +169,8 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
       console.error('Failed to start recording:', error);
       Alert.alert('Error', 'Failed to start recording: ' + error.message);
       setIsRecording(false);
+    } finally {
+      isPreparingRecordingRef.current = false;
     }
   };
 
@@ -171,8 +186,16 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
       await playSound('stop');
       pulseAnim.setValue(1);
 
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      const uri = await stopAndReleaseRecording(recording);
+
+      // Validate recording URI exists before proceeding
+      if (!uri) {
+        console.error('❌ Recording failed - no URI generated');
+        setRecording(null);
+        setIsRecording(false);
+        Alert.alert('Recording Failed', 'Could not save your recording. Please try again.');
+        return;
+      }
 
       setRecordingUri(uri);
       setRecording(null);
@@ -180,20 +203,30 @@ export default function VocabularyCard({ word, isSaved = false, onSave, testingM
 
       console.log('📁 Recording saved at:', uri);
 
-      // ALWAYS check accuracy after recording (not just in testing mode)
-      await checkAccuracy(word);
+      // ONLY check accuracy if recording was successful and URI exists
+      await checkAccuracy(word, uri);
     } catch (error) {
       console.error('Failed to stop recording:', error);
+      setRecording(null);
       setIsRecording(false);
-      Alert.alert('Error', 'Failed to stop recording');
+      setAccuracy(null); // Clear any previous accuracy
+      Alert.alert('Recording Error', 'Failed to stop recording: ' + error.message);
     }
   };
 
-  // Check accuracy - this ALWAYS runs after recording
-  const checkAccuracy = async (word) => {
+  // Check accuracy - this ONLY runs after successful recording
+  const checkAccuracy = async (word, uri) => {
     try {
+      // Validate URI exists before analyzing
+      if (!uri) {
+        console.error('❌ Cannot check accuracy - no recording URI');
+        setIsCheckingAccuracy(false);
+        return;
+      }
+
       setIsCheckingAccuracy(true);
       console.log('🔍 Analyzing your pronunciation for:', word.original);
+      console.log('📂 Using recording at:', uri);
 
       // Simulate accurate pronunciation checking
       setTimeout(async () => {

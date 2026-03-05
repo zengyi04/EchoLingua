@@ -14,6 +14,7 @@ import QuizScreen from '../screens/QuizScreen';
 import LearnScreen from '../screens/LearnScreen';
 import RecordScreen from '../screens/RecordScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import LivingLanguageScreen from '../screens/LivingLanguageScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -78,6 +79,7 @@ export default function AppNavigator() {
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen name="Vocabulary" component={VocabularyScreen} />
       <Stack.Screen name="Story" component={StoryScreen} />
+      <Stack.Screen name="LivingLanguage" component={LivingLanguageScreen} />
       <Stack.Screen name="Quiz" component={QuizScreen} />
     </Stack.Navigator>
   );

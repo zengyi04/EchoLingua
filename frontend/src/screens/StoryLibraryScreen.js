@@ -1,42 +1,96 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { stories } from '../data/mockData';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+const STORIES_STORAGE_KEY = '@echolingua_stories';
+
 export default function StoryLibraryScreen() {
   const navigation = useNavigation();
+  const [communityStories, setCommunityStories] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const renderStoryItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.storyCard} 
-      onPress={() => navigation.navigate('Story', { storyId: item.id })}
-      activeOpacity={0.9}
-    >
-      <View style={styles.imageContainer}>
-          {/* Placeholder for story image */}
-          <View style={[styles.placeholderImage, { backgroundColor: COLORS.secondary }]}>
-             <Ionicons name="book" size={32} color={COLORS.surface} />
-          </View>
-      </View>
-      <View style={styles.contentContainer}>
-          <Text style={styles.category}>FOLKLORE</Text>
-          <Text style={styles.title}>{item.title}</Text>
-          <View style={styles.metaRow}>
-              <View style={styles.aiBadge}>
-                  <MaterialCommunityIcons name="robot" size={12} color={COLORS.primary} />
-                  <Text style={styles.aiBadgeText}>AI Illustrated</Text>
-              </View>
-              <Text style={styles.metaText}> • 5 min</Text>
-          </View>
-      </View>
-      <View style={styles.arrowContainer}>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
-      </View>
-    </TouchableOpacity>
+  // Load community stories from AsyncStorage
+  const loadCommunityStories = async () => {
+    try {
+      const storiesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+      if (storiesJson) {
+        const loadedStories = JSON.parse(storiesJson);
+        console.log(`📚 Loaded ${loadedStories.length} community stories`);
+        setCommunityStories(loadedStories);
+      }
+    } catch (error) {
+      console.error('Failed to load community stories:', error);
+    }
+  };
+
+  // Load stories when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCommunityStories();
+    }, [])
   );
+
+  // Refresh handler
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadCommunityStories();
+    setRefreshing(false);
+  };
+
+  // Combine default stories with community stories
+  const allStories = [...communityStories, ...stories];
+
+  const renderStoryItem = ({ item }) => {
+    const isCommunityStory = !!item.audioUri; // Community stories have audioUri
+    
+    return (
+      <TouchableOpacity 
+        style={styles.storyCard} 
+        onPress={() => navigation.navigate('Story', { storyId: item.id, story: item })}
+        activeOpacity={0.9}
+      >
+        <View style={styles.imageContainer}>
+            {/* Placeholder for story image */}
+            <View style={[styles.placeholderImage, { backgroundColor: isCommunityStory ? COLORS.accent : COLORS.secondary }]}>
+               <Ionicons name={isCommunityStory ? "mic" : "book"} size={32} color={COLORS.surface} />
+            </View>
+        </View>
+        <View style={styles.contentContainer}>
+            <Text style={styles.category}>{isCommunityStory ? 'COMMUNITY' : 'FOLKLORE'}</Text>
+            <Text style={styles.title}>{item.title}</Text>
+            <View style={styles.metaRow}>
+                {isCommunityStory ? (
+                  <>
+                    <View style={[styles.aiBadge, { backgroundColor: COLORS.accent + '20' }]}>
+                        <Ionicons name="people" size={12} color={COLORS.accent} />
+                        <Text style={[styles.aiBadgeText, { color: COLORS.accent }]}>
+                          {item.language || 'Community'}
+                        </Text>
+                    </View>
+                    <Text style={styles.metaText}> • {Math.floor(item.duration / 60)}:{String(item.duration % 60).padStart(2, '0')}</Text>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.aiBadge}>
+                        <MaterialCommunityIcons name="robot" size={12} color={COLORS.primary} />
+                        <Text style={styles.aiBadgeText}>AI Illustrated</Text>
+                    </View>
+                    <Text style={styles.metaText}> • 5 min</Text>
+                  </>
+                )}
+            </View>
+        </View>
+        <View style={styles.arrowContainer}>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -48,7 +102,11 @@ export default function StoryLibraryScreen() {
 
       {/* NEW: AI Story Generator Call-to-Action */}
       <View style={styles.createSection}>
-          <TouchableOpacity style={styles.createCard} activeOpacity={0.9} onPress={() => navigation.navigate('RecordTab')}>
+          <TouchableOpacity 
+            style={styles.createCard} 
+            activeOpacity={0.9} 
+            onPress={() => navigation.navigate('RecordTab', { createStory: true })}
+          >
               <View style={styles.createIconBg}>
                   <MaterialCommunityIcons name="magic-staff" size={24} color={COLORS.surface} />
               </View>
@@ -63,11 +121,14 @@ export default function StoryLibraryScreen() {
       <Text style={styles.sectionHeader}>Community Archive</Text>
       
       <FlatList
-        data={stories}
+        data={allStories}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderStoryItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+        }
       />
     </SafeAreaView>
   );

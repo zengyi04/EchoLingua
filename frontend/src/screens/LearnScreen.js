@@ -1,10 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function LearnScreen() {
+  const navigation = useNavigation();
+  
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -26,7 +29,11 @@ export default function LearnScreen() {
         <View style={styles.lessonSection}>
            <Text style={styles.sectionTitle}>Living Language Scenarios</Text>
            
-           <TouchableOpacity style={styles.lessonItem}>
+           <TouchableOpacity 
+             style={styles.lessonItem}
+             onPress={() => navigation.navigate('LivingLanguage', { scenario: 'home' })}
+             activeOpacity={0.7}
+           >
               <View style={[styles.iconBox, { backgroundColor: COLORS.success }]}>
                 <Ionicons name="home" size={20} color={COLORS.surface} />
               </View>
@@ -37,7 +44,11 @@ export default function LearnScreen() {
               <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
            </TouchableOpacity>
 
-           <TouchableOpacity style={styles.lessonItem}>
+           <TouchableOpacity 
+             style={styles.lessonItem}
+             onPress={() => navigation.navigate('LivingLanguage', { scenario: 'tamu' })}
+             activeOpacity={0.7}
+           >
               <View style={[styles.iconBox, { backgroundColor: COLORS.secondary }]}>
                 <Ionicons name="basket" size={20} color={COLORS.surface} />
               </View>
@@ -48,7 +59,11 @@ export default function LearnScreen() {
               <Ionicons name="play-circle" size={24} color={COLORS.primary} />
            </TouchableOpacity>
 
-           <TouchableOpacity style={styles.lessonItem}>
+           <TouchableOpacity 
+             style={styles.lessonItem}
+             onPress={() => navigation.navigate('LivingLanguage', { scenario: 'elders' })}
+             activeOpacity={0.7}
+           >
               <View style={[styles.iconBox, { backgroundColor: COLORS.accent }]}>
                 <Ionicons name="people" size={20} color={COLORS.surface} />
               </View>
@@ -59,15 +74,49 @@ export default function LearnScreen() {
               <View style={styles.tag}><Text style={styles.tagText}>CULTURE</Text></View>
            </TouchableOpacity>
 
-           <TouchableOpacity style={[styles.lessonItem, styles.lessonLocked]}>
-              <View style={[styles.iconBox, { backgroundColor: '#ccc' }]}>
+           <TouchableOpacity 
+             style={styles.lessonItem}
+             onPress={() => navigation.navigate('LivingLanguage', { scenario: 'festival' })}
+             activeOpacity={0.7}
+           >
+              <View style={[styles.iconBox, { backgroundColor: '#E91E63' }]}> 
                 <Ionicons name="musical-notes" size={20} color={COLORS.surface} />
               </View>
               <View style={styles.lessonInfo}>
                  <Text style={styles.lessonTitle}>Harvest Festival</Text>
                  <Text style={styles.lessonDesc}>Songs & specialized vocabulary</Text>
               </View>
-              <Ionicons name="lock-closed" size={20} color="#999" />
+              <Ionicons name="play-circle" size={24} color={COLORS.primary} />
+           </TouchableOpacity>
+
+           <TouchableOpacity 
+             style={styles.lessonItem}
+             onPress={() => navigation.navigate('LivingLanguage', { scenario: 'school' })}
+             activeOpacity={0.7}
+           >
+              <View style={[styles.iconBox, { backgroundColor: '#3F51B5' }]}> 
+                <Ionicons name="school" size={20} color={COLORS.surface} />
+              </View>
+              <View style={styles.lessonInfo}>
+                 <Text style={styles.lessonTitle}>At School</Text>
+                 <Text style={styles.lessonDesc}>Classroom phrases and introductions</Text>
+              </View>
+              <Ionicons name="play-circle" size={24} color={COLORS.primary} />
+           </TouchableOpacity>
+
+           <TouchableOpacity 
+             style={styles.lessonItem}
+             onPress={() => navigation.navigate('LivingLanguage', { scenario: 'clinic' })}
+             activeOpacity={0.7}
+           >
+              <View style={[styles.iconBox, { backgroundColor: '#F44336' }]}> 
+                <Ionicons name="medkit" size={20} color={COLORS.surface} />
+              </View>
+              <View style={styles.lessonInfo}>
+                 <Text style={styles.lessonTitle}>At Clinic</Text>
+                 <Text style={styles.lessonDesc}>Health and help-seeking conversations</Text>
+              </View>
+              <Ionicons name="play-circle" size={24} color={COLORS.primary} />
            </TouchableOpacity>
         </View>
       </ScrollView>
