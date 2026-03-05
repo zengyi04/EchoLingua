@@ -337,7 +337,7 @@ export default function LivingLanguageScreen() {
       <View style={styles.scenarioTextContainer}>
         <Text style={styles.scenarioTitle}>{item.title}</Text>
         <Text style={styles.scenarioSubtitle}>
-          {item.conversations.length} conversations
+          {item.cases?.length || 0} cases
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />

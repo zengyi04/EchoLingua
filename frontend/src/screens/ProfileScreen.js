@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Modal, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 
 const LANGUAGES = [
   { id: 'kad', name: 'Kadazandusun' },
@@ -14,6 +14,8 @@ const LANGUAGES = [
 export default function ProfileScreen() {
   const [showLangOptions, setShowLangOptions] = useState(false);
   const [currentLang, setCurrentLang] = useState('Kadazandusun');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -87,13 +89,13 @@ export default function ProfileScreen() {
            </View>
         )}
 
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={() => setShowSettings(true)}>
            <Ionicons name="settings-outline" size={24} color={COLORS.text} />
            <Text style={styles.menuListItem}>General Settings</Text>
            <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={() => setShowHelp(true)}>
            <Ionicons name="help-circle-outline" size={24} color={COLORS.text} />
            <Text style={styles.menuListItem}>Help & Support</Text>
            <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />

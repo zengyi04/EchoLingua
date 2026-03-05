@@ -16,14 +16,26 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.echolingua.borneo"
+      "bundleIdentifier": "com.echolingua.borneo",
+      "config": {
+        "googleMapsApiKey": "AIzaSyD04MCoHQ_n0U7ODku5-bY5uKeU237_o0k"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/appLogo.png",
         "backgroundColor": "#F9F7F2"
       },
-      "package": "com.echolingua.borneo"
+      "package": "com.echolingua.borneo",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyD04MCoHQ_n0U7ODku5-bY5uKeU237_o0k"
+        }
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/appLogo.png"

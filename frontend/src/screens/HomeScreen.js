@@ -157,7 +157,7 @@ export default function HomeScreen({ navigation }) {
             title="Map" 
             icon={<FontAwesome5 name="map-marked-alt" size={20} />}
             color="#FF9800" // Orange
-            onPress={() => alert('View Dialect Map')}
+            onPress={() => navigation.navigate('Map')}
           />
           <QuickAction 
             title="Learn" 

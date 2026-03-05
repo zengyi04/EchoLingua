@@ -1,3 +1,5 @@
+import { logicBasedQuizzes } from './logicBasedQuizzes.js';
+
 export const vocabularyList = [
   // EASY LEVEL - Basic words (40 words)
   { id: 1, original: 'Rumah', translated: 'House', pronunciation: 'roo-mah', image: 'house.png', difficulty: 'easy' },
@@ -420,8 +422,51 @@ const generateLanguageSpecificQuizzes = () => {
 // Generate the quiz data
 const LANGUAGE_SPECIFIC_QUIZZES = generateLanguageSpecificQuizzes();
 
-// Export comprehensive quiz system that includes both English questions and language-specific ones
-export const quizzesByLanguageAndDifficulty = {
+// Function to build logic-based quizzes for all languages
+const buildLogicBasedQuizzesForAllLanguages = () => {
+  const allLanguages = [
+    'iban', 'bidayuh', 'kadazan', 'murut', 'malay',
+    'english', 'spanish', 'french', 'mandarin', 'arabic',
+    'hindi', 'portuguese', 'bengali', 'russian', 'japanese',
+    'german', 'korean', 'vietnamese', 'thai', 'indonesian',
+    'tagalog', 'italian', 'turkish', 'polish', 'dutch'
+  ];
+
+  const result = {};
+
+  allLanguages.forEach(languageId => {
+    result[languageId] = {
+      easy: {},
+      medium: {},
+      hard: {}
+    };
+
+    // Use common logic-based quizzes for all languages
+    ['quiz1', 'quiz2', 'quiz3', 'quiz4', 'quiz5'].forEach(quizNum => {
+      const quizIndex = parseInt(quizNum.replace('quiz', '')) - 1;
+      
+      // Easy questions
+      result[languageId].easy[quizNum] = logicBasedQuizzes.common.easy[quizNum] || 
+        logicBasedQuizzes.common.easy.quiz1;
+      
+      // Medium questions  
+      result[languageId].medium[quizNum] = logicBasedQuizzes.common.medium[quizNum] || 
+        logicBasedQuizzes.common.medium.quiz1;
+      
+      // Hard questions
+      result[languageId].hard[quizNum] = logicBasedQuizzes.common.hard[quizNum] || 
+        logicBasedQuizzes.common.hard.quiz1;
+    });
+  });
+
+  return result;
+};
+
+// Export comprehensive quiz system with logic-based questions
+export const quizzesByLanguageAndDifficulty = buildLogicBasedQuizzesForAllLanguages();
+
+// Legacy structure - keeping for reference
+const _legacyQuizzesStructure = {
   iban: {
     easy: {
       quiz1: [
@@ -1587,10 +1632,12 @@ export const quizzesByLanguageAndDifficulty = {
   dutch: { easy: { quiz1: [{ question: 'Dutch sample', options: ['A', 'B', 'C', 'D'], correctAnswer: 'A' }], quiz2: [], quiz3: [], quiz4: [], quiz5: [] }, medium: { quiz1: [], quiz2: [], quiz3: [], quiz4: [], quiz5: [] }, hard: { quiz1: [], quiz2: [], quiz3: [], quiz4: [], quiz5: [] } }
 };
 
-// Merge explicitly localized packs first (e.g., Mandarin, Spanish) so they override legacy English prompts.
-Object.entries(LANGUAGE_SPECIFIC_QUIZZES).forEach(([languageId, quizPack]) => {
-  quizzesByLanguageAndDifficulty[languageId] = quizPack;
-});
+// Legacy merge kept only for backwards compatibility - quizzesByLanguageAndDifficulty now uses logic-based system
+// Object.entries(LANGUAGE_SPECIFIC_QUIZZES).forEach(([languageId, quizPack]) => {
+//   if (quizzesByLanguageAndDifficulty[languageId]) {
+//     quizzesByLanguageAndDifficulty[languageId] = quizPack;
+//   }
+// });
 
 const QUIZ_LANGUAGE_LABELS = {
   iban: 'Iban',
