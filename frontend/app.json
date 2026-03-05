@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "EchoLingua Borneo",
+    "slug": "echolingua-borneo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/appLogo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/appLogo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F9F7F2"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.echolingua.borneo"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/appLogo.png",
+        "backgroundColor": "#F9F7F2"
+      },
+      "package": "com.echolingua.borneo"
+    },
+    "web": {
+      "favicon": "./assets/appLogo.png"
+    }
+  }
+}

@@ -5,6 +5,7 @@ import { MaterialIcons, Feather, FontAwesome5, Ionicons } from '@expo/vector-ico
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { stories } from '../data/mockData';
 import { COLORS, SPACING, SHADOWS, FONTS } from '../constants/theme';
+import { playSound } from '../services/soundService';
 
 export default function StoryScreen() {
   const navigation = useNavigation();
@@ -17,8 +18,21 @@ export default function StoryScreen() {
   const story = stories.find(s => s.id === storyId) || stories[0]; 
 
   const toggleAudio = () => {
-    setIsPlaying(!isPlaying);
-    alert(isPlaying ? "Paused" : "Playing story audio...");
+    if (isPlaying) {
+      console.log('⏸️ Pausing story audio');
+      playSound('pause');
+      setIsPlaying(false);
+    } else {
+      console.log('▶️ Playing story audio');
+      playSound('play');
+      setIsPlaying(true);
+      // Simulate audio playback - in production, use expo-av Audio.Sound
+      setTimeout(() => {
+        setIsPlaying(false);
+        playSound('complete');
+        console.log('✅ Story audio completed');
+      }, 5000); // Auto-stop after 5 seconds (demo)
+    }
   };
 
   return (

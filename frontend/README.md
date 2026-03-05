@@ -22,6 +22,8 @@ Since the environment did not have Node.js available, the project structure was 
     npm start
     # or
     npx expo start
+    # or
+    npm start --tunnel
     ```
 
 ## Structure (Member 1 Features)

@@ -1,112 +1,402 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { quizQuestions } from '../data/mockData';
+import { quizzesByLanguageAndDifficulty } from '../data/mockData';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { playSound } from '../services/soundService';
+
+const LANGUAGES = [
+  // Borneo Indigenous Languages
+  { id: 'iban', label: 'Iban', flag: '🇲🇾', region: 'Borneo' },
+  { id: 'bidayuh', label: 'Bidayuh', flag: '🇲🇾', region: 'Borneo' },
+  { id: 'kadazan', label: 'Kadazan-Dusun', flag: '🇲🇾', region: 'Borneo' },
+  { id: 'murut', label: 'Murut', flag: '🇲🇾', region: 'Borneo' },
+  { id: 'malay', label: 'Malay', flag: '🇲🇾', region: 'Southeast Asia' },
+  
+  // Major World Languages
+  { id: 'english', label: 'English', flag: '🇬🇧', region: 'Global' },
+  { id: 'spanish', label: 'Spanish', flag: '🇪🇸', region: 'Europe/Americas' },
+  { id: 'french', label: 'French', flag: '🇫🇷', region: 'Europe/Africa' },
+  { id: 'mandarin', label: 'Mandarin Chinese', flag: '🇨🇳', region: 'Asia' },
+  { id: 'arabic', label: 'Arabic', flag: '🇸🇦', region: 'Middle East' },
+  { id: 'hindi', label: 'Hindi', flag: '🇮🇳', region: 'South Asia' },
+  { id: 'portuguese', label: 'Portuguese', flag: '🇵🇹', region: 'Europe/Americas' },
+  { id: 'bengali', label: 'Bengali', flag: '🇧🇩', region: 'South Asia' },
+  { id: 'russian', label: 'Russian', flag: '🇷🇺', region: 'Eastern Europe' },
+  { id: 'japanese', label: 'Japanese', flag: '🇯🇵', region: 'East Asia' },
+  { id: 'german', label: 'German', flag: '🇩🇪', region: 'Central Europe' },
+  { id: 'korean', label: 'Korean', flag: '🇰🇷', region: 'East Asia' },
+  { id: 'vietnamese', label: 'Vietnamese', flag: '🇻🇳', region: 'Southeast Asia' },
+  { id: 'thai', label: 'Thai', flag: '🇹🇭', region: 'Southeast Asia' },
+  { id: 'indonesian', label: 'Indonesian', flag: '🇮🇩', region: 'Southeast Asia' },
+  { id: 'tagalog', label: 'Tagalog', flag: '🇵🇭', region: 'Southeast Asia' },
+  { id: 'italian', label: 'Italian', flag: '🇮🇹', region: 'Southern Europe' },
+  { id: 'turkish', label: 'Turkish', flag: '🇹🇷', region: 'Middle East' },
+  { id: 'polish', label: 'Polish', flag: '🇵🇱', region: 'Central Europe' },
+  { id: 'dutch', label: 'Dutch', flag: '🇳🇱', region: 'Western Europe' },
+];
+
+const DIFFICULTIES = [
+  { id: 'easy', label: 'Easy', emoji: '🌱', color: '#4CAF50' },
+  { id: 'medium', label: 'Medium', emoji: '🌿', color: '#FF9800' },
+  { id: 'hard', label: 'Hard', emoji: '🌳', color: '#E53935' },
+];
 
 export default function QuizScreen({ navigation }) {
+  // Selection states
+  const [selectedLanguage, setSelectedLanguage] = useState(null);
+  const [selectedDifficulty, setSelectedDifficulty] = useState(null);
+  const [selectedQuiz, setSelectedQuiz] = useState(null);
+  
+  // Quiz states
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [quizFinished, setQuizFinished] = useState(false);
   const [selectedOption, setSelectedOption] = useState(null);
+  const [quizQuestions, setQuizQuestions] = useState([]);
 
-  const currentQuestion = quizQuestions[currentQuestionIndex];
-  const progress = ((currentQuestionIndex + 1) / quizQuestions.length) * 100;
-
-  const handleAnswer = (option) => {
-    setSelectedOption(option);
-    
-    // Slight delay to show selection
-    setTimeout(() => {
-        const isCorrect = option === currentQuestion.correctAnswer;
-        
-        if (isCorrect) {
-          setScore(prev => prev + 1);
-        } else {
-             Alert.alert("Oops!", `Correct answer: ${currentQuestion.correctAnswer}`);
-        }
-
-        const nextQuestion = currentQuestionIndex + 1;
-        if (nextQuestion < quizQuestions.length) {
-          setCurrentQuestionIndex(nextQuestion);
-          setSelectedOption(null);
-        } else {
-          setQuizFinished(true);
-        }
-    }, 500);
+  const handleLanguageSelect = (language) => {
+    console.log(`🌍 Selected language: ${language.label}`);
+    playSound('select');
+    setSelectedLanguage(language);
+    setSelectedDifficulty(null);
+    setSelectedQuiz(null);
   };
 
-  const restartQuiz = () => {
-    setScore(0);
+  const handleDifficultySelect = (difficulty) => {
+    console.log(`📊 Selected difficulty: ${difficulty.label}`);
+    playSound('select');
+    setSelectedDifficulty(difficulty);
+    setSelectedQuiz(null);
+  };
+
+  const handleQuizSelect = (quizNumber) => {
+    console.log(`📝 Starting Quiz ${quizNumber}`);
+    playSound('start');
+    
+    // Check if quiz data exists for this language/difficulty combination
+    const languageData = quizzesByLanguageAndDifficulty[selectedLanguage.id];
+    if (!languageData) {
+      Alert.alert(
+        'Content Coming Soon',
+        `Quiz content for ${selectedLanguage.label} is currently being developed. Please check back soon or try one of our fully supported languages: Iban, Bidayuh, Kadazan-Dusun, Murut, Malay, English, Spanish, French, Mandarin, or Arabic.`
+      );
+      playSound('back');
+      return;
+    }
+    
+    const difficultyData = languageData[selectedDifficulty.id];
+    if (!difficultyData) {
+      Alert.alert(
+        'Content Coming Soon',
+        `${selectedDifficulty.label} level content for ${selectedLanguage.label} is being developed.`
+      );
+      playSound('back');
+      return;
+    }
+    
+    const quizData = difficultyData[`quiz${quizNumber}`];
+    if (!quizData || quizData.length === 0) {
+      Alert.alert(
+        'Content Coming Soon',
+        `Quiz ${quizNumber} for ${selectedLanguage.label} (${selectedDifficulty.label}) is being developed.`
+      );
+      playSound('back');
+      return;
+    }
+    
+    setSelectedQuiz(quizNumber);
+    
+    // Get questions for this language, difficulty, and quiz
+    const questions = quizData;
+    setQuizQuestions(questions);
     setCurrentQuestionIndex(0);
+    setScore(0);
     setQuizFinished(false);
     setSelectedOption(null);
   };
 
+  const handleAnswer = (option) => {
+    setSelectedOption(option);
+    playSound('select');
+    
+    setTimeout(() => {
+      const currentQuestion = quizQuestions[currentQuestionIndex];
+      const isCorrect = option === currentQuestion.correctAnswer;
+      
+      if (isCorrect) {
+        setScore(prev => prev + 1);
+        playSound('correct');
+        console.log('✅ Correct answer');
+      } else {
+        playSound('incorrect');
+        console.log(`❌ Wrong - Correct: ${currentQuestion.correctAnswer}`);
+        Alert.alert('Incorrect', `Correct answer: ${currentQuestion.correctAnswer}`);
+      }
+
+      const nextQuestion = currentQuestionIndex + 1;
+      if (nextQuestion < quizQuestions.length) {
+        setCurrentQuestionIndex(nextQuestion);
+        setSelectedOption(null);
+      } else {
+        setQuizFinished(true);
+        playSound('complete');
+      }
+    }, 500);
+  };
+
+  const restartQuiz = () => {
+    console.log('🔄 Restarting quiz');
+    playSound('reset');
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setQuizFinished(false);
+    setSelectedOption(null);
+  };
+
+  const goBack = (level) => {
+    playSound('back');
+    if (level === 'quiz') {
+      setSelectedQuiz(null);
+    } else if (level === 'difficulty') {
+      setSelectedDifficulty(null);
+      setSelectedQuiz(null);
+    } else if (level === 'language') {
+      setSelectedLanguage(null);
+      setSelectedDifficulty(null);
+      setSelectedQuiz(null);
+    }
+  };
+
+  // Language Selection Screen
+  if (!selectedLanguage) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Choose Language</Text>
+          <Text style={styles.headerSubtitle}>Select a language to practice</Text>
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {LANGUAGES.map((language) => (
+            <TouchableOpacity
+              key={language.id}
+              style={styles.selectionCard}
+              onPress={() => handleLanguageSelect(language)}
+            >
+              <Text style={styles.flagEmoji}>{language.flag}</Text>
+              <View style={styles.selectionCardContent}>
+                <Text style={styles.selectionCardLabel}>{language.label}</Text>
+                <Text style={styles.selectionCardSubtitle}>{language.region}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Difficulty Selection Screen
+  if (!selectedDifficulty) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <TouchableOpacity onPress={() => goBack('language')} style={styles.backButtonTop}>
+          <Ionicons name="chevron-back" size={28} color={COLORS.primary} />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Choose Difficulty</Text>
+          <Text style={styles.headerSubtitle}>{selectedLanguage.label}</Text>
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {DIFFICULTIES.map((difficulty) => (
+            <TouchableOpacity
+              key={difficulty.id}
+              style={[styles.selectionCard, { borderLeftColor: difficulty.color, borderLeftWidth: 4 }]}
+              onPress={() => handleDifficultySelect(difficulty)}
+            >
+              <Text style={styles.difficultyEmoji}>{difficulty.emoji}</Text>
+              <View style={styles.selectionCardContent}>
+                <Text style={styles.selectionCardLabel}>{difficulty.label}</Text>
+                <Text style={styles.selectionCardSubtitle}>5 quizzes available</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color={difficulty.color} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Quiz Selection Screen
+  if (!selectedQuiz) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <TouchableOpacity onPress={() => goBack('difficulty')} style={styles.backButtonTop}>
+          <Ionicons name="chevron-back" size={28} color={COLORS.primary} />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Choose Quiz</Text>
+          <Text style={styles.headerSubtitle}>
+            {selectedLanguage.label} - {selectedDifficulty.label}
+          </Text>
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.quizGrid}>
+            {[1, 2, 3, 4, 5].map((quizNum) => (
+              <TouchableOpacity
+                key={quizNum}
+                style={[styles.quizCard, { backgroundColor: selectedDifficulty.color + '20', borderColor: selectedDifficulty.color }]}
+                onPress={() => handleQuizSelect(quizNum)}
+              >
+                <View style={[styles.quizNumberCircle, { backgroundColor: selectedDifficulty.color }]}>
+                  <Text style={styles.quizNumber}>{quizNum}</Text>
+                </View>
+                <Text style={styles.quizLabel}>Quiz {quizNum}</Text>
+                <Text style={styles.quizSubtitle}>5 questions</Text>
+                <Ionicons name="arrow-forward" size={20} color={selectedDifficulty.color} style={{ marginTop: 8 }} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Quiz Active Screen
   if (quizFinished) {
+    const percentage = Math.round((score / quizQuestions.length) * 100);
+    const perfection = percentage === 100;
+
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.resultCard}>
-          <Ionicons name="trophy" size={80} color={COLORS.accent} />
+          <Ionicons name={perfection ? 'trophy' : 'checkmark-circle'} size={80} color={COLORS.accent} />
           <Text style={styles.finishTitle}>Quiz Complete!</Text>
           <Text style={styles.finalScore}>{score} / {quizQuestions.length}</Text>
+          <Text style={styles.percentage}>{percentage}%</Text>
           <Text style={styles.feedbackText}>
-             {score === quizQuestions.length ? "Perfect Score! You're a pro!" : "Great effort! Keep learning."}
+            {percentage === 100
+              ? "Perfect Score! You're a master! 🎉"
+              : percentage >= 80
+              ? 'Excellent work! Keep it up!'
+              : percentage >= 60
+              ? 'Good effort! Practice more!'
+              : 'Keep learning! Try again!'}
           </Text>
-          
-          <TouchableOpacity style={styles.primaryButton} onPress={restartQuiz}>
-            <Text style={styles.primaryButtonText}>Try Again</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.secondaryButton, { marginTop: SPACING.m }]} 
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.secondaryButtonText}>Back to Home</Text>
-          </TouchableOpacity>
+
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.primaryButton} onPress={restartQuiz}>
+              <Ionicons name="refresh" size={20} color={COLORS.surface} />
+              <Text style={styles.primaryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.secondaryButton, { marginTop: SPACING.m }]}
+              onPress={() => goBack('quiz')}
+            >
+              <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
+              <Text style={styles.secondaryButtonText}>Choose Another Quiz</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tertiaryButton, { marginTop: SPACING.m }]}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="home" size={20} color={COLORS.surface} />
+              <Text style={styles.tertiaryButtonText}>Back to Home</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
   }
 
+  // Active Quiz Screen
+  const currentQuestion = quizQuestions[currentQuestionIndex];
+  const progress = ((currentQuestionIndex + 1) / quizQuestions.length) * 100;
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header / Progress */}
-      <View style={styles.header}>
+      {/* Header */}
+      <View style={styles.quizHeader}>
+        <TouchableOpacity onPress={() => goBack('quiz')} style={styles.backButtonSmall}>
+          <Ionicons name="close" size={24} color={COLORS.error} />
+        </TouchableOpacity>
+        <View style={styles.quizInfo}>
+          <Text style={styles.quizLanguage}>{selectedLanguage.label}</Text>
+          <Text style={styles.quizDifficulty}>Quiz {selectedQuiz}</Text>
+        </View>
+        <View style={styles.scoreDisplay}>
+          <Text style={styles.scoreLabel}>Score</Text>
+          <Text style={styles.scoreValue}>{score}/{quizQuestions.length}</Text>
+        </View>
+      </View>
+
+      {/* Progress Bar */}
+      <View style={styles.progressBarContainer}>
         <View style={styles.progressBarBg}>
-           <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+          <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
         </View>
         <Text style={styles.progressText}>Question {currentQuestionIndex + 1}/{quizQuestions.length}</Text>
       </View>
 
-      {/* Question Card */}
-      <View style={styles.card}>
-        <Text style={styles.questionText}>{currentQuestion.question}</Text>
-        
-        <View style={styles.optionsContainer}>
-            {currentQuestion.options.map((option, index) => {
-              const isSelected = selectedOption === option;
-              return (
-                  <TouchableOpacity 
-                    key={index} 
-                    style={[
-                        styles.optionButton, 
-                        isSelected && styles.optionSelected
-                    ]} 
-                    onPress={() => handleAnswer(option)}
-                    disabled={selectedOption !== null}
-                  >
-                    <Text style={[
-                        styles.optionText,
-                        isSelected && styles.optionTextSelected
-                    ]}>{option}</Text>
-                    {isSelected && <Ionicons name="checkmark-circle" size={20} color={COLORS.surface} />}
-                  </TouchableOpacity>
-              );
-            })}
+      {/* Question */}
+      <ScrollView style={styles.quizContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.questionContainer}>
+          <Text style={styles.questionNumber}>Question {currentQuestionIndex + 1}</Text>
+          <Text style={styles.questionText}>{currentQuestion.question}</Text>
         </View>
-      </View>
+
+        {/* Options */}
+        <View style={styles.optionsContainer}>
+          {currentQuestion.options.map((option, index) => {
+            const isSelected = selectedOption === option;
+            const isCorrect = option === currentQuestion.correctAnswer;
+            const showResult = selectedOption !== null;
+
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.optionButton,
+                  isSelected && (isCorrect ? styles.optionCorrect : styles.optionIncorrect),
+                  showResult && isCorrect && styles.optionCorrect,
+                ]}
+                onPress={() => !selectedOption && handleAnswer(option)}
+                disabled={selectedOption !== null}
+              >
+                <View style={styles.optionIndicator}>
+                  {!showResult && <View style={styles.optionCircle} />}
+                  {showResult && (
+                    <Ionicons
+                      name={isCorrect ? 'checkmark-circle' : 'close-circle'}
+                      size={24}
+                      color={isCorrect ? COLORS.success : COLORS.error}
+                    />
+                  )}
+                </View>
+                <Text
+                  style={[
+                    styles.optionText,
+                    isSelected && styles.optionTextSelected,
+                    showResult && isCorrect && styles.optionTextCorrect,
+                  ]}
+                >
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -115,11 +405,153 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-    padding: SPACING.l,
   },
   header: {
-    marginBottom: SPACING.xl,
-    marginTop: SPACING.m,
+    padding: SPACING.l,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    ...SHADOWS.small,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+  },
+  content: {
+    flex: 1,
+    padding: SPACING.l,
+  },
+  backButtonTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    paddingHorizontal: SPACING.l,
+    paddingTop: SPACING.m,
+    paddingBottom: SPACING.s,
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  selectionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    borderRadius: SPACING.m,
+    ...SHADOWS.small,
+    gap: SPACING.m,
+  },
+  flagEmoji: {
+    fontSize: 40,
+  },
+  difficultyEmoji: {
+    fontSize: 48,
+  },
+  selectionCardContent: {
+    flex: 1,
+  },
+  selectionCardLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  selectionCardSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  quizGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.m,
+    justifyContent: 'space-between',
+  },
+  quizCard: {
+    width: '48%',
+    paddingVertical: SPACING.l,
+    paddingHorizontal: SPACING.m,
+    borderRadius: SPACING.m,
+    alignItems: 'center',
+    borderWidth: 2,
+    ...SHADOWS.small,
+  },
+  quizNumberCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.s,
+  },
+  quizNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: COLORS.surface,
+  },
+  quizLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  quizSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  quizHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.m,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    ...SHADOWS.small,
+  },
+  backButtonSmall: {
+    padding: SPACING.s,
+  },
+  quizInfo: {
+    flex: 1,
+    marginLeft: SPACING.m,
+  },
+  quizLanguage: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  quizDifficulty: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  scoreDisplay: {
+    backgroundColor: COLORS.primary + '20',
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    borderRadius: SPACING.s,
+  },
+  scoreLabel: {
+    fontSize: 11,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  scoreValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  progressBarContainer: {
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
+    backgroundColor: COLORS.surface,
   },
   progressBarBg: {
     height: 8,
@@ -134,48 +566,78 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   progressText: {
-    textAlign: 'right',
+    textAlign: 'center',
     color: COLORS.textSecondary,
     fontWeight: '600',
+    fontSize: 13,
   },
-  card: {
+  quizContent: {
     flex: 1,
     padding: SPACING.l,
-    justifyContent: 'center',
+  },
+  questionContainer: {
+    marginBottom: SPACING.xl,
+  },
+  questionNumber: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: 'bold',
+    marginBottom: SPACING.s,
   },
   questionText: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: SPACING.xl,
+    lineHeight: 32,
   },
   optionsContainer: {
     gap: SPACING.m,
   },
   optionButton: {
     backgroundColor: COLORS.surface,
-    padding: SPACING.l,
+    padding: SPACING.m,
     borderRadius: SPACING.m,
     borderWidth: 2,
-    borderColor: '#eee',
+    borderColor: COLORS.border,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     ...SHADOWS.small,
+  },
+  optionIndicator: {
+    marginRight: SPACING.m,
+  },
+  optionCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  optionText: {
+    flex: 1,
+    fontSize: 16,
+    color: COLORS.text,
+    fontWeight: '500',
   },
   optionSelected: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  optionText: {
-    fontSize: 18,
-    color: COLORS.text,
-    fontWeight: '500',
-  },
   optionTextSelected: {
     color: COLORS.surface,
     fontWeight: 'bold',
+  },
+  optionCorrect: {
+    backgroundColor: COLORS.success + '20',
+    borderColor: COLORS.success,
+  },
+  optionTextCorrect: {
+    color: COLORS.success,
+    fontWeight: 'bold',
+  },
+  optionIncorrect: {
+    backgroundColor: COLORS.error + '20',
+    borderColor: COLORS.error,
   },
   resultCard: {
     flex: 1,
@@ -193,34 +655,72 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: '800',
     color: COLORS.primary,
-    marginVertical: SPACING.m,
+    marginTop: SPACING.m,
+  },
+  percentage: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: COLORS.accent,
+    marginTop: SPACING.s,
   },
   feedbackText: {
-    fontSize: 18,
+    fontSize: 16,
     color: COLORS.textSecondary,
-    marginBottom: SPACING.xl,
     textAlign: 'center',
+    marginTop: SPACING.l,
+    lineHeight: 24,
+  },
+  actionButtons: {
+    width: '100%',
+    marginTop: SPACING.xl,
   },
   primaryButton: {
     backgroundColor: COLORS.primary,
     paddingVertical: SPACING.m,
-    paddingHorizontal: SPACING.xl,
+    paddingHorizontal: SPACING.l,
     borderRadius: SPACING.m,
-    width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
-    ...SHADOWS.medium,
+    justifyContent: 'center',
+    gap: SPACING.s,
+    ...SHADOWS.small,
   },
   primaryButtonText: {
-    color: COLORS.surface,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
+    color: COLORS.surface,
   },
   secondaryButton: {
-    padding: SPACING.m,
+    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.l,
+    borderRadius: SPACING.m,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
   },
   secondaryButtonText: {
-    color: COLORS.textSecondary,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  tertiaryButton: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.l,
+    borderRadius: SPACING.m,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    ...SHADOWS.small,
+  },
+  tertiaryButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.surface,
   },
 });
