@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
@@ -35,12 +35,19 @@ export default function HomeScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Header Section with Language Selector */}
+        {/* Header Section with Logo */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
-             <View>
-                <Text style={styles.greeting}>Selamat Datang,</Text>
-                <Text style={styles.appName}>EchoLingua</Text>
+             <View style={styles.headerTitleContainer}>
+                <Image 
+                  source={require('../../assets/appLogo.png')} 
+                  style={styles.appLogo} 
+                  resizeMode="contain"
+                />
+                <View>
+                  <Text style={styles.greeting}>Selamat Datang,</Text>
+                  <Text style={styles.appName}>EchoLingua</Text>
+                </View>
              </View>
              {/* Language Selector moved to Profile/Settings */}
           </View>
@@ -280,6 +287,15 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: SPACING.l,
     // marginTop removed to reduce space
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+  },
+  appLogo: {
+    width: 35,
+    height: 35,
   },
   greeting: {
     fontSize: 16,

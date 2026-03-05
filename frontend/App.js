@@ -1,13 +1,16 @@
 import 'react-native-gesture-handler';
-import React, { useState, useEffect } from 'react';
-import { View, Image, StyleSheet, Text, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Image, StyleSheet, Text, ActivityIndicator, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { StatusBar } from 'expo-status-bar';
 import { COLORS } from './src/constants/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
+  const appState = useRef(AppState.currentState);
+  const sessionStartTime = useRef(Date.now());
 
   useEffect(() => {
     // Simulate loading resources (e.g., fonts, API check)
@@ -17,6 +20,48 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, []);
+
+  // Track app session time
+  useEffect(() => {
+    // Record session start time
+    sessionStartTime.current = Date.now();
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      // Save session time when app unmounts
+      saveLearningTime();
+      subscription?.remove();
+    };
+  }, []);
+
+  const handleAppStateChange = async (nextAppState) => {
+    if (appState.current.match(/active/) && nextAppState.match(/inactive|background/)) {
+      // App is going to background - save learning time
+      await saveLearningTime();
+    } else if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      // App is coming to foreground - reset start time
+      sessionStartTime.current = Date.now();
+    }
+    appState.current = nextAppState;
+  };
+
+  const saveLearningTime = async () => {
+    try {
+      const sessionDuration = Math.floor((Date.now() - sessionStartTime.current) / 1000 / 60); // in minutes
+      
+      if (sessionDuration > 0) {
+        const existingTimeStr = await AsyncStorage.getItem('@total_learning_time');
+        const existingTime = existingTimeStr ? parseInt(existingTimeStr) : 0;
+        const newTotalTime = existingTime + sessionDuration;
+        
+        await AsyncStorage.setItem('@total_learning_time', newTotalTime.toString());
+        console.log(`✅ Learning time saved: +${sessionDuration} min (Total: ${newTotalTime} min)`);
+      }
+    } catch (error) {
+      console.error('Failed to save learning time:', error);
+    }
+  };
 
   if (isLoading) {
     return (

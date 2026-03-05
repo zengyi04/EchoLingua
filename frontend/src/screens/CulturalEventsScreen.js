@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 
 const FESTIVALS = [
@@ -115,10 +116,36 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 export default function CulturalEventsScreen({ navigation }) {
   const [selectedFestival, setSelectedFestival] = useState(null);
   const [filterLanguage, setFilterLanguage] = useState('all'); // all, Kadazandusun, Iban, Bajau, Murut
+  const [playingSound, setPlayingSound] = useState(null);
 
   const filteredFestivals = filterLanguage === 'all'
     ? FESTIVALS
     : FESTIVALS.filter(f => f.language === filterLanguage);
+
+  // Play word using Text-to-Speech
+  const playWord = async (text, type, id) => {
+    const soundId = `${type}-${id}`;
+    
+    // Stop any currently playing speech
+    if (playingSound === soundId) {
+      await Speech.stop();
+      setPlayingSound(null);
+      return;
+    }
+
+    // Stop previous sound and play new one
+    await Speech.stop();
+    setPlayingSound(soundId);
+
+    Speech.speak(text, {
+      language: 'ms-MY', // Malay
+      pitch: 1.0,
+      rate: 0.8, // Slightly slower for learning
+      onDone: () => setPlayingSound(null),
+      onStopped: () => setPlayingSound(null),
+      onError: () => setPlayingSound(null),
+    });
+  };
 
   const renderFestivalCard = ({ item }) => (
     <TouchableOpacity
@@ -188,8 +215,15 @@ export default function CulturalEventsScreen({ navigation }) {
               <View key={index} style={styles.vocabularyCard}>
                 <View style={styles.vocabularyHeader}>
                   <Text style={styles.vocabularyWord}>{item.word}</Text>
-                  <TouchableOpacity style={styles.soundBtn}>
-                    <Ionicons name="volume-medium" size={20} color={COLORS.primary} />
+                  <TouchableOpacity 
+                    style={[styles.soundBtn, playingSound === `vocab-${index}` && styles.soundBtnActive]}
+                    onPress={() => playWord(item.word, 'vocab', index)}
+                  >
+                    <Ionicons 
+                      name={playingSound === `vocab-${index}` ? "pause" : "volume-medium"} 
+                      size={20} 
+                      color={playingSound === `vocab-${index}` ? COLORS.surface : COLORS.primary} 
+                    />
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.vocabularyMeaning}>{item.meaning}</Text>
@@ -206,7 +240,19 @@ export default function CulturalEventsScreen({ navigation }) {
             </View>
             {selectedFestival.greetings.map((greeting, index) => (
               <View key={index} style={styles.greetingCard}>
-                <Text style={styles.greetingPhrase}>{greeting.phrase}</Text>
+                <View style={styles.vocabularyHeader}>
+                  <Text style={styles.greetingPhrase}>{greeting.phrase}</Text>
+                  <TouchableOpacity 
+                    style={[styles.soundBtn, playingSound === `greeting-${index}` && styles.soundBtnActive]}
+                    onPress={() => playWord(greeting.phrase, 'greeting', index)}
+                  >
+                    <Ionicons 
+                      name={playingSound === `greeting-${index}` ? "pause" : "volume-medium"} 
+                      size={20} 
+                      color={playingSound === `greeting-${index}` ? COLORS.surface : COLORS.primary} 
+                    />
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.greetingMeaning}>{greeting.meaning}</Text>
                 <Text style={styles.greetingPronunciation}>📢 {greeting.pronunciation}</Text>
               </View>
@@ -534,6 +580,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99, 102, 241, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  soundBtnActive: {
+    backgroundColor: COLORS.primary,
   },
   vocabularyMeaning: {
     fontSize: 14,

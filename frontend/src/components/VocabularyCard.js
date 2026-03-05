@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
 import { Audio } from 'expo-av'; 
 import { AntDesign, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
@@ -375,12 +375,6 @@ export default function VocabularyCard({
 
   return (
     <View style={styles.card}>
-      {/* Image Section */}
-      <View style={styles.imageContainer}>
-        <MaterialCommunityIcons name="image-outline" size={40} color={COLORS.textSecondary} />
-        <Text style={styles.imageLabel}>{displayWord.translated}</Text>
-      </View>
-
       {/* Content Section */}
       <View style={styles.content}>
         <View style={styles.textGroup}>
@@ -511,20 +505,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
   },
-  imageContainer: {
-    width: 100,
-    backgroundColor: '#EDF2F4',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.s,
-    position: 'relative',
-  },
-  imageLabel: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-    textAlign: 'center',
-  },
+
   content: {
     flex: 1,
     padding: SPACING.m,

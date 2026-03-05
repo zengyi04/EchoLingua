@@ -254,62 +254,67 @@ export const calculateUserLevel = async () => {
       totalPoints += result.overall * 0.3; // Scenario weight (lighter than quiz)
     });
 
-    // Determine level tiers
-    const easyLevel1 = levelMap['easy_1'];
-    const mediumLevel1 = levelMap['medium_1'];
-    const hardLevel1 = levelMap['hard_1'];
-    const easyLevel2 = levelMap['easy_2'];
-    const mediumLevel2 = levelMap['medium_2'];
-    const hardLevel2 = levelMap['hard_2'];
+    // Determine level tiers (based on >50% = more than half correct)
+    const easyQuiz1 = levelMap['easy_1'];
+    const easyQuiz2 = levelMap['easy_2'];
+    const mediumQuiz1 = levelMap['medium_1'];
+    const mediumQuiz2 = levelMap['medium_2'];
+    const hardQuiz1 = levelMap['hard_1'];
+    const hardQuiz2 = levelMap['hard_2'];
 
-    // Level progression logic
+    // Level progression logic (>50% means more than half correct)
     let levelNumber = 0;
     let levelType = 'Novice';
+    let badge = '🌱';
 
-    // Level 1 Progression
-    if (easyLevel1 && easyLevel1.totalScore / easyLevel1.attempts >= 70) {
+    // Easy Quiz 1: Beginner Level 1
+    if (easyQuiz1 && (easyQuiz1.totalScore / easyQuiz1.attempts) > 50) {
       levelNumber = 1;
-      levelType = 'Beginner';
-    }
-    if (mediumLevel1 && mediumLevel1.totalScore / mediumLevel1.attempts >= 70) {
-      levelNumber = 2;
-      levelType = 'Intermediate';
-    }
-    if (hardLevel1 && hardLevel1.totalScore / hardLevel1.attempts >= 70) {
-      levelNumber = 3;
-      levelType = 'Advanced';
+      levelType = 'Beginner Level 1';
+      badge = '🌿';
     }
 
-    // Level 2 Progression
-    if (easyLevel2 && easyLevel2.totalScore / easyLevel2.attempts >= 70) {
-      levelNumber = 4;
+    // Easy Quiz 2: Beginner Level 2
+    if (easyQuiz2 && (easyQuiz2.totalScore / easyQuiz2.attempts) > 50) {
+      levelNumber = 2;
       levelType = 'Beginner Level 2';
+      badge = '🌱';
     }
-    if (mediumLevel2 && mediumLevel2.totalScore / mediumLevel2.attempts >= 70) {
-      levelNumber = 5;
+
+    // Medium Quiz 1: Intermediate Level 1
+    if (mediumQuiz1 && (mediumQuiz1.totalScore / mediumQuiz1.attempts) > 50) {
+      levelNumber = 3;
+      levelType = 'Intermediate Level 1';
+      badge = '🌳';
+    }
+
+    // Medium Quiz 2: Intermediate Level 2
+    if (mediumQuiz2 && (mediumQuiz2.totalScore / mediumQuiz2.attempts) > 50) {
+      levelNumber = 4;
       levelType = 'Intermediate Level 2';
+      badge = '🌲';
     }
-    if (hardLevel2 && hardLevel2.totalScore / hardLevel2.attempts >= 70) {
+
+    // Hard Quiz 1: Advanced Level 1
+    if (hardQuiz1 && (hardQuiz1.totalScore / hardQuiz1.attempts) > 50) {
+      levelNumber = 5;
+      levelType = 'Advanced Level 1';
+      badge = '♻️';
+    }
+
+    // Hard Quiz 2: Advanced Level 2
+    if (hardQuiz2 && (hardQuiz2.totalScore / hardQuiz2.attempts) > 50) {
       levelNumber = 6;
       levelType = 'Advanced Level 2';
+      badge = '👑';
     }
-
-    const badges = {
-      0: '🌱',
-      1: '🌿',
-      2: '🌳',
-      3: '♻️',
-      4: '🏔️',
-      5: '🌲',
-      6: '👑',
-    };
 
     return {
       level: levelNumber,
       title: `Language Guardian (Lvl ${levelNumber})`,
       levelType: levelType,
       totalPoints: Math.round(totalPoints),
-      badge: badges[levelNumber] || '🌱',
+      badge: badge,
       quizzesCompleted: quizResults.length,
       scenariosCompleted: scenarioResults.length,
       levelMap: levelMap,

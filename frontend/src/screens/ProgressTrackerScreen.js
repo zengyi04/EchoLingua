@@ -61,11 +61,13 @@ export default function ProgressTrackerScreen({ navigation }) {
 
   const loadProgressData = async () => {
     try {
-      // Load quiz results
-      const quizResults = await AsyncStorage.getItem('quizResults');
-      const scenarioScores = await AsyncStorage.getItem('scenarioScores');
-      const userProfile = await AsyncStorage.getItem('userProfile');
-      const lastActive = await AsyncStorage.getItem('lastActiveDate');
+      // Load data from all sources
+      const quizResultsStr = await AsyncStorage.getItem('@echolingua_quiz_results');
+      const scenarioScoresStr = await AsyncStorage.getItem('@echolingua_scenario_results');
+      const recordingsStr = await AsyncStorage.getItem('@echolingua_recordings');
+      const storiesStr = await AsyncStorage.getItem('@echolingua_stories');
+      const lastActive = await AsyncStorage.getItem('@lastActiveDate');
+      const learningTimeStr = await AsyncStorage.getItem('@total_learning_time');
 
       let vocabCount = 0;
       let totalQuizzes = 0;
@@ -76,27 +78,45 @@ export default function ProgressTrackerScreen({ navigation }) {
       let recordingsCount = 0;
       let totalXP = 0;
 
-      if (quizResults) {
-        const results = JSON.parse(quizResults);
+      // Load quiz results
+      if (quizResultsStr) {
+        const results = JSON.parse(quizResultsStr);
         totalQuizzes = results.length;
         results.forEach((result) => {
           totalScore += result.score || 0;
-          vocabCount += result.correctAnswers || 0;
-          totalXP += result.score * 10;
+          vocabCount += result.totalQuestions || 0;
+          totalXP += (result.score || 0) * 10;
         });
       }
 
-      if (scenarioScores) {
-        const scores = JSON.parse(scenarioScores);
-        Object.values(scores).forEach((scoreData) => {
+      // Load scenario/pronunciation scores
+      if (scenarioScoresStr) {
+        const scores = JSON.parse(scenarioScoresStr);
+        scores.forEach((scoreData) => {
           if (scoreData.pronunciation) {
             pronunciationScore += scoreData.pronunciation;
             pronunciationCount++;
           }
-          recordingsCount++;
-          totalXP += scoreData.overall * 5;
+          totalXP += (scoreData.overall || 0) * 5;
         });
       }
+
+      // Load recordings count
+      if (recordingsStr) {
+        const recordings = JSON.parse(recordingsStr);
+        recordingsCount = recordings.length;
+        totalXP += recordingsCount * 15;
+      }
+
+      // Load stories read count
+      if (storiesStr) {
+        const stories = JSON.parse(storiesStr);
+        storiesCount = stories.length;
+        totalXP += storiesCount * 10;
+      }
+
+      // Load total learning time (in minutes)
+      const totalLearningTime = learningTimeStr ? parseInt(learningTimeStr) : 0;
 
       // Calculate daily streak
       const today = new Date().toDateString();
@@ -110,19 +130,19 @@ export default function ProgressTrackerScreen({ navigation }) {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays === 1) {
-          const storedStreak = await AsyncStorage.getItem('dailyStreak');
+          const storedStreak = await AsyncStorage.getItem('@dailyStreak');
           streak = storedStreak ? parseInt(storedStreak) + 1 : 1;
         } else {
           streak = 1;
         }
       }
 
-      await AsyncStorage.setItem('lastActiveDate', today);
-      await AsyncStorage.setItem('dailyStreak', streak.toString());
+      await AsyncStorage.setItem('@lastActiveDate', today);
+      await AsyncStorage.setItem('@dailyStreak', streak.toString());
 
-      const storedLongestStreak = await AsyncStorage.getItem('longestStreak');
+      const storedLongestStreak = await AsyncStorage.getItem('@longestStreak');
       longestStreak = storedLongestStreak ? Math.max(parseInt(storedLongestStreak), streak) : streak;
-      await AsyncStorage.setItem('longestStreak', longestStreak.toString());
+      await AsyncStorage.setItem('@longestStreak', longestStreak.toString());
 
       // Determine level based on XP
       let level = 'Beginner';
@@ -151,7 +171,7 @@ export default function ProgressTrackerScreen({ navigation }) {
         pronunciationAttempts: pronunciationCount,
         dailyStreak: streak,
         longestStreak: longestStreak,
-        totalLearningTime: Math.round(totalXP / 10), // rough estimate
+        totalLearningTime: totalLearningTime, // Use actual session time
         storiesRead: storiesCount,
         recordingsMade: recordingsCount,
         level: level,
@@ -161,12 +181,19 @@ export default function ProgressTrackerScreen({ navigation }) {
 
       // Update achievements based on progress
       const updatedAchievements = achievements.map((achievement) => {
-        if (achievement.id === '3' && totalQuizzes > 0) {
+        if (achievement.id === '2' && vocabCount >= 50) {
+          return { ...achievement, unlocked: true };
+        }
+        if (achievement.id === '3' && quizResultsStr) {
           // Check if user scored 100% on any quiz
-          const perfectScore = quizResults && JSON.parse(quizResults).some(r => r.score === 100);
+          const results = JSON.parse(quizResultsStr);
+          const perfectScore = results.some(r => r.percentage === 100 || (r.score === r.totalQuestions));
           return { ...achievement, unlocked: perfectScore };
         }
         if (achievement.id === '4' && avgPronunciation >= 90) {
+          return { ...achievement, unlocked: true };
+        }
+        if (achievement.id === '5' && storiesCount >= 10) {
           return { ...achievement, unlocked: true };
         }
         if (achievement.id === '6' && streak >= 7) {

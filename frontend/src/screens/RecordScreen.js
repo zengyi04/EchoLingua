@@ -32,7 +32,7 @@ const LANGUAGE_GROUPS = [
 
 const RECORDINGS_STORAGE_KEY = '@echolingua_recordings';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
-const COMMUNITY_STORIES_KEY = 'communityStories'; // For CommunityStoryScreen
+const COMMUNITY_STORIES_KEY = '@echolingua_stories'; // For StoryLibraryScreen (Community Archive)
 
 export default function RecordScreen() {
   const navigation = useNavigation();
@@ -78,7 +78,7 @@ export default function RecordScreen() {
   const waveHeights = useRef(Array(20).fill(0).map(() => new Animated.Value(20))).current;
   const isRecordingActionInFlightRef = useRef(false);
 
-  // Handle picking audio file from phone
+  // Handle picking audio file from phone and save to recordings
   const handlePickAudioFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -89,11 +89,25 @@ export default function RecordScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         console.log('📁 Audio file picked:', asset.uri);
-        setRecordingUri(asset.uri);
-        setHasRecording(true);
-        setRecordingTime(30); // Default duration estimate
+        
+        // Create new recording object
+        const newRecording = {
+          id: Date.now().toString(),
+          uri: asset.uri,
+          duration: 30, // Default duration estimate
+          timestamp: new Date().toISOString(),
+          language: selectedLanguage || null,
+          transcript: null,
+          fileName: asset.name || 'Imported Audio',
+        };
+        
+        // Save to storage (new recordings at the top)
+        const updated = [newRecording, ...recordings];
+        await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updated));
+        setRecordings(updated);
+        
         playSound('complete');
-        Alert.alert('File Imported', 'Audio file loaded successfully. You can now generate transcript or proceed with submission.');
+        Alert.alert('File Imported', 'Audio file saved to Previous Recordings!');
       }
     } catch (error) {
       if (error.code !== 'DOCUMENT_PICKER_CANCELLED') {
@@ -124,15 +138,21 @@ export default function RecordScreen() {
     })();
 
     return () => {
-      // Cleanup
+      // Cleanup all audio resources
       if (recording) {
         stopAndReleaseRecording(recording).catch(() => {
           releaseRecordingReference(recording);
         });
       }
       if (sound) {
-        sound.unloadAsync();
+        sound.unloadAsync().catch(() => {});
       }
+      // Cleanup all previous recording sounds
+      Object.values(playingSoundForId).forEach(s => {
+        if (s) {
+          s.unloadAsync().catch(() => {});
+        }
+      });
       forceCleanupActiveRecording().catch(() => {});
     };
   }, []);
@@ -292,18 +312,13 @@ export default function RecordScreen() {
 
       Alert.alert(
         'Shared Successfully! 🎉',
-        `"${shareTitle}" has been shared to the Community Stories. Thank you for contributing!`,
+        `"${shareTitle}" has been shared to the Story Library (Community Archive). Thank you for contributing!`,
         [
           {
-            text: 'View in Community',
+            text: 'View in Library',
             onPress: () => {
               setShowShareModal(false);
-              const parentNav = navigation.getParent();
-              if (parentNav) {
-                parentNav.navigate('CommunityStory');
-              } else {
-                navigation.navigate('CommunityStory');
-              }
+              navigation.navigate('MainTabs', { screen: 'StoriesTab' });
             }
           },
           {
@@ -464,6 +479,13 @@ export default function RecordScreen() {
         return;
       }
 
+      // Stop any playing previous recordings
+      if (playingRecordingId && playingSoundForId[playingRecordingId]) {
+        await playingSoundForId[playingRecordingId].stopAsync();
+        await playingSoundForId[playingRecordingId].unloadAsync();
+        setPlayingRecordingId(null);
+      }
+
       if (isPlaying && sound) {
         // Pause playback
         console.log('⏸️ Playback paused');
@@ -497,55 +519,78 @@ export default function RecordScreen() {
         
         setSound(newSound);
         setIsPlaying(true);
+        console.log('▶️ Playback started');
       }
     } catch (error) {
       console.error('Failed to play recording:', error);
       playSound('incorrect');
       Alert.alert('Playback Error', `Could not play the recording: ${error.message}`);
+      setIsPlaying(false);
     }
   };
 
   // NEW: Play a previous recording
   const playPreviousRecording = async (recordingId, uri) => {
     try {
-      // Stop if already playing this recording
+      // If this recording is currently playing, pause it
       if (playingRecordingId === recordingId && playingSoundForId[recordingId]) {
-        playingSoundForId[recordingId].pauseAsync();
+        console.log('⏸️ Pausing recording:', recordingId);
+        await playingSoundForId[recordingId].pauseAsync();
         setPlayingRecordingId(null);
-        setPlayingSoundForId({ ...playingSoundForId, [recordingId]: null });
         return;
       }
 
-      // Stop any other playing recording
-      if (playingSoundForId[recordingId]) {
-        playingSoundForId[recordingId].pauseAsync();
+      // Stop all other playing recordings
+      if (playingRecordingId && playingSoundForId[playingRecordingId]) {
+        console.log('⏹️ Stopping previous recording:', playingRecordingId);
+        await playingSoundForId[playingRecordingId].stopAsync();
+        await playingSoundForId[playingRecordingId].unloadAsync();
+      }
+
+      // Stop current main playback if any
+      if (sound && isPlaying) {
+        await sound.stopAsync();
+        setIsPlaying(false);
       }
 
       console.log('🔊 Playing previous recording:', recordingId);
       playSound('play');
 
+      // Configure audio mode for playback
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
         shouldDuckAndroid: false,
       });
 
+      // Create and play new sound
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri },
         { shouldPlay: true, volume: 1.0 },
         (status) => {
           if (status.didJustFinish) {
+            console.log('✅ Playback finished for:', recordingId);
             playSound('complete');
             setPlayingRecordingId(null);
+            // Cleanup finished sound
+            newSound.unloadAsync().catch(() => {});
           }
         }
       );
 
+      // Update state with new playing sound
+      const updatedSounds = { ...playingSoundForId };
+      updatedSounds[recordingId] = newSound;
+      setPlayingSoundForId(updatedSounds);
       setPlayingRecordingId(recordingId);
-      setPlayingSoundForId({ ...playingSoundForId, [recordingId]: newSound });
+      
+      console.log('▶️ Playback started for recording:', recordingId);
     } catch (error) {
       console.error('Failed to play previous recording:', error);
-      Alert.alert('Error', 'Could not play recording');
+      playSound('incorrect');
+      Alert.alert('Playback Error', `Could not play recording: ${error.message}`);
+      setPlayingRecordingId(null);
     }
   };
 
@@ -1137,21 +1182,11 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
           {/* Upload Option */}
           <TouchableOpacity
             style={styles.uploadOption}
-            onPress={() => setShowUploadOption(!showUploadOption)}
+            onPress={handlePickAudioFile}
           >
             <Ionicons name="cloud-upload-outline" size={24} color={COLORS.secondary} />
-            <Text style={styles.uploadOptionText}>Or upload existing audio file</Text>
+            <Text style={styles.uploadOptionText}>Import Audio File</Text>
           </TouchableOpacity>
-
-          {showUploadOption && (
-            <View style={styles.uploadContainer}>
-              <TouchableOpacity style={styles.uploadButton}>
-                <MaterialCommunityIcons name="file-music" size={32} color={COLORS.primary} />
-                <Text style={styles.uploadButtonText}>Select Audio File</Text>
-                <Text style={styles.uploadButtonSubtext}>MP3, WAV, M4A supported</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Submit Button */}
           {hasRecording && transcript && (
@@ -1530,7 +1565,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.l,
     paddingVertical: SPACING.m,
     paddingHorizontal: SPACING.l,
-    backgroundColor: '#E8F5E9',
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
     borderWidth: 1.5,
     borderColor: COLORS.primary,
@@ -1699,8 +1734,10 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     flexDirection: 'row',
-    backgroundColor: '#FFF9E6',
+    backgroundColor: COLORS.glassLight,
     borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 193, 7, 0.3)',
     padding: SPACING.m,
     marginTop: SPACING.xl,
     marginBottom: SPACING.l,

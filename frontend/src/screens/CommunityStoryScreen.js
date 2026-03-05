@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { Audio } from 'expo-av';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 
 export default function CommunityStoryScreen({ navigation }) {
@@ -29,15 +31,44 @@ export default function CommunityStoryScreen({ navigation }) {
   const [storyTitle, setStoryTitle] = useState('');
   const [storyDescription, setStoryDescription] = useState('');
   const [selectedAudio, setSelectedAudio] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [storyLanguage, setStoryLanguage] = useState('Kadazandusun');
   const [storyCategory, setStoryCategory] = useState('Folklore');
 
   // Comment state
   const [newComment, setNewComment] = useState('');
+  
+  // Audio playback state
+  const [playingAudioId, setPlayingAudioId] = useState(null);
+  const [audioSound, setAudioSound] = useState(null);
+  
+  // Collection state
+  const [likedStories, setLikedStories] = useState({});
+  const [collectedStories, setCollectedStories] = useState({});
 
   useEffect(() => {
     loadStories();
+    loadUserPreferences();
+    
+    return () => {
+      // Cleanup audio on unmount
+      if (audioSound) {
+        audioSound.unloadAsync().catch(() => {});
+      }
+    };
   }, []);
+  
+  const loadUserPreferences = async () => {
+    try {
+      const liked = await AsyncStorage.getItem('@user_liked_stories');
+      const collected = await AsyncStorage.getItem('@user_collected_stories');
+      if (liked) setLikedStories(JSON.parse(liked));
+      if (collected) setCollectedStories(JSON.parse(collected));
+    } catch (error) {
+      console.error('Error loading user preferences:', error);
+    }
+  };
 
   const loadStories = async () => {
     try {
@@ -116,25 +147,50 @@ export default function CommunityStoryScreen({ navigation }) {
     }
   };
 
-  const handleLikeStory = (storyId) => {
+  const handleLikeStory = async (storyId) => {
+    const isLiked = likedStories[storyId];
+    const updatedLiked = { ...likedStories };
+    
+    if (isLiked) {
+      delete updatedLiked[storyId];
+    } else {
+      updatedLiked[storyId] = true;
+    }
+    
+    setLikedStories(updatedLiked);
+    await AsyncStorage.setItem('@user_liked_stories', JSON.stringify(updatedLiked));
+    
     const updatedStories = stories.map((story) => {
       if (story.id === storyId) {
-        return { ...story, likes: story.likes + 1 };
+        return { ...story, likes: story.likes + (isLiked ? -1 : 1) };
       }
       return story;
     });
     saveStories(updatedStories);
   };
 
-  const handleBookmarkStory = (storyId) => {
+  const handleBookmarkStory = async (storyId) => {
+    const isCollected = collectedStories[storyId];
+    const updatedCollected = { ...collectedStories };
+    
+    if (isCollected) {
+      delete updatedCollected[storyId];
+      Alert.alert('Removed from Collection', 'Story removed from your collection');
+    } else {
+      updatedCollected[storyId] = true;
+      Alert.alert('Added to Collection', 'Story saved to your collection!');
+    }
+    
+    setCollectedStories(updatedCollected);
+    await AsyncStorage.setItem('@user_collected_stories', JSON.stringify(updatedCollected));
+    
     const updatedStories = stories.map((story) => {
       if (story.id === storyId) {
-        return { ...story, bookmarks: story.bookmarks + 1 };
+        return { ...story, bookmarks: story.bookmarks + (isCollected ? -1 : 1) };
       }
       return story;
     });
     saveStories(updatedStories);
-    Alert.alert('Bookmarked', 'Story added to your bookmarks');
   };
 
   const handleFollowAuthor = (storyId) => {
@@ -163,6 +219,78 @@ export default function CommunityStoryScreen({ navigation }) {
       Alert.alert('Error', 'Failed to pick audio file');
     }
   };
+  
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setSelectedImage(result.assets[0]);
+        Alert.alert('Image Selected', 'Image added to your story');
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+  
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.type === 'success' || result.assets) {
+        const file = result.assets ? result.assets[0] : result;
+        setSelectedFile(file);
+        Alert.alert('File Selected', file.name || 'File selected');
+      }
+    } catch (error) {
+      console.error('Error picking file:', error);
+      Alert.alert('Error', 'Failed to pick file');
+    }
+  };
+  
+  const playAudio = async (audioUri, storyId) => {
+    try {
+      // Stop currently playing audio
+      if (audioSound) {
+        await audioSound.stopAsync();
+        await audioSound.unloadAsync();
+        setAudioSound(null);
+      }
+      
+      if (playingAudioId === storyId) {
+        setPlayingAudioId(null);
+        return;
+      }
+      
+      // Play new audio
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: audioUri },
+        { shouldPlay: true }
+      );
+      
+      setAudioSound(sound);
+      setPlayingAudioId(storyId);
+      
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          setPlayingAudioId(null);
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      Alert.alert('Error', 'Failed to play audio');
+    }
+  };
 
   const handleUploadStory = async () => {
     if (!storyTitle.trim()) {
@@ -181,12 +309,16 @@ export default function CommunityStoryScreen({ navigation }) {
       description: storyDescription,
       author: 'You',
       authorAvatar: '👤',
+      userId: 'current_user', // Placeholder for current user ID
       language: storyLanguage,
       category: storyCategory,
       likes: 0,
       comments: 0,
       bookmarks: 0,
       audioUri: selectedAudio?.uri || null,
+      imageUri: selectedImage?.uri || null,
+      fileUri: selectedFile?.uri || null,
+      fileName: selectedFile?.name || null,
       uploadedAt: new Date().toISOString(),
       isFollowing: false,
       commentsList: [],
@@ -199,6 +331,8 @@ export default function CommunityStoryScreen({ navigation }) {
     setStoryTitle('');
     setStoryDescription('');
     setSelectedAudio(null);
+    setSelectedImage(null);
+    setSelectedFile(null);
     setShowUploadModal(false);
     Alert.alert('Success', 'Your story has been uploaded!');
   };
@@ -254,64 +388,108 @@ export default function CommunityStoryScreen({ navigation }) {
     return true;
   });
 
-  const renderStoryCard = ({ item }) => (
-    <View style={styles.storyCard}>
-      {/* Author Header */}
-      <View style={styles.authorHeader}>
-        <View style={styles.authorInfo}>
-          <Text style={styles.authorAvatar}>{item.authorAvatar}</Text>
-          <View>
-            <Text style={styles.authorName}>{item.author}</Text>
-            <Text style={styles.storyMeta}>
-              {item.language} • {item.category}
+  const renderStoryCard = ({ item }) => {
+    const isLiked = likedStories[item.id];
+    const isCollected = collectedStories[item.id];
+    
+    return (
+      <View style={styles.storyCard}>
+        {/* Author Header */}
+        <View style={styles.authorHeader}>
+          <TouchableOpacity 
+            style={styles.authorInfo}
+            onPress={() => navigation.navigate('UserProfile', { userId: item.userId, userName: item.author })}
+          >
+            <Text style={styles.authorAvatar}>{item.authorAvatar}</Text>
+            <View>
+              <Text style={styles.authorName}>{item.author}</Text>
+              <Text style={styles.storyMeta}>
+                {item.language} • {item.category}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.followBtn, item.isFollowing && styles.followingBtn]}
+            onPress={() => handleFollowAuthor(item.id)}
+          >
+            <Text style={[styles.followBtnText, item.isFollowing && styles.followingBtnText]}>
+              {item.isFollowing ? 'Following' : 'Follow'}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[styles.followBtn, item.isFollowing && styles.followingBtn]}
-          onPress={() => handleFollowAuthor(item.id)}
-        >
-          <Text style={[styles.followBtnText, item.isFollowing && styles.followingBtnText]}>
-            {item.isFollowing ? 'Following' : 'Follow'}
-          </Text>
-        </TouchableOpacity>
+
+        {/* Story Content */}
+        <View style={styles.storyContent}>
+          <Text style={styles.storyTitle}>{item.title}</Text>
+          <Text style={styles.storyDescription}>{item.description}</Text>
+          
+          {/* Image */}
+          {item.imageUri && (
+            <Image source={{ uri: item.imageUri }} style={styles.storyImage} resizeMode="cover" />
+          )}
+          
+          {/* Audio Player */}
+          {item.audioUri && (
+            <TouchableOpacity 
+              style={styles.audioPlayer}
+              onPress={() => playAudio(item.audioUri, item.id)}
+            >
+              <Ionicons 
+                name={playingAudioId === item.id ? "pause-circle" : "play-circle"} 
+                size={40} 
+                color={COLORS.primary} 
+              />
+              <View style={styles.audioPlayerInfo}>
+                <Text style={styles.audioPlayerLabel}>
+                  {playingAudioId === item.id ? 'Playing...' : 'Audio Recording'}
+                </Text>
+                <Text style={styles.audioPlayerSubtext}>Tap to {playingAudioId === item.id ? 'pause' : 'play'}</Text>
+              </View>
+              <Ionicons name="musical-notes" size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+          )}
+          
+          {/* File Attachment */}
+          {item.fileUri && item.fileName && (
+            <View style={styles.fileAttachment}>
+              <Ionicons name="document-attach" size={20} color={COLORS.secondary} />
+              <Text style={styles.fileAttachmentText}>{item.fileName}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionBar}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleLikeStory(item.id)}>
+            <Ionicons 
+              name={isLiked ? "heart" : "heart-outline"} 
+              size={22} 
+              color={isLiked ? "#FF4458" : COLORS.textSecondary} 
+            />
+            <Text style={[styles.actionText, isLiked && styles.actionTextActive]}>{item.likes}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={() => openComments(item)}>
+            <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
+            <Text style={styles.actionText}>{item.comments}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleBookmarkStory(item.id)}>
+            <Ionicons 
+              name={isCollected ? "bookmark" : "bookmark-outline"} 
+              size={22} 
+              color={isCollected ? COLORS.primary : COLORS.textSecondary} 
+            />
+            <Text style={[styles.actionText, isCollected && styles.actionTextActive]}>{item.bookmarks}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn}>
+            <Ionicons name="share-outline" size={22} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
-
-      {/* Story Content */}
-      <View style={styles.storyContent}>
-        <Text style={styles.storyTitle}>{item.title}</Text>
-        <Text style={styles.storyDescription}>{item.description}</Text>
-        {item.audioUri && (
-          <View style={styles.audioIndicator}>
-            <Ionicons name="musical-notes" size={16} color={COLORS.primary} />
-            <Text style={styles.audioText}>Audio Recording Available</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Action Buttons */}
-      <View style={styles.actionBar}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => handleLikeStory(item.id)}>
-          <Ionicons name="heart-outline" size={22} color={COLORS.textSecondary} />
-          <Text style={styles.actionText}>{item.likes}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionBtn} onPress={() => openComments(item)}>
-          <Ionicons name="chatbubble-outline" size={22} color={COLORS.textSecondary} />
-          <Text style={styles.actionText}>{item.comments}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionBtn} onPress={() => handleBookmarkStory(item.id)}>
-          <Ionicons name="bookmark-outline" size={22} color={COLORS.textSecondary} />
-          <Text style={styles.actionText}>{item.bookmarks}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionBtn}>
-          <Ionicons name="share-outline" size={22} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -449,11 +627,29 @@ export default function CommunityStoryScreen({ navigation }) {
                 ))}
               </View>
 
-              <Text style={styles.inputLabel}>Audio Recording (Optional)</Text>
+              <Text style={styles.inputLabel}>Media Attachments (Optional)</Text>
+              
+              {/* Audio Picker */}
               <TouchableOpacity style={styles.audioPickerBtn} onPress={handlePickAudio}>
                 <Ionicons name="mic" size={24} color={COLORS.primary} />
                 <Text style={styles.audioPickerText}>
-                  {selectedAudio ? selectedAudio.name : 'Pick Audio File'}
+                  {selectedAudio ? selectedAudio.name : 'Add Audio Recording'}
+                </Text>
+              </TouchableOpacity>
+              
+              {/* Image Picker */}
+              <TouchableOpacity style={styles.audioPickerBtn} onPress={handlePickImage}>
+                <Ionicons name="image" size={24} color={COLORS.secondary} />
+                <Text style={styles.audioPickerText}>
+                  {selectedImage ? 'Image Selected' : 'Add Image'}
+                </Text>
+              </TouchableOpacity>
+              
+              {/* File Picker */}
+              <TouchableOpacity style={styles.audioPickerBtn} onPress={handlePickFile}>
+                <Ionicons name="document" size={24} color={COLORS.accent} />
+                <Text style={styles.audioPickerText}>
+                  {selectedFile ? selectedFile.name : 'Add File'}
                 </Text>
               </TouchableOpacity>
 
@@ -638,6 +834,53 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textSecondary,
     lineHeight: 20,
+    marginBottom: SPACING.s,
+  },
+  storyImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginTop: SPACING.m,
+    backgroundColor: COLORS.surface,
+  },
+  audioPlayer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderRadius: 12,
+    padding: SPACING.m,
+    marginTop: SPACING.m,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.2)',
+  },
+  audioPlayerInfo: {
+    flex: 1,
+    marginLeft: SPACING.m,
+  },
+  audioPlayerLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  audioPlayerSubtext: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  fileAttachment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    borderRadius: 8,
+    padding: SPACING.s,
+    marginTop: SPACING.s,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.2)',
+  },
+  fileAttachmentText: {
+    fontSize: 13,
+    color: COLORS.text,
+    marginLeft: SPACING.xs,
   },
   audioIndicator: {
     flexDirection: 'row',
@@ -664,6 +907,10 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 14,
     color: COLORS.textSecondary,
+  },
+  actionTextActive: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   emptyContainer: {
     alignItems: 'center',

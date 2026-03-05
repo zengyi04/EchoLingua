@@ -5,12 +5,19 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getUserProfile, getAverageScoreByDifficulty } from '../services/scoringService';
+import { WORLD_LANGUAGES, getBorneoLanguages, getLanguagesByRegion } from '../constants/languages';
 
-const LANGUAGES = [
-  { id: 'kad', name: 'Kadazandusun' },
-  { id: 'iba', name: 'Iban' },
-  { id: 'baj', name: 'Bajau' },
-  { id: 'mur', name: 'Murut' },
+// Group languages by region for organized display
+const LANGUAGE_GROUPS = [
+  { title: 'Indigenous Borneo', languages: getBorneoLanguages() },
+  { title: 'Southeast Asia', languages: getLanguagesByRegion('Southeast Asia') },
+  { title: 'Major World Languages', languages: WORLD_LANGUAGES.filter(l => l.region === 'Global' || ['mandarin', 'spanish', 'hindi', 'arabic', 'french', 'german', 'japanese', 'korean', 'portuguese', 'russian'].includes(l.id)) },
+  { title: 'East Asia', languages: getLanguagesByRegion('East Asia').filter(l => !['mandarin', 'japanese', 'korean'].includes(l.id)) },
+  { title: 'South Asia', languages: getLanguagesByRegion('South Asia').filter(l => l.id !== 'hindi') },
+  { title: 'Europe', languages: WORLD_LANGUAGES.filter(l => l.region.includes('Europe') && !['french', 'german', 'russian'].includes(l.id)) },
+  { title: 'Middle East & Africa', languages: WORLD_LANGUAGES.filter(l => l.region.includes('Middle East') || l.region.includes('Africa')) },
+  { title: 'Americas', languages: WORLD_LANGUAGES.filter(l => l.region.includes('America')) },
+  { title: 'Oceania', languages: getLanguagesByRegion('Oceania') },
 ];
 
 export default function ProfileScreen() {
@@ -20,7 +27,7 @@ export default function ProfileScreen() {
   const [mediumAvg, setMediumAvg] = useState(0);
   const [hardAvg, setHardAvg] = useState(0);
   const [showLangOptions, setShowLangOptions] = useState(false);
-  const [currentLang, setCurrentLang] = useState('Kadazandusun');
+  const [currentLang, setCurrentLang] = useState('Kadazan-Dusun');
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -118,21 +125,28 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {showLangOptions && (
-          <View style={styles.langDropdown}>
-            {LANGUAGES.map((lang) => (
-              <TouchableOpacity
-                key={lang.id}
-                style={styles.langOption}
-                onPress={() => {
-                  setCurrentLang(lang.name);
-                  setShowLangOptions(false);
-                }}
-              >
-                <Text style={styles.langOptionText}>{lang.name}</Text>
-                {currentLang === lang.name ? <Ionicons name="checkmark" size={16} color={COLORS.primary} /> : null}
-              </TouchableOpacity>
+          <ScrollView style={styles.langDropdown} nestedScrollEnabled={true}>
+            {LANGUAGE_GROUPS.map((group, groupIndex) => (
+              <View key={groupIndex} style={styles.langGroup}>
+                <Text style={styles.langGroupTitle}>{group.title}</Text>
+                {group.languages.map((lang) => (
+                  <TouchableOpacity
+                    key={lang.id}
+                    style={styles.langOption}
+                    onPress={() => {
+                      setCurrentLang(lang.label);
+                      setShowLangOptions(false);
+                    }}
+                  >
+                    <Text style={styles.langFlag}>{lang.flag}</Text>
+                    <Text style={styles.langOptionText}>{lang.label}</Text>
+                    {lang.indigenous && <Text style={styles.indigenousBadge}>Indigenous</Text>}
+                    {currentLang === lang.label && <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />}
+                  </TouchableOpacity>
+                ))}
+              </View>
             ))}
-          </View>
+          </ScrollView>
         )}
 
         <TouchableOpacity style={styles.menuItem} onPress={() => setShowSettings(true)}>
@@ -207,6 +221,52 @@ export default function ProfileScreen() {
                       </View>
                     </View>
                   </View>
+
+                  {userProfile.levelMap && (
+                    <View style={styles.statSection}>
+                      <Text style={styles.statSectionTitle}>Quiz Achievements</Text>
+                      <View style={styles.achievementsList}>
+                        {['easy_1', 'easy_2', 'medium_1', 'medium_2', 'hard_1', 'hard_2'].map((key) => {
+                          const [difficulty, quizNum] = key.split('_');
+                          const data = userProfile.levelMap[key];
+                          const avgScore = data ? Math.round(data.totalScore / data.attempts) : 0;
+                          const passed = avgScore > 50;
+                          const levelNames = {
+                            'easy_1': 'Beginner Level 1',
+                            'easy_2': 'Beginner Level 2',
+                            'medium_1': 'Intermediate Level 1',
+                            'medium_2': 'Intermediate Level 2',
+                            'hard_1': 'Advanced Level 1',
+                            'hard_2': 'Advanced Level 2',
+                          };
+                          const emojis = {
+                            'easy_1': '🌿',
+                            'easy_2': '🌱',
+                            'medium_1': '🌳',
+                            'medium_2': '🌲',
+                            'hard_1': '♻️',
+                            'hard_2': '👑',
+                          };
+                          
+                          return (
+                            <View key={key} style={[styles.achievementItem, passed && styles.achievementPassed]}>
+                              <Text style={styles.achievementEmoji}>{emojis[key]}</Text>
+                              <View style={styles.achievementInfo}>
+                                <Text style={[styles.achievementTitle, passed && styles.achievementTitlePassed]}>
+                                  {levelNames[key]}
+                                </Text>
+                                <Text style={styles.achievementDetail}>
+                                  {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} Quiz {quizNum}
+                                  {data ? ` • ${avgScore}% avg` : ' • Not attempted'}
+                                </Text>
+                              </View>
+                              {passed && <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
                 </>
               )}
             </ScrollView>
@@ -320,11 +380,15 @@ const styles = StyleSheet.create({
   menuText: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   menuSubtext: { fontSize: 12, color: COLORS.textSecondary },
   menuListItem: { flex: 1, marginLeft: SPACING.s, fontSize: 15, fontWeight: '700', color: COLORS.text },
-  langDropdown: { backgroundColor: COLORS.surface, borderRadius: SPACING.m, padding: SPACING.s, marginBottom: SPACING.s },
-  langOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: SPACING.s, paddingHorizontal: SPACING.s },
-  langOptionText: { fontSize: 14, color: COLORS.text },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalContainer: { backgroundColor: COLORS.glassLight, borderTopLeftRadius: SPACING.l, borderTopRightRadius: SPACING.l, maxHeight: '85%', borderColor: 'rgba(255, 255, 255, 0.6)', borderWidth: 1 },
+  langDropdown: { backgroundColor: COLORS.surface, borderRadius: SPACING.m, padding: SPACING.s, marginBottom: SPACING.s, maxHeight: 400 },
+  langGroup: { marginBottom: SPACING.m },
+  langGroupTitle: { fontSize: 12, fontWeight: '700', color: COLORS.primary, textTransform: 'uppercase', paddingHorizontal: SPACING.s, paddingVertical: SPACING.xs, backgroundColor: COLORS.glassLight, borderRadius: SPACING.s, marginBottom: SPACING.xs },
+  langOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.s, paddingHorizontal: SPACING.s, gap: SPACING.s },
+  langFlag: { fontSize: 20 },
+  langOptionText: { fontSize: 14, color: COLORS.text, flex: 1 },
+  indigenousBadge: { fontSize: 10, color: COLORS.accent, backgroundColor: COLORS.glassLight, paddingHorizontal: SPACING.xs, paddingVertical: 2, borderRadius: 4, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
+  modalContainer: { backgroundColor: COLORS.surface, borderTopLeftRadius: SPACING.l, borderTopRightRadius: SPACING.l, maxHeight: '85%', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 2 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.l, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.surface },
   modalTitle: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   modalContent: { padding: SPACING.l },
@@ -356,4 +420,12 @@ const styles = StyleSheet.create({
   levelRowValue: { fontSize: 13, color: COLORS.primary, fontWeight: '700' },
   levelType: { fontSize: 12, color: COLORS.primary, fontWeight: '600', marginTop: SPACING.xs },
   pointsText: { fontSize: 11, color: COLORS.textSecondary, marginTop: SPACING.xs },
+  achievementsList: { gap: SPACING.s },
+  achievementItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.glassLight, borderRadius: SPACING.s, padding: SPACING.m, gap: SPACING.s, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.2)' },
+  achievementPassed: { backgroundColor: COLORS.glassMedium, borderColor: COLORS.success, borderWidth: 2 },
+  achievementEmoji: { fontSize: 32 },
+  achievementInfo: { flex: 1 },
+  achievementTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textSecondary },
+  achievementTitlePassed: { color: COLORS.text },
+  achievementDetail: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
 });

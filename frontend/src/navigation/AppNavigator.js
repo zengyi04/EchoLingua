@@ -23,6 +23,7 @@ import CulturalEventsScreen from '../screens/CulturalEventsScreen';
 import DictionaryScreen from '../screens/DictionaryScreen';
 import CulturalKnowledgeScreen from '../screens/CulturalKnowledgeScreen';
 import FamilyLearningScreen from '../screens/FamilyLearningScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -83,15 +84,18 @@ function TabNavigator() {
 
 export default function AppNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* New Feature Screens */}
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="MainTabs">
+      {/* Main App Entry Point */}
+      <Stack.Screen name="MainTabs" component={TabNavigator} />
+      
+      {/* Feature Screens */}
       <Stack.Screen name="CommunityStory" component={CommunityStoryScreen} />
+      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="ProgressTracker" component={ProgressTrackerScreen} />
       <Stack.Screen name="CulturalEvents" component={CulturalEventsScreen} />
       <Stack.Screen name="Dictionary" component={DictionaryScreen} />
       <Stack.Screen name="CulturalKnowledge" component={CulturalKnowledgeScreen} />
       <Stack.Screen name="FamilyLearning" component={FamilyLearningScreen} />
-      <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen name="Vocabulary" component={VocabularyScreen} />
       <Stack.Screen name="Story" component={StoryScreen} />
       <Stack.Screen name="LivingLanguage" component={LivingLanguageScreen} />
