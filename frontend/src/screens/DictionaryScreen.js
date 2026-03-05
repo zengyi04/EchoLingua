@@ -381,7 +381,15 @@ export default function DictionaryScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('MainTabs', { screen: 'HomeTab' });
+            }
+          }}
+        >
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Dictionary</Text>
@@ -492,7 +500,7 @@ export default function DictionaryScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
   },
   header: {
     flexDirection: 'row',
@@ -500,7 +508,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.06)',
   },
@@ -577,7 +585,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.xs,
     borderRadius: 20,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
   },
@@ -606,7 +614,7 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xl,
   },
   wordCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
     padding: SPACING.m,
     marginBottom: SPACING.s,
@@ -656,7 +664,7 @@ const styles = StyleSheet.create({
   },
   detailContainer: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
   },
   detailHeader: {
     flexDirection: 'row',
@@ -664,7 +672,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.06)',
   },
@@ -674,7 +682,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   detailCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     marginHorizontal: SPACING.l,
     marginTop: SPACING.m,
     borderRadius: 16,
@@ -716,7 +724,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   section: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     marginHorizontal: SPACING.l,
     marginTop: SPACING.m,
     borderRadius: 16,
@@ -734,7 +742,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     borderRadius: 12,
     padding: SPACING.m,
   },
@@ -747,7 +755,7 @@ const styles = StyleSheet.create({
     padding: SPACING.xs,
   },
   exampleCard: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     borderRadius: 12,
     padding: SPACING.m,
     marginBottom: SPACING.s,
@@ -758,7 +766,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   relatedCard: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     borderRadius: 12,
     padding: SPACING.s,
     marginBottom: SPACING.s,

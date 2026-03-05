@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, TextInput, Alert, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, TextInput, Alert, FlatList, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
@@ -32,6 +32,7 @@ const LANGUAGE_GROUPS = [
 
 const RECORDINGS_STORAGE_KEY = '@echolingua_recordings';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
+const COMMUNITY_STORIES_KEY = 'communityStories'; // For CommunityStoryScreen
 
 export default function RecordScreen() {
   const navigation = useNavigation();
@@ -64,6 +65,14 @@ export default function RecordScreen() {
   // NEW: Story creation mode
   const [storyTitle, setStoryTitle] = useState('');
   const [isSavingStory, setIsSavingStory] = useState(false);
+  
+  // NEW: Share to community modal states
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [selectedRecordingToShare, setSelectedRecordingToShare] = useState(null);
+  const [shareTitle, setShareTitle] = useState('');
+  const [shareDescription, setShareDescription] = useState('');
+  const [shareCategory, setShareCategory] = useState('Story');
+  const [isSharingToCommunity, setIsSharingToCommunity] = useState(false);
   
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveHeights = useRef(Array(20).fill(0).map(() => new Animated.Value(20))).current;
@@ -219,6 +228,101 @@ export default function RecordScreen() {
       console.log('🗑️ Recording deleted');
     } catch (error) {
       console.error('Failed to delete recording:', error);
+    }
+  };
+
+  // NEW: Open share modal for a recording
+  const openShareModal = (recording) => {
+    setSelectedRecordingToShare(recording);
+    setShareTitle('');
+    setShareDescription('');
+    setShareCategory('Story');
+    setShowShareModal(true);
+    playSound('select');
+  };
+
+  // NEW: Share recording to community
+  const handleShareToCommunity = async () => {
+    if (!shareTitle.trim()) {
+      Alert.alert('Title Required', 'Please enter a title for your story');
+      playSound('incorrect');
+      return;
+    }
+
+    if (!shareDescription.trim()) {
+      Alert.alert('Description Required', 'Please add a description');
+      playSound('incorrect');
+      return;
+    }
+
+    setIsSharingToCommunity(true);
+    console.log('📤 Sharing recording to community...');
+
+    try {
+      // Load existing community stories
+      const storedStories = await AsyncStorage.getItem(COMMUNITY_STORIES_KEY);
+      const existingStories = storedStories ? JSON.parse(storedStories) : [];
+
+      // Get language name
+      const languageName = WORLD_LANGUAGES.find(l => l.id === selectedRecordingToShare.language)?.label || 'Unknown';
+
+      // Create new community story
+      const newStory = {
+        id: Date.now().toString(),
+        title: shareTitle.trim(),
+        description: shareDescription.trim(),
+        author: 'You', // Could be replaced with actual user name
+        language: languageName,
+        category: shareCategory,
+        audioUri: selectedRecordingToShare.uri,
+        duration: selectedRecordingToShare.duration,
+        likes: 0,
+        commentsList: [],
+        bookmarks: 0,
+        timestamp: new Date().toISOString(),
+        isFollowing: false,
+      };
+
+      // Add to community stories
+      const updatedStories = [newStory, ...existingStories];
+      await AsyncStorage.setItem(COMMUNITY_STORIES_KEY, JSON.stringify(updatedStories));
+
+      console.log('✅ Recording shared to community successfully!');
+      playSound('complete');
+
+      Alert.alert(
+        'Shared Successfully! 🎉',
+        `"${shareTitle}" has been shared to the Community Stories. Thank you for contributing!`,
+        [
+          {
+            text: 'View in Community',
+            onPress: () => {
+              setShowShareModal(false);
+              const parentNav = navigation.getParent();
+              if (parentNav) {
+                parentNav.navigate('CommunityStory');
+              } else {
+                navigation.navigate('CommunityStory');
+              }
+            }
+          },
+          {
+            text: 'OK',
+            onPress: () => setShowShareModal(false)
+          }
+        ]
+      );
+
+      // Reset modal
+      setShareTitle('');
+      setShareDescription('');
+      setSelectedRecordingToShare(null);
+    } catch (error) {
+      console.error('❌ Failed to share to community:', error);
+      Alert.alert('Share Failed', 'Could not share your recording. Please try again.');
+      playSound('incorrect');
+    } finally {
+      setIsSharingToCommunity(false);
     }
   };
 
@@ -1100,7 +1204,7 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                       </View>
                     </View>
 
-                    {/* Play/Delete Buttons */}
+                    {/* Play/Delete/Share Buttons */}
                     <View style={styles.recordingListActions}>
                       <TouchableOpacity
                         style={styles.recordingActionButton}
@@ -1112,6 +1216,14 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
                           size={28}
                           color={playingRecordingId === item.id ? COLORS.primary : COLORS.textSecondary}
                         />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.recordingActionButton}
+                        onPress={() => openShareModal(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="share-social" size={24} color={COLORS.accent} />
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -1156,6 +1268,134 @@ ${recordingTime >= 30 ? '\n⭐ Excellent! Detailed recording provides high-quali
           </View>
         </View>
       </ScrollView>
+
+      {/* Share to Community Modal */}
+      <Modal
+        visible={showShareModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowShareModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.shareModalContainer}>
+            <View style={styles.shareModalHeader}>
+              <View>
+                <Text style={styles.shareModalTitle}>Share to Community</Text>
+                <Text style={styles.shareModalSubtitle}>Add details to your recording</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.closeModalButton}
+                onPress={() => setShowShareModal(false)}
+              >
+                <Ionicons name="close-circle" size={32} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.shareModalContent} showsVerticalScrollIndicator={false}>
+              {/* Title Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Title *</Text>
+                <TextInput
+                  style={styles.shareInput}
+                  placeholder="Give your recording a title..."
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={shareTitle}
+                  onChangeText={setShareTitle}
+                  maxLength={100}
+                />
+              </View>
+
+              {/* Description Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Description *</Text>
+                <TextInput
+                  style={[styles.shareInput, styles.shareTextArea]}
+                  placeholder="Describe your recording, add context, or share its cultural significance..."
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={shareDescription}
+                  onChangeText={setShareDescription}
+                  multiline
+                  numberOfLines={4}
+                  maxLength={500}
+                  textAlignVertical="top"
+                />
+                <Text style={styles.characterCount}>{shareDescription.length}/500</Text>
+              </View>
+
+              {/* Category Selector */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Category</Text>
+                <View style={styles.categoryButtons}>
+                  {['Story', 'Song', 'Lesson', 'Conversation', 'Other'].map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[
+                        styles.categoryButton,
+                        shareCategory === cat && styles.categoryButtonActive
+                      ]}
+                      onPress={() => {
+                        setShareCategory(cat);
+                        playSound('select');
+                      }}
+                    >
+                      <Text style={[
+                        styles.categoryButtonText,
+                        shareCategory === cat && styles.categoryButtonTextActive
+                      ]}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Recording Info */}
+              {selectedRecordingToShare && (
+                <View style={styles.recordingInfoCard}>
+                  <Ionicons name="musical-notes" size={24} color={COLORS.primary} />
+                  <View style={styles.recordingInfoText}>
+                    <Text style={styles.recordingInfoLabel}>Recording Details</Text>
+                    <Text style={styles.recordingInfoDetails}>
+                      Duration: {formatTime(selectedRecordingToShare.duration)} • {' '}
+                      {selectedRecordingToShare.language ? 
+                        WORLD_LANGUAGES.find(l => l.id === selectedRecordingToShare.language)?.label : 
+                        'Language not set'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Share Button */}
+            <View style={styles.shareModalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowShareModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.shareButton,
+                  isSharingToCommunity && styles.shareButtonDisabled
+                ]}
+                onPress={handleShareToCommunity}
+                disabled={isSharingToCommunity}
+              >
+                {isSharingToCommunity ? (
+                  <Text style={styles.shareButtonText}>Sharing...</Text>
+                ) : (
+                  <>
+                    <Ionicons name="share-social" size={20} color={COLORS.surface} />
+                    <Text style={styles.shareButtonText}>Share to Community</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1824,5 +2064,160 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: SPACING.s,
     ...SHADOWS.small,
+  },
+
+  // Share Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  shareModalContainer: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: SPACING.l,
+    borderTopRightRadius: SPACING.l,
+    maxHeight: '85%',
+    paddingBottom: SPACING.l,
+  },
+  shareModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: SPACING.l,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  shareModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  shareModalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  closeModalButton: {
+    padding: SPACING.xs,
+  },
+  shareModalContent: {
+    padding: SPACING.l,
+    maxHeight: '60%',
+  },
+  inputGroup: {
+    marginBottom: SPACING.l,
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: SPACING.s,
+  },
+  shareInput: {
+    backgroundColor: COLORS.inputBackground,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SPACING.m,
+    padding: SPACING.m,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  shareTextArea: {
+    height: 100,
+    paddingTop: SPACING.m,
+  },
+  characterCount: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    textAlign: 'right',
+    marginTop: SPACING.xs,
+  },
+  categoryButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.s,
+  },
+  categoryButton: {
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+  },
+  categoryButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.text,
+  },
+  categoryButtonTextActive: {
+    color: COLORS.surface,
+  },
+  recordingInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.m,
+    backgroundColor: COLORS.background,
+    padding: SPACING.m,
+    borderRadius: SPACING.m,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  recordingInfoText: {
+    flex: 1,
+  },
+  recordingInfoLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  recordingInfoDetails: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  shareModalFooter: {
+    flexDirection: 'row',
+    gap: SPACING.m,
+    padding: SPACING.l,
+    paddingBottom: 0,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: SPACING.m,
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  shareButton: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    paddingVertical: SPACING.m,
+    borderRadius: SPACING.m,
+    backgroundColor: COLORS.primary,
+  },
+  shareButtonDisabled: {
+    opacity: 0.5,
+  },
+  shareButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.surface,
   },
 });

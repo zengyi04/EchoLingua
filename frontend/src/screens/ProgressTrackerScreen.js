@@ -443,7 +443,15 @@ export default function ProgressTrackerScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('MainTabs', { screen: 'HomeTab' });
+            }
+          }}
+        >
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Progress</Text>
@@ -489,7 +497,7 @@ export default function ProgressTrackerScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
   },
   header: {
     flexDirection: 'row',
@@ -497,7 +505,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.06)',
   },
@@ -539,7 +547,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.m,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 16,
     padding: SPACING.l,
     marginBottom: SPACING.m,
@@ -649,7 +657,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: (width - SPACING.l * 2 - SPACING.m) / 2,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 16,
     padding: SPACING.m,
     alignItems: 'center',
@@ -692,7 +700,7 @@ const styles = StyleSheet.create({
   achievementCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 16,
     padding: SPACING.m,
     marginBottom: SPACING.m,

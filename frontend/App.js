@@ -21,7 +21,7 @@ export default function App() {
   if (isLoading) {
     return (
       <View style={styles.splashContainer}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <Image 
           source={require('./assets/appLogo.png')} 
           style={styles.logo} 
@@ -37,7 +37,7 @@ export default function App() {
   return (
     <NavigationContainer>
       <AppNavigator />
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
     </NavigationContainer>
   );
 }

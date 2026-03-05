@@ -185,7 +185,16 @@ export default function StoryScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header with Back Button */}
       <View style={styles.header}>
-         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+         <TouchableOpacity
+           onPress={() => {
+             if (navigation.canGoBack()) {
+               navigation.goBack();
+             } else {
+               navigation.navigate('MainTabs', { screen: 'HomeTab' });
+             }
+           }}
+           style={styles.backButton}
+         >
            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
          </TouchableOpacity>
          <View style={{ flex: 1 }}>
@@ -377,7 +386,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     marginVertical: SPACING.s,
   },
   audioPlayer: {
@@ -448,7 +457,7 @@ const styles = StyleSheet.create({
   translationBox: {
     marginTop: SPACING.m,
     padding: SPACING.m,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: SPACING.s,
     borderLeftWidth: 3,
     borderLeftColor: COLORS.secondary,

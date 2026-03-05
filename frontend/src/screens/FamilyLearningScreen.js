@@ -132,7 +132,7 @@ export default function FamilyLearningScreen({ navigation }) {
     Alert.alert(
       'Delete Account',
       'Are you sure you want to delete this account? This will erase all progress.',
-      ​[
+      [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
@@ -206,7 +206,15 @@ export default function FamilyLearningScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('MainTabs', { screen: 'HomeTab' });
+            }
+          }}
+        >
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Family Learning</Text>
@@ -376,7 +384,7 @@ export default function FamilyLearningScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
   },
   header: {
     flexDirection: 'row',
@@ -384,7 +392,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.06)',
   },
@@ -451,7 +459,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.l,
   },
   accountCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 16,
     padding: SPACING.m,
     marginBottom: SPACING.m,
@@ -523,7 +531,7 @@ const styles = StyleSheet.create({
   activityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 16,
     padding: SPACING.m,
     marginBottom: SPACING.m,
@@ -589,7 +597,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   input: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     borderRadius: 12,
     padding: SPACING.m,
     fontSize: 15,
@@ -606,7 +614,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.s,
     borderRadius: 20,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
   },
@@ -631,7 +639,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,

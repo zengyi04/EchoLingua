@@ -506,7 +506,13 @@ export default function QuizScreen({ navigation }) {
 
             <TouchableOpacity
               style={[styles.tertiaryButton, { marginTop: SPACING.m }]}
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate('MainTabs', { screen: 'HomeTab' });
+                }
+              }}
             >
               <Ionicons name="home" size={20} color={COLORS.surface} />
               <Text style={styles.tertiaryButtonText}>Back to Home</Text>

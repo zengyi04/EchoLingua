@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignSelf: 'center',
     marginBottom: SPACING.m,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: COLORS.inputBackground,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,

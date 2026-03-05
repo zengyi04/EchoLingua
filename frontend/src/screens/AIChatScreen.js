@@ -281,15 +281,15 @@ export default function AIChatScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1, backgroundColor: '#0F172A' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    backgroundColor: COLORS.glassMedium,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.06)',
+    borderBottomColor: COLORS.cardBorder,
     ...SHADOWS.small,
   },
   backButton: { padding: SPACING.xs, marginRight: SPACING.m },
@@ -304,9 +304,9 @@ const styles = StyleSheet.create({
   },
   aiBubble: { 
     alignSelf: 'flex-start', 
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: COLORS.glassLight,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.06)',
+    borderColor: COLORS.cardBorder,
   },
   userBubble: { 
     alignSelf: 'flex-end', 
@@ -322,8 +322,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: SPACING.m,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.06)',
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderTopColor: COLORS.cardBorder,
+    backgroundColor: COLORS.glassMedium,
     gap: SPACING.s,
   },
   micButton: {
@@ -339,12 +339,12 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    borderColor: COLORS.cardBorder,
     borderRadius: 22,
     paddingHorizontal: SPACING.m,
     paddingVertical: SPACING.m,
     color: COLORS.text,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: COLORS.glassLight,
     fontSize: 15,
   },
   sendButton: {
