@@ -77,6 +77,10 @@ export default function AIStoryGeneratorScreen() {
   const [targetLanguage, setTargetLanguage] = useState(null);
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
+  const [showTranslationPreview, setShowTranslationPreview] = useState(false);
+  const [translationSource, setTranslationSource] = useState(''); // Original text before translation
+  const [translationContext, setTranslationContext] = useState(null); // Store recording context if from voice
+  const [translationAction, setTranslationAction] = useState('generate'); // 'generate' | 'share'
 
   // Load recordings on mount
   useEffect(() => {
@@ -414,6 +418,51 @@ export default function AIStoryGeneratorScreen() {
     await processAudioFile(rec.uri);
   };
 
+  const ensureRecordingTranscript = async (rec) => {
+    if (!rec) return null;
+    if (rec.transcript && rec.transcript.trim()) {
+      return rec;
+    }
+
+    try {
+      setIsTranslating(true);
+
+      const audioResponse = await fetch(rec.uri);
+      const buffer = await audioResponse.arrayBuffer();
+      const base64Audio = toBase64(new Uint8Array(buffer));
+      const transcriptionText = await transcribeAudio(base64Audio);
+
+      if (!transcriptionText || !transcriptionText.trim()) {
+        Alert.alert('Transcription Failed', 'Unable to transcribe this recording. Please try again.');
+        return null;
+      }
+
+      const updatedRec = { ...rec, transcript: transcriptionText.trim() };
+      const updatedRecs = recordings.map((r) => (r.id === rec.id ? updatedRec : r));
+      setRecordings(updatedRecs);
+      await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updatedRecs));
+      setSelectedRecording(updatedRec);
+
+      return updatedRec;
+    } catch (error) {
+      console.error('Failed to transcribe selected recording:', error);
+      Alert.alert('Transcription Error', 'Could not transcribe recording audio to text.');
+      return null;
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleTranslateOrShareRecording = async (rec) => {
+    const transcriptReadyRec = await ensureRecordingTranscript(rec);
+    if (!transcriptReadyRec) {
+      return;
+    }
+    setTranslationAction('share');
+    setSelectedRecording(transcriptReadyRec);
+    setShowLanguageModal(true);
+  };
+
   const processAudioFile = async (uri) => {
       // 1. Transcribe
       setLoadingMessage('Transcribing audio...');
@@ -439,7 +488,33 @@ export default function AIStoryGeneratorScreen() {
     }
     
     // Show language selection modal first
+    setTranslationAction('generate');
+    setSelectedRecording(null);
     setShowLanguageModal(true);
+  };
+
+  // New function: Translate only for preview (no story generation)
+  const handleTranslateForPreview = async (sourceText, context = null) => {
+    if (!targetLanguage) {
+      Alert.alert('Language Required', 'Please select a target language.');
+      return;
+    }
+
+    setShowLanguageModal(false);
+    setIsTranslating(true);
+    setTranslationSource(sourceText);
+    setTranslationContext(context);
+
+    try {
+      const translated = await translateText(sourceText, targetLanguage.code);
+      setTranslatedText(translated);
+      setShowTranslationPreview(true);
+    } catch (error) {
+      console.error('Translation error:', error);
+      Alert.alert('Translation Failed', 'Unable to translate. Please try again.');
+    } finally {
+      setIsTranslating(false);
+    }
   };
 
   const handleTranslateAndGenerate = async () => {
@@ -808,7 +883,7 @@ export default function AIStoryGeneratorScreen() {
       const updatedStory = {
         id: generatedStory?.id || Date.now().toString(),
         createdAt: generatedStory?.createdAt || new Date().toISOString(),
-        isAiGenerated: true,
+        isAiGenerated: generatedStory?.isAiGenerated !== undefined ? generatedStory.isAiGenerated : true,
         title: normalizedTitle,
         description: normalizedDescription,
         summary: normalizedDescription,
@@ -820,6 +895,12 @@ export default function AIStoryGeneratorScreen() {
         authorRole: currentUser?.role || 'learner',
         category: 'AI Generated',
         recipients: selectedRecipients,
+        // Include audio recording data if present
+        ...(generatedStory?.audioUri && {
+          audioUri: generatedStory.audioUri,
+          duration: generatedStory.duration,
+          transcript: generatedStory.transcript || normalizedText,
+        }),
       };
 
       // Save to My Creations (My Creation in Story Library)
@@ -1116,13 +1197,30 @@ export default function AIStoryGeneratorScreen() {
                  value={inputText}
                  onChangeText={setInputText}
                />
-               <TouchableOpacity 
-                  style={[styles.generateBtn, { backgroundColor: theme.primary }]}
-                  onPress={handleTextGenerate}
-               >
-                 <MaterialCommunityIcons name="auto-fix" size={20} color="#FFF" style={{ marginRight: 8 }} />
-                 <Text style={styles.generateBtnText}>Generate Story</Text>
-               </TouchableOpacity>
+               <View style={{ flexDirection: 'row', gap: 8 }}>
+                 <TouchableOpacity 
+                    style={[styles.generateBtn, { backgroundColor: theme.secondary, flex: 1 }]}
+                    onPress={() => {
+                      if (!inputText.trim()) {
+                        Alert.alert('Empty Input', 'Please enter text to translate.');
+                        return;
+                      }
+                      setTranslationAction('share');
+                      setSelectedRecording(null);
+                      setShowLanguageModal(true);
+                    }}
+                 >
+                   <Ionicons name="language" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                   <Text style={styles.generateBtnText}>Translate</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity 
+                    style={[styles.generateBtn, { backgroundColor: theme.primary, flex: 1 }]}
+                    onPress={handleTextGenerate}
+                 >
+                   <MaterialCommunityIcons name="auto-fix" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                   <Text style={styles.generateBtnText}>Generate Story</Text>
+                 </TouchableOpacity>
+               </View>
             </View>
           )}
 
@@ -1229,24 +1327,24 @@ export default function AIStoryGeneratorScreen() {
 
                    <TouchableOpacity 
                       style={[styles.simpleActionRow, { backgroundColor: theme.background }]}
-                      onPress={() => {
+                      onPress={async () => {
                          setShowActionModal(false);
                          if (selectedRecording) {
-                             // Show create story modal instead of navigating
-                             const mockStory = {
-                               id: Date.now().toString(),
-                               title: selectedRecording.fileName || 'Recording Story',
-                               summary: selectedRecording.transcript || 'A story from recording',
-                               audioUri: selectedRecording.uri,
-                               duration: selectedRecording.duration,
-                               transcript: selectedRecording.transcript,
-                               createdAt: new Date().toISOString(),
-                               isAiGenerated: false,
-                             };
-                             setGeneratedStory(mockStory);
-                             setStoryTitle(selectedRecording.fileName || '');
-                             setStoryDescription(selectedRecording.transcript || '');
-                             setShowCreateStoryModal(true);
+                           await handleTranslateOrShareRecording(selectedRecording);
+                         }
+                      }}
+                   >
+                      <Ionicons name="language" size={20} color={theme.secondary} />
+                      <Text style={[styles.simpleActionText, { color: theme.text }]}>Translate</Text>
+                   </TouchableOpacity>
+
+                   <TouchableOpacity 
+                      style={[styles.simpleActionRow, { backgroundColor: theme.background }]}
+                      onPress={async () => {
+                         setShowActionModal(false);
+                         if (selectedRecording) {
+                           // Share goes through transcript + language selection first
+                           await handleTranslateOrShareRecording(selectedRecording);
                          }
                       }}
                    >
@@ -1657,10 +1755,16 @@ export default function AIStoryGeneratorScreen() {
                 activeOpacity={1}
                 style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
              >
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Translate Before Generating?</Text>
-                <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: SPACING.m }]}>
-                   Select a language to translate your text, or skip to generate with original text.
-                </Text>
+                 <Text style={[styles.modalTitle, { color: theme.text }]}> 
+                   {translationAction === 'share' ? 'Select Translation Language' : (selectedRecording ? 'Select Translation Language' : 'Translate Before Generating?')}
+                 </Text>
+                 <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: SPACING.m }]}>
+                   {translationAction === 'share'
+                    ? 'Choose a language first, then share with translated content.'
+                    : (selectedRecording 
+                      ? 'Choose a language to translate the recording transcript:' 
+                      : 'Select a language to translate your text, or skip to generate with original text.')}
+                 </Text>
 
                 {/* Borneo Languages */}
                 <Text style={[{ color: theme.primary, fontSize: 14, fontWeight: 'bold', marginBottom: SPACING.s }]}>Indigenous Borneo</Text>
@@ -1692,6 +1796,7 @@ export default function AIStoryGeneratorScreen() {
                 </ScrollView>
 
                 <View style={[styles.modalActions, { marginTop: SPACING.l }]}>
+                   {translationAction === 'generate' && !selectedRecording && (
                    <TouchableOpacity 
                       style={[styles.modalBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}
                       onPress={() => {
@@ -1701,18 +1806,105 @@ export default function AIStoryGeneratorScreen() {
                    >
                       <Text style={[{ color: theme.text }]}>Skip Translation</Text>
                    </TouchableOpacity>
+                   )}
                    <TouchableOpacity 
-                      style={[styles.modalBtn, { backgroundColor: theme.primary, opacity: !targetLanguage ? 0.5 : 1 }]}
-                      onPress={handleTranslateAndGenerate}
+                      style={[styles.modalBtn, { backgroundColor: theme.primary, opacity: !targetLanguage ? 0.5 : 1, flex: (selectedRecording || translationAction === 'share') ? 1 : 0 }]}
+                      onPress={() => {
+                        if (translationAction === 'share') {
+                          if (selectedRecording) {
+                            handleTranslateForPreview(selectedRecording.transcript, selectedRecording);
+                          } else {
+                            handleTranslateForPreview(inputText.trim(), null);
+                          }
+                        } else {
+                          handleTranslateAndGenerate();
+                        }
+                      }}
                       disabled={!targetLanguage}
                    >
                       <Text style={[{ color: '#FFFFFF' }]}>
-                         Translate & Generate
+                         {translationAction === 'share' ? 'Translate & Continue' : 'Translate & Generate'}
                       </Text>
                    </TouchableOpacity>
                 </View>
              </TouchableOpacity>
           </TouchableOpacity>
+       </Modal>
+
+       {/* Translation Preview Modal */}
+       <Modal
+          visible={showTranslationPreview}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowTranslationPreview(false)}
+       >
+         <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+           <View style={[styles.modalContent, { backgroundColor: theme.surface, width: '90%', maxHeight: '80%' }]}>
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.m }}>
+               <Text style={[styles.modalTitle, { color: theme.text }]}>Translation Preview</Text>
+               <TouchableOpacity onPress={() => setShowTranslationPreview(false)}>
+                 <Ionicons name="close-circle" size={28} color={theme.textSecondary} />
+               </TouchableOpacity>
+             </View>
+
+             <ScrollView showsVerticalScrollIndicator={false}>
+               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.m, padding: SPACING.s, backgroundColor: theme.primary + '15', borderRadius: 8 }}>
+                 <Ionicons name="language" size={20} color={theme.primary} style={{ marginRight: 8 }} />
+                 <Text style={{ color: theme.primary, fontWeight: 'bold' }}>{targetLanguage?.label}</Text>
+               </View>
+
+               <View style={{ marginBottom: SPACING.m }}>
+                 <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>ORIGINAL</Text>
+                 <View style={{ padding: SPACING.m, backgroundColor: theme.background, borderRadius: 8 }}>
+                   <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20 }}>{translationSource}</Text>
+                 </View>
+               </View>
+
+               <View style={{ marginBottom: SPACING.m }}>
+                 <Text style={{ color: theme.primary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>TRANSLATED</Text>
+                 <View style={{ padding: SPACING.m, backgroundColor: theme.primary + '10', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: theme.primary }}>
+                   <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20 }}>{translatedText}</Text>
+                 </View>
+               </View>
+             </ScrollView>
+
+             <View style={styles.modalActions}>
+               <TouchableOpacity
+                 onPress={() => setShowTranslationPreview(false)}
+                 style={[styles.modalBtn, { borderWidth: 1, borderColor: theme.border }]}
+               >
+                 <Text style={{ color: theme.text }}>Close</Text>
+               </TouchableOpacity>
+               <TouchableOpacity
+                 onPress={() => {
+                   setShowTranslationPreview(false);
+                   const translatedStory = {
+                     id: Date.now().toString(),
+                     title: translationContext?.fileName || 'Translated Content',
+                     summary: translatedText,
+                     text: translatedText,
+                     sourceText: translationSource,
+                     createdAt: new Date().toISOString(),
+                     isAiGenerated: false,
+                     ...(translationContext && {
+                       audioUri: translationContext.uri,
+                       duration: translationContext.duration,
+                       transcript: translatedText,
+                     }),
+                   };
+                   setGeneratedStory(translatedStory);
+                   setStoryTitle(translationContext?.fileName || 'Translated Story');
+                   setStoryDescription(translatedText);
+                   setShowCreateStoryModal(true);
+                 }}
+                 style={[styles.modalBtn, { backgroundColor: theme.primary }]}
+               >
+                 <Ionicons name="share-social-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                 <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share</Text>
+               </TouchableOpacity>
+             </View>
+           </View>
+         </View>
        </Modal>
 
     </SafeAreaView>
