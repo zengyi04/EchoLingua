@@ -787,7 +787,7 @@ export default function StoryScreen() {
 
                {/* Save to My Creation */}
                <TouchableOpacity 
-                  style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}
+                  style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}
                   onPress={() => {
                      setShowOptionsModal(false);
                      handleSaveToMyCreation();
@@ -795,18 +795,6 @@ export default function StoryScreen() {
                >
                   <Ionicons name="bookmark" size={20} color={theme.secondary} style={{ marginRight: 12 }} />
                   <Text style={{ color: theme.text, fontSize: 14 }}>Save to My Creations</Text>
-               </TouchableOpacity>
-
-               {/* Delete Story */}
-               <TouchableOpacity 
-                  style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}
-                  onPress={() => {
-                     setShowOptionsModal(false);
-                     setTimeout(() => handleDeleteStory(), 300);
-                  }}
-               >
-                  <Ionicons name="trash-outline" size={20} color={theme.error} style={{ marginRight: 12 }} />
-                  <Text style={{ color: theme.error, fontSize: 14 }}>Delete</Text>
                </TouchableOpacity>
             </View>
          </TouchableOpacity>

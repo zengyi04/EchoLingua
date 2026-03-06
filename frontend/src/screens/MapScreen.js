@@ -71,7 +71,6 @@ export default function MapScreen({ navigation }) {
   const [routeCoordinates, setRouteCoordinates] = useState([]);
   const [userLanguage, setUserLanguage] = useState('English');
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
   const mapRef = useRef(null);
   const searchTimeoutRef = useRef(null);
 
@@ -126,49 +125,25 @@ export default function MapScreen({ navigation }) {
 
   const speakLocationDetails = async (location, distance, duration) => {
     try {
-      if (isSpeaking) {
-        // If currently speaking, pause it
-        if (!isPaused) {
-          await Speech.pause();
-          setIsPaused(true);
-        }
-        return;
-      }
-
       const languageCode = getLanguageCode(userLanguage);
       const details = `Location: ${location.name}. ${location.description}. Distance: ${distance} kilometers. Estimated time: ${duration}.`;
       
       setIsSpeaking(true);
-      setIsPaused(false);
       await Speech.speak(details, {
         language: languageCode,
         pitch: 1.0,
         rate: 0.9,
         onDone: () => {
           setIsSpeaking(false);
-          setIsPaused(false);
         },
         onError: (error) => {
           console.error('Speech error:', error);
           setIsSpeaking(false);
-          setIsPaused(false);
         },
       });
     } catch (error) {
       console.error('Error speaking location details:', error);
       setIsSpeaking(false);
-      setIsPaused(false);
-    }
-  };
-
-  const resumeLocationDetails = async () => {
-    try {
-      if (isPaused) {
-        await Speech.resume();
-        setIsPaused(false);
-      }
-    } catch (error) {
-      console.error('Error resuming speech:', error);
     }
   };
 
@@ -176,9 +151,9 @@ export default function MapScreen({ navigation }) {
     try {
       await Speech.stop();
       setIsSpeaking(false);
-      setIsPaused(false);
     } catch (error) {
       console.error('Error stopping speech:', error);
+      setIsSpeaking(false);
     }
   };
 
@@ -615,7 +590,6 @@ export default function MapScreen({ navigation }) {
         {showSearchResults && searchResults.length > 0 && (
           <View 
             style={[styles.searchResultsDropdown, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            pointerEvents="auto"
           >
             <View style={[styles.searchResultsHeader, { borderBottomColor: theme.border }]}>
               <Text style={[styles.searchResultsTitle, { color: theme.text }]}>
@@ -624,16 +598,13 @@ export default function MapScreen({ navigation }) {
               <Text style={[styles.searchResultsSubtitle, { color: theme.textSecondary }]}>Sorted by distance • Scroll to see more</Text>
             </View>
             <FlatList
-              style={styles.searchResultsList}
+              style={{ height: 480 }}
               data={searchResults}
               renderItem={({ item }) => renderLocationCard(item)}
               keyExtractor={(item, index) => item.id || index.toString()}
-              scrollEnabled={true}
-              nestedScrollEnabled={true}
               showsVerticalScrollIndicator={true}
-              scrollEventThrottle={16}
               onEndReached={loadMoreResults}
-              onEndReachedThreshold={0.3}
+              onEndReachedThreshold={0.5}
               ListFooterComponent={
                 <View style={{ padding: SPACING.l, alignItems: 'center' }}>
                   {loadingMore ? (
@@ -695,7 +666,10 @@ export default function MapScreen({ navigation }) {
               <Ionicons name={selectedLocation.icon} size={24} color={selectedLocation.color} />
               <Text style={[styles.detailTitle, { color: theme.text }]}>{selectedLocation.name}</Text>
             </View>
-            <TouchableOpacity onPress={() => setSelectedLocation(null)}>
+            <TouchableOpacity onPress={() => {
+              stopLocationDetails();
+              setSelectedLocation(null);
+            }}>
               <Ionicons name="close" size={24} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -721,51 +695,22 @@ export default function MapScreen({ navigation }) {
             </View>
           )}
 
-          {/* Autoplay speaking indicator with pause/resume/stop controls */}
+          {/* Autoplay speaking indicator with stop control */}
           {directions && (
             <View style={[styles.speakContainer, { backgroundColor: theme.primary }]}>
               <View style={styles.speakStatusRow}>
-                {isSpeaking && !isPaused ? (
+                {isSpeaking ? (
                   <>
                     <View style={styles.speakingIndicator}>
                       <View style={[styles.speakingDot, { backgroundColor: theme.surface }]} />
                       <Text style={[styles.speakingText, { color: theme.surface }]}>Now Reading...</Text>
                     </View>
-                    <View style={styles.speakControlButtons}>
-                      <TouchableOpacity
-                        onPress={() => speakLocationDetails(selectedLocation, directions.distance, directions.duration)}
-                        style={styles.pauseButton}
-                      >
-                        <Ionicons name="pause-circle" size={24} color={theme.surface} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={stopLocationDetails}
-                        style={styles.stopButton}
-                      >
-                        <Ionicons name="stop-circle" size={24} color={theme.surface} />
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                ) : isPaused ? (
-                  <>
-                    <View style={styles.speakingIndicator}>
-                      <View style={[styles.speakingDot, { backgroundColor: theme.surface, opacity: 0.6 }]} />
-                      <Text style={[styles.speakingText, { color: theme.surface }]}>Paused</Text>
-                    </View>
-                    <View style={styles.speakControlButtons}>
-                      <TouchableOpacity
-                        onPress={resumeLocationDetails}
-                        style={styles.pauseButton}
-                      >
-                        <Ionicons name="play-circle" size={24} color={theme.surface} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={stopLocationDetails}
-                        style={styles.stopButton}
-                      >
-                        <Ionicons name="stop-circle" size={24} color={theme.surface} />
-                      </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity
+                      onPress={stopLocationDetails}
+                      style={styles.stopButton}
+                    >
+                      <Ionicons name="stop-circle" size={28} color={theme.surface} />
+                    </TouchableOpacity>
                   </>
                 ) : (
                   <Text style={[styles.readyToPlayText, { color: theme.surface }]}>
@@ -875,11 +820,10 @@ const styles = StyleSheet.create({
     right: SPACING.m,
     backgroundColor: COLORS.surface,
     borderRadius: SPACING.m,
-    maxHeight: 550,
     ...SHADOWS.large,
     borderWidth: 1,
     borderColor: COLORS.border,
-    overflow: 'hidden',
+    zIndex: 1000,
   },
   searchResultsHeader: {
     padding: SPACING.m,
@@ -897,9 +841,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 2,
   },
-  searchResultsList: {
-    maxHeight: 500,
-  },
+
   searchIcon: {
     marginRight: SPACING.s,
   },
@@ -1151,15 +1093,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flex: 1,
   },
-  speakControlButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.s,
-  },
-  pauseButton: {
-    padding: SPACING.xs,
-  },
   stopButton: {
-    padding: SPACING.xs,
+    padding: SPACING.s,
   },
 });

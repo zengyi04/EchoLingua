@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,6 +23,8 @@ export default function StoryLibraryScreen() {
   const [activeTab, setActiveTab] = useState('library'); // 'library' | 'creations' | 'shared'
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedStories, setSelectedStories] = useState([]);
 
   // Load current user
   const loadCurrentUser = async () => {
@@ -106,6 +108,64 @@ export default function StoryLibraryScreen() {
     setRefreshing(false);
   };
 
+  // Toggle delete mode
+  const toggleDeleteMode = () => {
+    setDeleteMode(!deleteMode);
+    setSelectedStories([]);
+  };
+
+  // Toggle story selection
+  const toggleStorySelection = (storyId) => {
+    if (selectedStories.includes(storyId)) {
+      setSelectedStories(selectedStories.filter(id => id !== storyId));
+    } else {
+      setSelectedStories([...selectedStories, storyId]);
+    }
+  };
+
+  // Delete selected stories
+  const handleDeleteSelected = async () => {
+    if (selectedStories.length === 0) {
+      Alert.alert('No Selection', 'Please select stories to delete.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Stories',
+      `Are you sure you want to delete ${selectedStories.length} ${selectedStories.length === 1 ? 'story' : 'stories'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (activeTab === 'creations') {
+                // Delete from created stories
+                const updatedStories = createdStories.filter(story => !selectedStories.includes(story.id));
+                await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(updatedStories));
+                setCreatedStories(updatedStories);
+              } else if (activeTab === 'shared') {
+                // Delete from shared stories
+                const allSharedJson = await AsyncStorage.getItem(SHARED_STORIES_KEY);
+                const allSharedStories = allSharedJson ? JSON.parse(allSharedJson) : [];
+                const updatedShared = allSharedStories.filter(story => !selectedStories.includes(story.id));
+                await AsyncStorage.setItem(SHARED_STORIES_KEY, JSON.stringify(updatedShared));
+                await loadSharedStories();
+              }
+              setSelectedStories([]);
+              setDeleteMode(false);
+              Alert.alert('Success', 'Stories deleted successfully.');
+            } catch (error) {
+              console.error('Failed to delete stories:', error);
+              Alert.alert('Error', 'Failed to delete stories.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Determine which list to show
   const displayStories = activeTab === 'library' ? stories : (activeTab === 'creations' ? createdStories : sharedStories);
 
@@ -118,6 +178,7 @@ export default function StoryLibraryScreen() {
   const renderStoryItem = ({ item }) => {
     const isAiStory = !!item.isAiGenerated;
     const isCommunityRecording = !!item.audioUri && !item.isAiGenerated;
+    const isSelected = selectedStories.includes(item.id);
     const isSharedStory = !!item.sharedBy;
     const itemFlag = getLanguageFlag(item.language);
     
@@ -127,22 +188,42 @@ export default function StoryLibraryScreen() {
           styles.storyCard, 
           { 
             backgroundColor: theme.surface, 
-            borderColor: 'transparent',
+            borderColor: isSelected ? theme.primary : 'transparent',
+            borderWidth: isSelected ? 2 : 1,
             shadowColor: theme.shadow,
             shadowOpacity: 0.1,
             elevation: 3,
             marginBottom: 12
           }
         ]} 
-        onPress={() => navigation.navigate('Story', { storyId: item.id, story: item })}
+        onPress={() => {
+          if (deleteMode) {
+            toggleStorySelection(item.id);
+          } else {
+            navigation.navigate('Story', { storyId: item.id, story: item });
+          }
+        }}
         activeOpacity={0.9}
       >
         <View style={styles.imageContainer}>
+            {/* Selection checkbox in delete mode */}
+            {deleteMode && (
+              <View style={[
+                styles.selectionCheckbox,
+                { 
+                  backgroundColor: isSelected ? theme.primary : theme.surface,
+                  borderColor: isSelected ? theme.primary : theme.border
+                }
+              ]}>
+                {isSelected && <Ionicons name="checkmark" size={16} color="#FFF" />}
+              </View>
+            )}
             {/* Placeholder for story image */}
             <View style={[
               styles.placeholderImage, 
               { 
-                backgroundColor: isAiStory ? theme.primary + '15' : (isCommunityRecording ? theme.accent + '15' : theme.secondary + '15')
+                backgroundColor: isAiStory ? theme.primary + '15' : (isCommunityRecording ? theme.accent + '15' : theme.secondary + '15'),
+                opacity: deleteMode ? 0.7 : 1
               }
             ]}>
                <Text style={{ fontSize: 24 }}>{itemFlag}</Text>
@@ -210,13 +291,50 @@ export default function StoryLibraryScreen() {
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+          onPress={() => {
+            if (deleteMode) {
+              setDeleteMode(false);
+              setSelectedStories([]);
+            } else {
+              navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab');
+            }
+          }}
         >
-          <Ionicons name="chevron-back" size={24} color={theme.primary} />
+          <Ionicons name={deleteMode ? "close" : "chevron-back"} size={24} color={theme.primary} />
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Story Library</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Discover ancient wisdom & tales</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>{deleteMode ? 'Select Stories' : 'Story Library'}</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
+            {deleteMode ? `${selectedStories.length} selected` : 'Discover ancient wisdom & tales'}
+          </Text>
+        </View>
+        {/* Action Icons */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {deleteMode ? (
+            <TouchableOpacity
+              onPress={handleDeleteSelected}
+              style={{ padding: 8 }}
+            >
+              <Ionicons name="trash" size={24} color={selectedStories.length > 0 ? theme.error : theme.textSecondary} />
+            </TouchableOpacity>
+          ) : (
+            <>
+              {(activeTab === 'creations' || activeTab === 'shared') && (
+                <TouchableOpacity
+                  onPress={toggleDeleteMode}
+                  style={{ padding: 8 }}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={24} color={theme.text} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={() => navigation.navigate('AIStoryGenerator')}
+                style={{ padding: 8 }}
+              >
+                <Ionicons name="add-circle-outline" size={24} color={theme.primary} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
 
@@ -448,5 +566,17 @@ const styles = StyleSheet.create({
   },
   arrowContainer: {
     marginLeft: SPACING.s,
+  },
+  selectionCheckbox: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
 });
