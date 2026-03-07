@@ -27,6 +27,7 @@ import CommunityStoryScreen from '../screens/CommunityStoryScreen';
 import ProgressTrackerScreen from '../screens/ProgressTrackerScreen';
 import CulturalEventsScreen from '../screens/CulturalEventsScreen';
 import DictionaryScreen from '../screens/DictionaryScreen';
+import ScanImageScreen from '../screens/ScanImageScreen';
 import CulturalKnowledgeScreen from '../screens/CulturalKnowledgeScreen';
 import FamilyLearningScreen from '../screens/FamilyLearningScreen';
 import FamilyStoryTimeScreen from '../screens/FamilyStoryTimeScreen';
@@ -143,6 +144,7 @@ export default function AppNavigator() {
       <Stack.Screen name="ProgressTracker" component={ProgressTrackerScreen} />
       <Stack.Screen name="CulturalEvents" component={CulturalEventsScreen} />
       <Stack.Screen name="Dictionary" component={DictionaryScreen} />
+      <Stack.Screen name="ScanImage" component={ScanImageScreen} />
       <Stack.Screen name="CulturalKnowledge" component={CulturalKnowledgeScreen} />
       <Stack.Screen name="FamilyLearning" component={FamilyLearningScreen} />
       <Stack.Screen name="FamilyStoryTime" component={SafeFamilyStoryTimeScreen} />
