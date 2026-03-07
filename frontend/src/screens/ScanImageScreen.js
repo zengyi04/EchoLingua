@@ -14,15 +14,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { WORLD_LANGUAGES } from '../constants/languages';
 import { extractTextFromImage as extractTextFromImageService } from '../services/ocrService';
 import { translateTextBetween } from '../services/translationService';
 
-const TRANSLATION_LANGUAGE_OPTIONS = [
-  { id: 'english', label: 'English' },
-  { id: 'malay', label: 'Malay' },
-  { id: 'chinese', label: 'Chinese' },
-  { id: 'spanish', label: 'Spanish' },
-];
+const TRANSLATION_LANGUAGE_OPTIONS = WORLD_LANGUAGES.map((language) => ({
+  id: language.id,
+  label: language.label,
+}));
 
 const parseWordsFromText = (text) => {
   if (!text) return [];
