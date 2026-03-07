@@ -7,8 +7,8 @@ import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-const SIDEBAR_WIDTH = 200;
-const COLLAPSED_SIDEBAR_WIDTH = 60;
+const SIDEBAR_WIDTH = 132;
+const COLLAPSED_SIDEBAR_WIDTH = 52;
 
 const QUIZ_RESULTS_KEY = '@echolingua_quiz_results';
 const SCENARIO_RESULTS_KEY = '@echolingua_scenario_results';
@@ -320,6 +320,7 @@ export default function LanguageVitalityDashboard() {
   const showAnalytics = selectedView === 'analytics';
   const showContributors = selectedView === 'contributors';
   const showInsights = selectedView === 'insights';
+  const statColumns = sidebarExpanded ? 1 : 2;
 
   const renderStatCard = ({ item }) => {
     const itemColor = theme[item.colorKey] || theme.primary;
@@ -346,7 +347,7 @@ export default function LanguageVitalityDashboard() {
           </View>
         </View>
         <Text style={[styles.statValue, { color: theme.text }]}>{item.value}</Text>
-        <Text style={[styles.statTitle, { color: theme.textSecondary }]}>{item.title}</Text>
+        <Text style={[styles.statTitle, { color: theme.textSecondary }]} numberOfLines={2}>{item.title}</Text>
       </View>
     );
   };
@@ -400,12 +401,6 @@ export default function LanguageVitalityDashboard() {
             <Text style={[styles.headerTitle, { color: theme.text }]}>Language Vitality</Text>
             <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Track community impact and growth</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.sidebarToggle, { backgroundColor: theme.primary + '20' }]}
-            onPress={toggleSidebar}
-          >
-            <Ionicons name={sidebarExpanded ? "chevron-back" : "menu"} size={24} color={theme.primary} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -457,6 +452,18 @@ export default function LanguageVitalityDashboard() {
               </TouchableOpacity>
             ))}
           </ScrollView>
+
+          <TouchableOpacity
+            style={[styles.sidebarHandleButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={toggleSidebar}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name={sidebarExpanded ? 'chevron-back' : 'chevron-forward'}
+              size={18}
+              color={theme.primary}
+            />
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Main Content Area */}
@@ -467,7 +474,8 @@ export default function LanguageVitalityDashboard() {
                 data={statsCards}
                 renderItem={renderStatCard}
                 keyExtractor={(item) => item.id}
-                numColumns={2}
+                numColumns={statColumns}
+                key={`stats-${statColumns}`}
                 scrollEnabled={false}
                 columnWrapperStyle={styles.statsRow}
               />
@@ -486,28 +494,28 @@ export default function LanguageVitalityDashboard() {
               <Text style={[styles.connectionSubtitle, { color: theme.textSecondary }]}>Jump directly to practice, quizzes, recordings, and active learner community.</Text>
 
               <View style={styles.connectionGrid}>
-                <TouchableOpacity style={[styles.connectionAction, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('Vocabulary')}>
+                <TouchableOpacity style={[styles.connectionAction, styles.connectionActionResponsive, sidebarExpanded && styles.connectionActionWide, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('Vocabulary')}>
                   <MaterialCommunityIcons name="book-open-page-variant" size={18} color={theme.primary} />
-                  <Text style={[styles.connectionActionTitle, { color: theme.text }]}>Practice</Text>
-                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]}>{liveStats.practiceSessions} sessions</Text>
+                  <Text style={[styles.connectionActionTitle, { color: theme.text }]} numberOfLines={2}>Practice</Text>
+                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]} numberOfLines={2}>{liveStats.practiceSessions} sessions</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.connectionAction, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('Quiz')}>
+                <TouchableOpacity style={[styles.connectionAction, styles.connectionActionResponsive, sidebarExpanded && styles.connectionActionWide, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('Quiz')}>
                   <Ionicons name="help-circle" size={18} color={theme.secondary || theme.primary} />
-                  <Text style={[styles.connectionActionTitle, { color: theme.text }]}>Quiz</Text>
-                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]}>{liveStats.quizzesCompleted} attempts</Text>
+                  <Text style={[styles.connectionActionTitle, { color: theme.text }]} numberOfLines={2}>Quiz</Text>
+                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]} numberOfLines={2}>{liveStats.quizzesCompleted} attempts</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.connectionAction, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('Record')}>
+                <TouchableOpacity style={[styles.connectionAction, styles.connectionActionResponsive, sidebarExpanded && styles.connectionActionWide, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('Record')}>
                   <Ionicons name="mic" size={18} color={theme.accent || theme.primary} />
-                  <Text style={[styles.connectionActionTitle, { color: theme.text }]}>Recordings</Text>
-                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]}>{liveStats.totalRecordings} clips</Text>
+                  <Text style={[styles.connectionActionTitle, { color: theme.text }]} numberOfLines={2}>Recordings</Text>
+                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]} numberOfLines={2}>{liveStats.totalRecordings} clips</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.connectionAction, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('CommunityStory')}>
+                <TouchableOpacity style={[styles.connectionAction, styles.connectionActionResponsive, sidebarExpanded && styles.connectionActionWide, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => navigation.navigate('CommunityStory')}>
                   <Ionicons name="people" size={18} color={theme.success || theme.primary} />
-                  <Text style={[styles.connectionActionTitle, { color: theme.text }]}>Active Learners</Text>
-                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]}>{liveStats.activeLearners} online today</Text>
+                  <Text style={[styles.connectionActionTitle, { color: theme.text }]} numberOfLines={2}>Active Learners</Text>
+                  <Text style={[styles.connectionActionValue, { color: theme.textSecondary }]} numberOfLines={2}>{liveStats.activeLearners} online today</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -616,8 +624,9 @@ export default function LanguageVitalityDashboard() {
 
             {dialectPredictions.map((entry) => {
               const toneColor = getPredictionToneColor(entry.detection.tone);
+              const keyExample = entry.examples[0];
               return (
-                <View key={entry.id} style={[styles.dialectRow, { backgroundColor: theme.background, borderColor: theme.border }]}> 
+                <View key={entry.id} style={[styles.dialectCompactRow, { backgroundColor: theme.background, borderColor: theme.border }]}> 
                   <View style={styles.dialectRowHeader}>
                     <Text style={[styles.dialectLanguageText, { color: theme.text }]}>{entry.language}</Text>
                     <View style={[styles.dialectLevelPill, { backgroundColor: toneColor + '22', borderColor: toneColor + '55' }]}>
@@ -625,97 +634,29 @@ export default function LanguageVitalityDashboard() {
                     </View>
                   </View>
 
-                  <Text style={[styles.regionCompareText, { color: theme.textSecondary }]}>
-                    <Ionicons name="location-outline" size={14} color={theme.textSecondary} /> {entry.regions[0]} vs {entry.regions[1]}
+                  <Text style={[styles.regionCompareText, { color: theme.textSecondary }]}> 
+                    <Ionicons name="location-outline" size={13} color={theme.textSecondary} /> {entry.regions[0]} vs {entry.regions[1]}
                   </Text>
 
-                  <View style={styles.examplesContainer}>
-                    {entry.examples.map((example, index) => (
-                      <View key={`${entry.id}-example-${index}`} style={[styles.wordBox, { backgroundColor: theme.background }]}> 
-                        <Text style={[styles.wordConcept, { color: theme.textSecondary }]}>{example.concept}</Text>
-                        <View style={styles.wordVariants}>
-                          <View style={[styles.variantBox, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '30' }]}>
-                            <Text style={[styles.variantLabel, { color: theme.textSecondary }]}>{entry.regions[0]}</Text>
-                            <Text style={[styles.variantWord, { color: theme.primary }]}>{example.regionA}</Text>
-                          </View>
-                          <Ionicons name="swap-horizontal" size={16} color={theme.textSecondary} style={styles.swapIcon} />
-                          <View style={[styles.variantBox, { backgroundColor: theme.secondary + '10', borderColor: theme.secondary + '30' }]}>
-                            <Text style={[styles.variantLabel, { color: theme.textSecondary }]}>{entry.regions[1]}</Text>
-                            <Text style={[styles.variantWord, { color: theme.secondary || theme.primary }]}>{example.regionB}</Text>
-                          </View>
-                        </View>
+                  {keyExample ? (
+                    <View style={styles.dialectExampleCompactRow}>
+                      <Text style={[styles.dialectExampleLabel, { color: theme.textSecondary }]}>{keyExample.concept}</Text>
+                      <View style={[styles.dialectWordChip, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '35' }]}> 
+                        <Text style={[styles.dialectWordChipText, { color: theme.primary }]}>{entry.regions[0]}: {keyExample.regionA}</Text>
                       </View>
-                    ))}
-                  </View>
+                      <View style={[styles.dialectWordChip, { backgroundColor: theme.secondary + '10', borderColor: theme.secondary + '35' }]}> 
+                        <Text style={[styles.dialectWordChipText, { color: theme.secondary || theme.primary }]}>{entry.regions[1]}: {keyExample.regionB}</Text>
+                      </View>
+                    </View>
+                  ) : null}
 
-                  <View style={[styles.teachingTipBox, { backgroundColor: toneColor + '10', borderColor: toneColor + '40' }]}> 
-                    <View style={[styles.tipIcon, { backgroundColor: toneColor + '20' }]}>
-                      <MaterialCommunityIcons name="lightbulb-on" size={18} color={toneColor} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.tipTitle, { color: toneColor }]}>Teaching Strategy</Text>
-                      <Text style={[styles.teachingTipText, { color: theme.text }]}>{entry.detection.teachingTip}</Text>
-                    </View>
+                  <View style={[styles.teachingTipBox, { backgroundColor: toneColor + '10', borderColor: toneColor + '35' }]}> 
+                    <MaterialCommunityIcons name="lightbulb-on-outline" size={16} color={toneColor} />
+                    <Text style={[styles.teachingTipTextCompact, { color: theme.text }]}>{entry.detection.teachingTip}</Text>
                   </View>
                 </View>
               );
             })}
-          </View>}
-
-          {/* Chart Section */}
-          {(showOverview || showAnalytics) && <View style={[styles.chartCard, { backgroundColor: theme.surface }]}> 
-            <View style={styles.chartHeader}>
-              <View>
-                <Text style={[styles.chartTitle, { color: theme.text }]}>Monthly Activity</Text>
-                <Text style={[styles.chartSubtitle, { color: theme.textSecondary }]}>New contributions per month</Text>
-              </View>
-              <TouchableOpacity style={styles.chartFilterButton}>
-                <Text style={[styles.chartFilterText, { color: theme.textSecondary }]}>2026</Text>
-                <Ionicons name="chevron-down" size={16} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.chart}>
-              <View style={styles.chartYAxis}>
-                <Text style={[styles.yAxisLabel, { color: theme.textSecondary }]}>100</Text>
-                <Text style={[styles.yAxisLabel, { color: theme.textSecondary }]}>75</Text>
-                <Text style={[styles.yAxisLabel, { color: theme.textSecondary }]}>50</Text>
-                <Text style={[styles.yAxisLabel, { color: theme.textSecondary }]}>25</Text>
-                <Text style={[styles.yAxisLabel, { color: theme.textSecondary }]}>0</Text>
-              </View>
-
-              <View style={styles.chartContent}>
-                {/* Grid Lines */}
-                <View style={styles.gridLines}>
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <View key={i} style={[styles.gridLine, { backgroundColor: theme.border }]} />
-                  ))}
-                </View>
-
-                {/* Bars */}
-                <View style={styles.barsContainer}>
-                  {activityData.map((data, index) => (
-                    <View key={index} style={styles.barWrapper}>
-                      <View style={styles.barColumn}>
-                        <View
-                          style={[
-                            styles.bar,
-                            {
-                              height: `${(data.value / maxValue) * 100}%`,
-                              backgroundColor:
-                                data.value === maxValue ? theme.primary : theme.primary + '60',
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.barValue, { color: theme.text }]}>{data.label}</Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.barLabel, { color: theme.textSecondary }]}>{data.month}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </View>
           </View>}
 
           {/* Leaderboard Section */}
@@ -789,58 +730,90 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    padding: SPACING.l,
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
     backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     ...SHADOWS.small,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+  },
   backButton: {
-    alignSelf: 'flex-start',
     padding: SPACING.xs,
-    marginBottom: SPACING.xs,
+    borderRadius: 10,
+    ...SHADOWS.small,
+  },
+  headerTitleContainer: {
+    flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '800',
     color: COLORS.primary,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
-    marginTop: 4,
+    marginTop: 2,
   },
   mainContent: {
     flex: 1,
     flexDirection: 'row',
   },
   sidebar: {
-    width: 80,
+    width: 132,
     backgroundColor: COLORS.glassLight,
-    paddingVertical: SPACING.m,
+    paddingTop: SPACING.m,
+    paddingBottom: SPACING.l,
     borderRightWidth: 1,
     borderRightColor: 'rgba(255, 255, 255, 0.4)',
+    position: 'relative',
   },
   sidebarItem: {
     alignItems: 'center',
-    paddingVertical: SPACING.m,
-    paddingHorizontal: SPACING.s,
+    justifyContent: 'center',
+    paddingVertical: SPACING.s + 2,
+    paddingHorizontal: SPACING.xs,
+    marginHorizontal: SPACING.xs,
     marginBottom: SPACING.s,
+    borderRadius: 12,
   },
   sidebarItemActive: {
     backgroundColor: COLORS.primary + '10',
     borderRightWidth: 3,
     borderRightColor: COLORS.primary,
   },
+  sidebarIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
   sidebarLabel: {
-    fontSize: 10,
+    fontSize: 12,
+    fontWeight: '600',
     color: COLORS.textSecondary,
-    marginTop: 4,
+    marginTop: 6,
     textAlign: 'center',
   },
-  sidebarLabelActive: {
-    color: COLORS.primary,
-    fontWeight: 'bold',
+  sidebarHandleButton: {
+    position: 'absolute',
+    top: 18,
+    right: -15,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    ...SHADOWS.small,
+    elevation: 4,
   },
   contentArea: {
     flex: 1,
@@ -862,6 +835,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     borderLeftWidth: 4,
     ...SHADOWS.small,
+    overflow: 'hidden',
   },
   statHeader: {
     flexDirection: 'row',
@@ -902,10 +876,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
     marginBottom: 2,
+    flexShrink: 1,
   },
   statTitle: {
     fontSize: 11,
     color: COLORS.textSecondary,
+    lineHeight: 15,
+    flexShrink: 1,
   },
   vitalityCard: {
     backgroundColor: COLORS.glassLight,
@@ -1047,13 +1024,24 @@ const styles = StyleSheet.create({
     borderRadius: SPACING.s,
     padding: SPACING.s,
     gap: 4,
+    overflow: 'hidden',
+    minHeight: 90,
+  },
+  connectionActionResponsive: {
+    flexShrink: 1,
+  },
+  connectionActionWide: {
+    width: '100%',
   },
   connectionActionTitle: {
     fontSize: 13,
     fontWeight: '700',
+    flexShrink: 1,
   },
   connectionActionValue: {
     fontSize: 11,
+    lineHeight: 14,
+    flexShrink: 1,
   },
   activeLearnerCard: {
     backgroundColor: COLORS.glassLight,
@@ -1118,17 +1106,16 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   dialectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     gap: SPACING.s,
-    marginBottom: SPACING.xs,
+    marginBottom: SPACING.s,
   },
   dialectHeaderLeft: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: SPACING.s,
-    flex: 1,
+    width: '100%',
   },
   dialectTitle: {
     fontSize: 16,
@@ -1155,31 +1142,65 @@ const styles = StyleSheet.create({
     padding: SPACING.s,
     marginBottom: SPACING.s,
   },
+  dialectCompactRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: SPACING.s,
+    marginBottom: SPACING.s,
+    gap: 8,
+  },
   dialectRowHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: SPACING.s,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 6,
     marginBottom: SPACING.xs,
   },
   dialectLanguageText: {
     fontSize: 14,
     fontWeight: '700',
-    flex: 1,
+    width: '100%',
   },
   dialectLevelPill: {
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: SPACING.s,
     paddingVertical: 4,
+    maxWidth: '100%',
   },
   dialectLevelText: {
     fontSize: 11,
     fontWeight: '700',
+    flexShrink: 1,
   },
   regionCompareText: {
     fontSize: 12,
-    marginBottom: SPACING.s,
+    marginBottom: 2,
+  },
+  dialectExampleCompactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  dialectExampleLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  dialectWordChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    maxWidth: '100%',
+    alignSelf: 'flex-start',
+  },
+  dialectWordChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
   exampleRow: {
     borderWidth: 1,
@@ -1210,6 +1231,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     flex: 1,
+  },
+  teachingTipTextCompact: {
+    fontSize: 12,
+    lineHeight: 17,
+    flex: 1,
+    flexWrap: 'wrap',
   },
   chartCard: {
     backgroundColor: COLORS.glassLight,
