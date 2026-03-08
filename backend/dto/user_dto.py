@@ -1,6 +1,18 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List, Literal
 from datetime import datetime
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, EmailStr
+
+
+class UserMeResponse(BaseModel):
+    """Response for GET /users/me."""
+
+    id: str
+    name: str
+    email: str
+    role: str
+    points: int = 0
+    badges: List[str] = []
 
 
 class UserDTO(BaseModel):

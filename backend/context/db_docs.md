@@ -8,11 +8,11 @@ This document describes the **database architecture** for the **AI Indigenous La
 The backend uses:
 
 - **Database:** MongoDB
-- **File Storage:** Firebase Storage
+- **File Storage:** Supabase Storage
 - **Backend API:** FastAPI
 - **Data Format:** JSON / BSON
 
-The database stores **metadata and structured data**, while large files such as **audio recordings** are stored in **Firebase Storage**.
+The database stores **metadata and structured data**, while large files such as **audio recordings** are stored in **Supabase Storage**.
 
 ---
 
@@ -144,7 +144,7 @@ find user by email
 
 Stores metadata for **elder audio recordings**.
 
-Audio files themselves are stored in **Firebase Storage**, while MongoDB stores:
+Audio files themselves are stored in **Supabase Storage**, while MongoDB stores:
 
 - audio URL
 - transcript
@@ -157,7 +157,7 @@ Audio files themselves are stored in **Firebase Storage**, while MongoDB stores:
 |-------|------|-------------|
 | _id | ObjectId | Recording ID |
 | userId | ObjectId | Reference to users._id |
-| audioUrl | String | Firebase storage URL |
+| audioUrl | String | Supabase storage URL |
 | transcript | String | Speech-to-text result |
 | language | String | Language spoken |
 | duration | Integer | Audio duration (seconds) |
@@ -186,7 +186,7 @@ public
 {
   "_id": ObjectId("69ad6f627f4c23fe225b86f7"),
   "userId": ObjectId("69ad64ac7f4c23fe225b86eb"),
-  "audioUrl": "https://firebasestorage.googleapis.com/.../recordings/elder_story_001.mp3",
+  "audioUrl": "https://xxxxx.supabase.co/storage/v1/object/public/recordings/elder_story_001.mp3",
   "transcript": "Long ago in the forest...",
   "language": "iban",
   "duration": 45,
@@ -250,7 +250,7 @@ Each story may contain:
   "language": "iban",
   "text": "Long ago the forest was protected by a spirit...",
   "childrenVersion": "A friendly forest spirit protected the village.",
-  "audioUrl": "https://firebasestorage.googleapis.com/.../stories/story_audio_001.mp3",
+  "audioUrl": "https://xxxxx.supabase.co/storage/v1/object/public/stories/story_audio_001.mp3",
   "createdBy": ObjectId("69ad64ac7f4c23fe225b86eb"),
   "tags": ["folklore", "culture"],
   "createdAt": ISODate("2026-03-08T12:00:00Z")
@@ -337,7 +337,7 @@ advanced
     {
       "word": "Selamat",
       "translation": "Hello",
-      "audioUrl": "https://firebasestorage.googleapis.com/.../lessons/hello.mp3"
+      "audioUrl": "https://xxxxx.supabase.co/storage/v1/object/public/lessons/hello.mp3"
     }
   ],
   "quiz": [
@@ -353,16 +353,16 @@ advanced
 
 ---
 
-## 8. Firebase Storage Integration
+## 8. Supabase Storage Integration
 
-Audio files are stored in **Firebase Storage**.
+Audio files are stored in **Supabase Storage**.
 
 MongoDB stores only the **file URL**.
 
 ### Storage Structure
 
 ```
-firebase-storage
+supabase-storage
 │
 ├── recordings
 │   └── elder_story_001.mp3
@@ -381,7 +381,7 @@ User records audio
       ↓
 Frontend uploads file
       ↓
-Firebase Storage
+Supabase Storage
       ↓
 Returns file URL
       ↓
@@ -465,7 +465,7 @@ lessons
 External storage:
 
 ```
-Firebase Storage
+Supabase Storage
 ```
 
 Backend API:
