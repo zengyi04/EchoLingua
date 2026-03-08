@@ -1,5 +1,9 @@
 fastapi
 pydantic
+python-dotenv
 motor
 email-validator
 uvicorn
+supabase
+passlib[bcrypt]
+PyJWT[crypto]

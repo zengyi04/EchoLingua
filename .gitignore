@@ -1,1 +1,23 @@
-/docs
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Node (if npm run at root)
+node_modules/
+
+# Build / generated
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
