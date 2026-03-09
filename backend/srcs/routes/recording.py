@@ -114,9 +114,13 @@ async def upload_recording(
     try:
         collection = get_recordings_collection()
         result = await collection.insert_one(recording)
-        recording["_id"] = str(result.inserted_id)
-        recording["userId"] = str(recording["userId"])
-        return recording
+        return {
+            "message": "Recording uploaded successfully",
+            "recording": _recording_to_response({
+                **recording,
+                "_id": result.inserted_id,
+            }),
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500,
