@@ -46,6 +46,12 @@ async def ensure_indexes():
         await db["lessons"].create_index("difficulty")
         await db["lessons"].create_index("category")
         await db["lessons"].create_index([("createdAt", -1)])
+        # Dictionary (CLLD entries): language_id, status, word+language_id unique
+        await db["dictionary"].create_index("language_id")
+        await db["dictionary"].create_index("status")
+        await db["dictionary"].create_index(
+            [("word", 1), ("language_id", 1)], unique=True
+        )
     except PyMongoError as exc:
         logger.warning(
             "Skipping index creation because MongoDB is unreachable during startup: %s",
@@ -63,3 +69,7 @@ def get_stories_collection():
 def get_lessons_collection():
     """Get the lessons collection."""
     return get_database()["lessons"]
+
+def get_dictionary_collection():
+    """Get the dictionary (CLLD entries) collection."""
+    return get_database()["dictionary"]
