@@ -1,9 +1,7 @@
 from datetime import datetime
 from typing import Literal
-
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query
-
 from database import get_lessons_collection
 from dto.lesson_dto import CreateLessonRequest
 
@@ -11,7 +9,7 @@ router = APIRouter(prefix="/lessons", tags=["lessons"])
 
 
 def _lesson_to_response(doc: dict) -> dict:
-    """Convert MongoDB document to API response."""
+
     return {
         "id": str(doc["_id"]),
         "title": doc.get("title", ""),
@@ -26,9 +24,7 @@ def _lesson_to_response(doc: dict) -> dict:
 
 @router.post("", status_code=201)
 async def create_lesson(request: CreateLessonRequest):
-    """
-    Create a new lesson. No auth required per Core API spec.
-    """
+
     collection = get_lessons_collection()
     lesson_doc = {
         "title": request.title.strip(),
@@ -57,11 +53,7 @@ async def list_lessons(
     language: str | None = Query(None, description="Filter by language"),
     category: str | None = Query(None, description="Filter by category"),
 ):
-    """
-    List lessons with optional filters.
 
-    Query params: difficulty, language, category
-    """
     collection = get_lessons_collection()
     query: dict = {}
     if difficulty:
@@ -78,7 +70,7 @@ async def list_lessons(
 
 @router.get("/{lesson_id}")
 async def get_lesson(lesson_id: str):
-    """Get a single lesson by ID with full vocabulary and quiz data."""
+
     if not ObjectId.is_valid(lesson_id):
         raise HTTPException(status_code=400, detail="Invalid lesson ID")
 

@@ -1,17 +1,14 @@
 from datetime import datetime
 from typing import Literal
-
 from bson import ObjectId
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
-
 from database import get_recordings_collection
 from srcs.services.storage_service import upload_recording_from_bytes
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 
-
 def _recording_to_response(doc: dict) -> dict:
-    """Convert MongoDB document to API response (serialize ObjectId, datetime)."""
+
     out = {
         "id": str(doc["_id"]),
         "audioUrl": doc.get("audioUrl", ""),
@@ -30,11 +27,7 @@ async def list_recordings(
     language: str | None = Query(None, description="Filter by language"),
     userId: str | None = Query(None, description="Filter by user ID"),
 ):
-    """
-    List recordings with optional filters.
 
-    Query params: language, userId
-    """
     collection = get_recordings_collection()
     query: dict = {}
     if language:
@@ -49,7 +42,7 @@ async def list_recordings(
 
 @router.get("/{recording_id}")
 async def get_recording(recording_id: str):
-    """Get a single recording by ID."""
+
     if not ObjectId.is_valid(recording_id):
         raise HTTPException(status_code=400, detail="Invalid recording ID")
 
@@ -121,9 +114,13 @@ async def upload_recording(
     try:
         collection = get_recordings_collection()
         result = await collection.insert_one(recording)
-        recording["_id"] = str(result.inserted_id)
-        recording["userId"] = str(recording["userId"])
-        return recording
+        return {
+            "message": "Recording uploaded successfully",
+            "recording": _recording_to_response({
+                **recording,
+                "_id": result.inserted_id,
+            }),
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500,

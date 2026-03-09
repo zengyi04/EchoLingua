@@ -1,13 +1,12 @@
-"""MongoDB database connection and utilities."""
-
 import logging
 import os
-
+from pathlib import Path
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import PyMongoError
 
-load_dotenv()
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = "borneo_language_archive"
@@ -16,7 +15,6 @@ DATABASE_NAME = "borneo_language_archive"
 _client: AsyncIOMotorClient | None = None
 logger = logging.getLogger(__name__)
 
-
 def get_database():
     """Get MongoDB database instance. Creates connection if needed."""
     global _client
@@ -24,11 +22,9 @@ def get_database():
         _client = AsyncIOMotorClient(MONGODB_URI)
     return _client[DATABASE_NAME]
 
-
 def get_users_collection():
     """Get the users collection."""
     return get_database()["users"]
-
 
 async def ensure_indexes():
     """Create indexes for data integrity. Call on app startup. Matches db_docs.md."""
@@ -56,16 +52,13 @@ async def ensure_indexes():
             exc,
         )
 
-
 def get_recordings_collection():
     """Get the recordings collection."""
     return get_database()["recordings"]
 
-
 def get_stories_collection():
     """Get the stories collection."""
     return get_database()["stories"]
-
 
 def get_lessons_collection():
     """Get the lessons collection."""

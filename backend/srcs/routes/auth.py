@@ -1,7 +1,5 @@
 from datetime import datetime
-
 from fastapi import APIRouter, HTTPException
-
 from database import get_users_collection
 from dto.auth_dto import (
     AuthUserResponse,
@@ -14,15 +12,13 @@ from srcs.core.security import create_access_token, hash_password, verify_passwo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
 def _user_to_response(user_doc: dict) -> AuthUserResponse:
-    """Extract safe user fields for API response."""
+
     return AuthUserResponse(
         id=str(user_doc["_id"]),
         name=user_doc["name"],
         role=user_doc["role"],
     )
-
 
 @router.post("/register", response_model=RegisterResponse)
 async def register(request: RegisterRequest):
@@ -86,7 +82,6 @@ async def register(request: RegisterRequest):
         token=token,
         user=user_response,
     )
-
 
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):

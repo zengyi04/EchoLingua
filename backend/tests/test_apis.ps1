@@ -1,9 +1,5 @@
-# EchoLingua API smoke test
-# Run with server at http://localhost:8000
-# Usage: .\tests\test_apis.ps1  (from backend/)  or  powershell -File tests\test_apis.ps1
-
 $ErrorActionPreference = "Stop"
-$base = "http://localhost:8000"
+$base = if ($env:API_BASE_URL) { $env:API_BASE_URL } else { "http://localhost:8000" }
 $failed = 0
 
 function Test-Step {

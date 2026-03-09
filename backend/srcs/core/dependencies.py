@@ -1,11 +1,9 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
 from database import get_users_collection
 from srcs.core.security import decode_access_token
 
 security = HTTPBearer(auto_error=False)
-
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
