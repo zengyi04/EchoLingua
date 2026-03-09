@@ -16,7 +16,7 @@ router = APIRouter(prefix="/community", tags=["community"])
 
 # --- SETUP COLLECTIONS ---
 db = get_database()
-stories = get_stories_collection() # Using Member 3's helper function
+stories = get_stories_collection() 
 
 likes = db["likes"]
 comments = db["comments"]
