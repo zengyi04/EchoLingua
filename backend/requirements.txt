@@ -7,3 +7,4 @@ uvicorn
 supabase
 passlib[bcrypt]
 PyJWT[crypto]
+python-multipart

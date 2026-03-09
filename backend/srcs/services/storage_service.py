@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from supabase_client import supabase, SUPABASE_URL
+from supabase_client import SUPABASE_URL, get_supabase_client
 
 
 def upload_recording(file_path: str, file_name: str) -> str:
@@ -15,11 +15,17 @@ def upload_recording(file_path: str, file_name: str) -> str:
     Returns:
         Public URL of the uploaded file.
     """
+    supabase = get_supabase_client()
+
     with open(file_path, "rb") as f:
         supabase.storage.from_("recordings").upload(
             file_name,
             f,
         )
+
+    if not SUPABASE_URL:
+        raise RuntimeError("SUPABASE_URL is not configured in backend/.env")
+
     url = f"{SUPABASE_URL}/storage/v1/object/public/recordings/{file_name}"
     return url
 
