@@ -37,7 +37,7 @@ Return ONLY valid JSON matching this schema (no markdown fences):
   "anchor_text": "<transcribed anchor phrase>",
   "draft_dictionary_entry": {
     "id": "<generate-a-uuid>",
-    "language_id": "kadazan-demo",
+    "language_id": "<target-language-id>",
     "word": "<phonetic indigenous word>",
     "pos": "<part of speech>",
     "translation_malay": "<Malay meaning>",

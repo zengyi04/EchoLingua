@@ -45,6 +45,13 @@ class CLLDEntry(BaseModel):
 # Elicitation DTOs
 # ---------------------------------------------------------------------------
 
+class ElicitationTextRequest(BaseModel):
+    """Input for text-based elicitation."""
+
+    anchor_text: str
+    indigenous_response: str
+
+
 class ElicitationResponse(BaseModel):
     """Result of processing an elicitation audio / text pair."""
 
@@ -61,14 +68,24 @@ class ElicitationResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TranslationRequest(BaseModel):
-    """Input for translation: source text + verified dictionary."""
-
+    """Internal service parameters for translation."""
     source_text: str
     source_lang: str
     target_lang: str
     dictionary: list[CLLDEntry] = Field(
         ...,
         description="Verified CLLD dictionary injected from the DB",
+    )
+
+
+class TranslationAPIRequest(BaseModel):
+    """API input for translation."""
+    source_text: str
+    source_lang: str
+    target_lang: str
+    language_id: str = Field(
+        default="kadazan-demo",
+        description="Dictionary ID to use for RAG context",
     )
 
 
@@ -82,6 +99,23 @@ class TranslationResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Vision DTOs
 # ---------------------------------------------------------------------------
+
+class VisionRequest(BaseModel):
+    """Internal service parameters for vision-to-vocab lookup."""
+    description: str | None = None
+    image_bytes: bytes | None = None
+    mime_type: str | None = None
+    dictionary: list[CLLDEntry]
+
+
+class VisionAPIRequest(BaseModel):
+    """API input for vision-to-vocab lookup (text only)."""
+    description: str
+    language_id: str = Field(
+        default="kadazan-demo",
+        description="Dictionary ID to use for lookup",
+    )
+
 
 class VisionResponse(BaseModel):
     """Result of vision-to-vocab lookup."""
@@ -130,10 +164,18 @@ class StoryGenerateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TTSRequest(BaseModel):
-    """Input for TTS phoneme bridge."""
-
+    """Internal service parameters for TTS phoneme bridge."""
     indigenous_text: str
     dictionary: list[CLLDEntry]
+
+
+class TTSAPIRequest(BaseModel):
+    """API input for TTS phoneme bridge."""
+    indigenous_text: str
+    language_id: str = Field(
+        default="kadazan-demo",
+        description="Dictionary ID to use for pronunciation reference",
+    )
 
 
 class TTSResponse(BaseModel):

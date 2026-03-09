@@ -70,7 +70,7 @@ class TranslationService:
         source_text: str,
         source_lang: str,
         target_lang: str,
-        language_id: str = "kadazan-demo",
+        language_id: str,
     ) -> TranslationResponse:
         """Convenience method: fetches verified dictionary from repo before translating."""
         dictionary = await self.repo.get_verified(language_id)

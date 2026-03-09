@@ -70,7 +70,7 @@ class TTSService:
     async def to_phonemes_with_db(
         self,
         indigenous_text: str,
-        language_id: str = "kadazan-demo",
+        language_id: str,
     ) -> TTSResponse:
         """Convenience method: fetches verified dictionary from repo before converting to phonemes."""
         dictionary = await self.repo.get_verified(language_id)

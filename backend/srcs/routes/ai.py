@@ -1,0 +1,161 @@
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from srcs.core.dependencies import get_current_user
+from srcs.services.ai.ai_dtos import (
+    ElicitationTextRequest, ElicitationResponse,
+    TranslationRequest, TranslationAPIRequest, TranslationResponse,
+    VisionRequest, VisionAPIRequest, VisionResponse,
+    StoryGenerateRequest, StoryGenerateResponse,
+    TTSRequest, TTSAPIRequest, TTSResponse,
+    CLLDEntry
+)
+from srcs.services.ai.elicitation_service import elicitation_service
+from srcs.services.ai.translation_service import translation_service
+from srcs.services.ai.vision_service import vision_service
+from srcs.services.ai.story_service import story_service
+from srcs.services.ai.tts_service import tts_service
+from srcs.services.ai.dictionary_repo import DictionaryRepository, dictionary_repo
+
+
+def get_dictionary_repo() -> DictionaryRepository:
+    """Dependency for dictionary repository."""
+    return dictionary_repo
+
+router = APIRouter(prefix="/ai", tags=["ai"])
+
+# ---------------------------------------------------------------------------
+# Phase 1: Elicitation (Ingestion)
+# ---------------------------------------------------------------------------
+
+@router.post("/elicit/text", response_model=ElicitationResponse)
+async def elicit_text(
+    request: ElicitationTextRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Draft a dictionary entry from anchor text and indigenous response."""
+    try:
+        return await elicitation_service.process_text(
+            anchor_text=request.anchor_text,
+            indigenous_response=request.indigenous_response
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/elicit/audio", response_model=ElicitationResponse)
+async def elicit_audio(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    """Draft a dictionary entry from an audio recording."""
+    try:
+        audio_bytes = await file.read()
+        return await elicitation_service.process_audio(
+            audio_bytes=audio_bytes,
+            mime_type=file.content_type or "audio/mp3"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Verification (Management)
+# ---------------------------------------------------------------------------
+
+@router.get("/dictionary", response_model=list[CLLDEntry])
+async def list_dictionary(
+    status: str | None = Query(None, description="Filter by status (pending_verification|verified)"),
+    language_id: str = "kadazan-demo",
+    repo: DictionaryRepository = Depends(get_dictionary_repo),
+    user: dict = Depends(get_current_user)
+):
+    """List dictionary entries for review or reference."""
+    if status == "verified":
+        return await repo.get_verified(language_id)
+    elif status == "pending_verification":
+        all_entries = await repo.get_all(language_id)
+        return [e for e in all_entries if e.status == "pending_verification"]
+    else:
+        return await repo.get_all(language_id)
+
+@router.post("/dictionary/{entry_id}/verify")
+async def verify_entry(
+    entry_id: str,
+    repo: DictionaryRepository = Depends(get_dictionary_repo),
+    user: dict = Depends(get_current_user)
+):
+    """Linguist verification of a drafted entry."""
+    success = await repo.verify_entry(entry_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Entry not found or already verified")
+    return {"message": "Entry verified successfully"}
+
+@router.delete("/dictionary/{entry_id}")
+async def delete_entry(
+    entry_id: str,
+    repo: DictionaryRepository = Depends(get_dictionary_repo),
+    user: dict = Depends(get_current_user)
+):
+    """Reject/Delete a dictionary entry."""
+    success = await repo.delete_entry_by_uuid(entry_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return {"message": "Entry deleted successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Consumption (RAG)
+# ---------------------------------------------------------------------------
+
+@router.post("/translate", response_model=TranslationResponse)
+async def translate(
+    request: TranslationAPIRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Translate text using the verified dictionary (RAG)."""
+    try:
+        return await translation_service.translate_with_db(
+            source_text=request.source_text,
+            source_lang=request.source_lang,
+            target_lang=request.target_lang,
+            language_id=request.language_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/vision", response_model=VisionResponse)
+async def extract_vision(
+    request: VisionAPIRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Detect objects and look up indigenous vocab."""
+    try:
+        return await vision_service.extract_vocab_with_db(
+            description=request.description,
+            language_id=request.language_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/story", response_model=StoryGenerateResponse)
+async def generate_story(
+    request: StoryGenerateRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Generate a bilingual children's story."""
+    try:
+        return await story_service.generate_book(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/tts", response_model=TTSResponse)
+async def get_phonemes(
+    request: TTSAPIRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Convert indigenous text to IPA phonemes."""
+    try:
+        return await tts_service.to_phonemes_with_db(
+            indigenous_text=request.indigenous_text,
+            language_id=request.language_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

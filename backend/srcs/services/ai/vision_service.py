@@ -95,7 +95,7 @@ class VisionService:
         description: str | None = None,
         image_bytes: bytes | None = None,
         mime_type: str | None = None,
-        language_id: str = "kadazan-demo",
+        language_id: str = "kadazan-demo", # Keeping it here but will pass from route
     ) -> VisionResponse:
         """Convenience method: fetches verified dictionary from repo before performing vision task."""
         dictionary = await self.repo.get_verified(language_id)
