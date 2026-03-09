@@ -22,6 +22,8 @@ import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+const ROUTE_GREEN = '#4CAF50';
+const ROUTE_GREEN_DARK = '#2E7D32';
 
 // Google Maps APIs
 const GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
@@ -59,7 +61,12 @@ export default function MapScreen({ navigation }) {
   });
   const [userLocation, setUserLocation] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [originQuery, setOriginQuery] = useState('');
+  const [destinationQuery, setDestinationQuery] = useState('');
+  const [activeSearchField, setActiveSearchField] = useState('destination');
+  const [originLocation, setOriginLocation] = useState(null);
+  const [isFromFocused, setIsFromFocused] = useState(false);
+  const [currentLocationLabel, setCurrentLocationLabel] = useState('Current location');
   const [destination, setDestination] = useState(null);
   const [searchingDestination, setSearchingDestination] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -73,6 +80,8 @@ export default function MapScreen({ navigation }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const mapRef = useRef(null);
   const searchTimeoutRef = useRef(null);
+
+  const normalizeText = (value) => (value || '').toString().trim().toLowerCase();
 
   // Calculate distance between two coordinates (Haversine formula)
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -163,8 +172,13 @@ export default function MapScreen({ navigation }) {
   };
 
   // Debounced search function
-  const handleSearchQueryChange = (text) => {
-    setSearchQuery(text);
+  const handleSearchQueryChange = (field, text) => {
+    setActiveSearchField(field);
+    if (field === 'origin') {
+      setOriginQuery(text);
+    } else {
+      setDestinationQuery(text);
+    }
     
     // Clear previous timeout
     if (searchTimeoutRef.current) {
@@ -181,15 +195,33 @@ export default function MapScreen({ navigation }) {
 
     // Debounce search for 600ms
     searchTimeoutRef.current = setTimeout(() => {
-      performSearch(text);
+      performSearch(field, text);
     }, 600);
   };
 
-  const performSearch = async () => {
-    if (!searchQuery.trim() || !userLocation) {
+  const performSearch = async (field, queryText) => {
+    if (!queryText.trim() || !userLocation) {
       return;
     }
-    await searchPlacesWithGoogle();
+
+    setActiveSearchField(field);
+
+    // Fast local case-insensitive filter while remote search is in progress.
+    const normalizedQuery = normalizeText(queryText);
+    if (allSearchResults.length > 0) {
+      const locallyMatched = allSearchResults.filter((item) => {
+        const name = normalizeText(item.name);
+        const desc = normalizeText(item.description);
+        return name.includes(normalizedQuery) || desc.includes(normalizedQuery);
+      });
+
+      if (locallyMatched.length > 0) {
+        setSearchResults(locallyMatched.slice(0, 20));
+        setShowSearchResults(true);
+      }
+    }
+
+    await searchPlacesWithGoogle(field, queryText);
   };
 
   const requestLocationPermission = async () => {
@@ -207,6 +239,23 @@ export default function MapScreen({ navigation }) {
           latitudeDelta: 0.5,
           longitudeDelta: 0.5,
         });
+
+        // Best effort reverse geocode to show a human-readable current location.
+        try {
+          const address = await Location.reverseGeocodeAsync(userCoords);
+          if (address && address.length > 0) {
+            const first = address[0];
+            const number = first.streetNumber ? `${first.streetNumber} ` : '';
+            const street = first.street || first.name || '';
+            const city = first.city || first.subregion || first.region || '';
+            const label = `${number}${street}${city ? `, ${city}` : ''}`.trim();
+            if (label) {
+              setCurrentLocationLabel(label);
+            }
+          }
+        } catch (geocodeError) {
+          console.warn('Reverse geocode failed:', geocodeError);
+        }
       } else {
         Alert.alert(
           'Location Permission',
@@ -220,20 +269,51 @@ export default function MapScreen({ navigation }) {
     }
   };
 
+  const useCurrentLocationAsOrigin = () => {
+    if (!userLocation) {
+      Alert.alert('Location unavailable', 'Please enable location first.');
+      return;
+    }
+
+    const currentAsOrigin = {
+      id: 'current-location-origin',
+      name: currentLocationLabel,
+      description: 'Your current location',
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+      type: 'current_location',
+      languages: ['Global'],
+      icon: 'locate',
+      color: ROUTE_GREEN,
+    };
+
+    setOriginLocation(currentAsOrigin);
+    setOriginQuery(currentLocationLabel);
+    setShowSearchResults(false);
+    setIsFromFocused(false);
+
+    if (destination) {
+      fetchDirections(destination, currentAsOrigin);
+    }
+  };
+
   // Helper function to calculate distance between coordinates
 
-  const searchWorldDestination = async () => {
-    if (!searchQuery.trim() || !userLocation) {
+  const triggerSearchForField = async (field) => {
+    const queryText = field === 'origin' ? originQuery : destinationQuery;
+
+    if (!queryText.trim() || !userLocation) {
       Alert.alert('Error', 'Please enable location and enter a search term');
       return;
     }
 
-    await searchPlacesWithGoogle();
+    setActiveSearchField(field);
+    await searchPlacesWithGoogle(field, queryText);
   };
 
   // Search places worldwide using Google Places API
-  const searchPlacesWithGoogle = async () => {
-    if (!searchQuery.trim() || !userLocation) {
+  const searchPlacesWithGoogle = async (field, queryText) => {
+    if (!queryText.trim() || !userLocation) {
       return;
     }
 
@@ -241,7 +321,7 @@ export default function MapScreen({ navigation }) {
       setSearchingDestination(true);
       
       // Use Google Places API Text Search
-      const encoded = encodeURIComponent(searchQuery.trim());
+      const encoded = encodeURIComponent(queryText.trim());
       const url = `${GOOGLE_PLACES_API}?query=${encoded}&key=${GOOGLE_MAPS_API_KEY}`;
       
       const response = await fetch(url);
@@ -258,7 +338,7 @@ export default function MapScreen({ navigation }) {
           type: result.types?.[0] || 'Location',
           languages: ['Global'],
           icon: 'location',
-          color: '#1976D2',
+          color: ROUTE_GREEN_DARK,
           placeId: result.place_id,
         }));
 
@@ -306,13 +386,14 @@ export default function MapScreen({ navigation }) {
   };
 
   // Fetch directions from current location to destination
-  const fetchDirections = async (dest) => {
-    if (!userLocation || !dest) {
+  const fetchDirections = async (dest, originOverride = null) => {
+    const activeOrigin = originOverride || originLocation || userLocation;
+    if (!activeOrigin || !dest) {
       return;
     }
 
     try {
-      const origin = `${userLocation.latitude},${userLocation.longitude}`;
+      const origin = `${activeOrigin.latitude},${activeOrigin.longitude}`;
       const destination = `${dest.latitude},${dest.longitude}`;
       
       const url = `${GOOGLE_DIRECTIONS_API}?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}`;
@@ -482,8 +563,17 @@ export default function MapScreen({ navigation }) {
           }
         ]}
         onPress={() => {
-          handleMarkerPress(location);
-          setDestination(location);
+          if (activeSearchField === 'origin') {
+            setOriginLocation(location);
+            setOriginQuery(location.name);
+            if (destination) {
+              fetchDirections(destination, location);
+            }
+          } else {
+            handleMarkerPress(location);
+            setDestination(location);
+            setDestinationQuery(location.name);
+          }
           setShowSearchResults(false);
           // Animate map to show the selected location
           mapRef.current?.animateToRegion({
@@ -534,55 +624,156 @@ export default function MapScreen({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <TouchableOpacity
-          onPress={() => {
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.navigate('MainTabs', { screen: 'HomeTab' });
-            }
-          }}
-          style={styles.backButton}
-        >
-          <Ionicons name="chevron-back" size={28} color={theme.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Cultural Map</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Discover language learning places</Text>
-        </View>
-        <TouchableOpacity onPress={centerOnUserLocation} style={[styles.locationButton, { backgroundColor: theme.glassMedium }]}>
-          <MaterialCommunityIcons name="crosshairs-gps" size={24} color={theme.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchWrapper}>
-        <View style={[styles.searchContainer, { backgroundColor: theme.surface, shadowColor: theme.shadow }]}>
-          <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search places worldwide..."
-            placeholderTextColor={theme.textSecondary}
-            value={searchQuery}
-            onChangeText={handleSearchQueryChange}
-            onFocus={() => searchQuery && setShowSearchResults(true)}
+      {/* Map */}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        region={region}
+        onRegionChangeComplete={setRegion}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+      >
+        {/* Show destination marker */}
+        {destination && (
+          <Marker
+            key={destination.id}
+            coordinate={{
+              latitude: destination.latitude,
+              longitude: destination.longitude,
+            }}
+            title={destination.name}
+            description={destination.description}
+            onPress={() => handleMarkerPress(destination)}
+            pinColor={destination.color}
           />
-          <TouchableOpacity onPress={searchWorldDestination} disabled={searchingDestination}>
-            <Ionicons
-              name={searchingDestination ? 'time-outline' : 'locate'}
-              size={20}
-              color={theme.primary}
-            />
-          </TouchableOpacity>
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => {
-              setSearchQuery('');
-              setShowSearchResults(false);
-            }}>
-              <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
+        )}
+
+        {originLocation && (
+          <Marker
+            key={`origin-${originLocation.id}`}
+            coordinate={{
+              latitude: originLocation.latitude,
+              longitude: originLocation.longitude,
+            }}
+            title={originLocation.name}
+            description={'Start location'}
+            pinColor={ROUTE_GREEN}
+          />
+        )}
+
+        {/* Show route polyline from current location to destination */}
+        {routeCoordinates && routeCoordinates.length > 0 && (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor={ROUTE_GREEN}
+            strokeWidth={5}
+          />
+        )}
+      </MapView>
+
+      {/* Floating Route Panel */}
+      <View style={styles.searchWrapper}>
+        <View style={[styles.routePanel, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}> 
+          <View style={styles.routePanelHeader}>
+            <TouchableOpacity
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate('MainTabs', { screen: 'HomeTab' });
+                }
+              }}
+              style={[styles.roundIconButton, { backgroundColor: theme.glassMedium }]}
+            >
+              <Ionicons name="chevron-back" size={18} color={theme.primary} />
             </TouchableOpacity>
+            <Text style={[styles.routeTitle, { color: theme.text }]}>Route Planner</Text>
+            <TouchableOpacity onPress={centerOnUserLocation} style={[styles.roundIconButton, { backgroundColor: theme.glassMedium }]}> 
+              <MaterialCommunityIcons name="crosshairs-gps" size={18} color={theme.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.searchContainer, { backgroundColor: theme.background, borderColor: theme.border }]}> 
+            <Ionicons name="locate" size={16} color={ROUTE_GREEN_DARK} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: theme.text }]}
+              placeholder="From (current location or search)"
+              placeholderTextColor={theme.textSecondary}
+              value={originQuery}
+              onChangeText={(text) => handleSearchQueryChange('origin', text)}
+              autoCapitalize="none"
+              onFocus={() => {
+                setActiveSearchField('origin');
+                setIsFromFocused(true);
+                if (originQuery) setShowSearchResults(true);
+              }}
+              onBlur={() => {
+                setTimeout(() => setIsFromFocused(false), 120);
+              }}
+            />
+            <TouchableOpacity onPress={useCurrentLocationAsOrigin} style={styles.fromLocateButton}>
+              <MaterialCommunityIcons name="crosshairs-gps" size={22} color={ROUTE_GREEN_DARK} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => triggerSearchForField('origin')} disabled={searchingDestination}>
+              <Ionicons
+                name={searchingDestination ? 'time-outline' : 'arrow-forward-circle'}
+                size={20}
+                color={ROUTE_GREEN_DARK}
+              />
+            </TouchableOpacity>
+            {originQuery.length > 0 && (
+              <TouchableOpacity onPress={() => {
+                setOriginQuery('');
+                setOriginLocation(null);
+                setShowSearchResults(false);
+              }}>
+                <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={[styles.searchContainer, { backgroundColor: theme.background, borderColor: theme.border }]}> 
+            <Ionicons name="search" size={18} color={theme.textSecondary} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: theme.text }]}
+              placeholder="Search destination..."
+              placeholderTextColor={theme.textSecondary}
+              value={destinationQuery}
+              onChangeText={(text) => handleSearchQueryChange('destination', text)}
+              autoCapitalize="none"
+              onFocus={() => {
+                setActiveSearchField('destination');
+                if (destinationQuery) setShowSearchResults(true);
+              }}
+            />
+            <TouchableOpacity onPress={() => triggerSearchForField('destination')} disabled={searchingDestination}>
+              <Ionicons
+                name={searchingDestination ? 'time-outline' : 'arrow-forward-circle'}
+                size={20}
+                color={ROUTE_GREEN_DARK}
+              />
+            </TouchableOpacity>
+            {destinationQuery.length > 0 && (
+              <TouchableOpacity onPress={() => {
+                setDestinationQuery('');
+                setShowSearchResults(false);
+              }}>
+                <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {directions && (
+            <View style={styles.routeSummaryRow}>
+              <View style={[styles.routeChip, { backgroundColor: theme.glassMedium, borderColor: theme.border }]}> 
+                <Text style={[styles.routeChipTitle, { color: theme.textSecondary }]}>Shortest</Text>
+                <Text style={[styles.routeChipValue, { color: theme.text }]}>{directions.duration} • {directions.distance}</Text>
+              </View>
+              <View style={[styles.routeChip, styles.routeChipGreen]}> 
+                <Text style={styles.routeChipTitleGreen}>Greenest</Text>
+                <Text style={styles.routeChipValueGreen}>{directions.duration} • {directions.distance}</Text>
+              </View>
+            </View>
           )}
         </View>
 
@@ -623,40 +814,6 @@ export default function MapScreen({ navigation }) {
           </View>
         )}
       </View>
-
-      {/* Map */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        region={region}
-        onRegionChangeComplete={setRegion}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
-      >
-        {/* Show destination marker */}
-        {destination && (
-          <Marker
-            key={destination.id}
-            coordinate={{
-              latitude: destination.latitude,
-              longitude: destination.longitude,
-            }}
-            title={destination.name}
-            description={destination.description}
-            onPress={() => handleMarkerPress(destination)}
-            pinColor={destination.color}
-          />
-        )}
-        
-        {/* Show route polyline from current location to destination */}
-        {routeCoordinates && routeCoordinates.length > 0 && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#4CAF50"
-            strokeWidth={4}
-          />
-        )}
-      </MapView>
 
       {/* Selected Location Detail Card */}
       {selectedLocation && (
@@ -798,26 +955,99 @@ const styles = StyleSheet.create({
     padding: SPACING.s,
   },
   searchWrapper: {
-    position: 'relative',
+    position: 'absolute',
+    top: 30,
+    left: 0,
+    right: 0,
     zIndex: 1000,
+    paddingHorizontal: SPACING.m,
+  },
+  routePanel: {
+    borderRadius: SPACING.m,
+    borderWidth: 1,
+    padding: SPACING.s,
+    ...SHADOWS.large,
+  },
+  routePanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.s,
+  },
+  routeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
+  },
+  roundIconButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fromLocateButton: {
+    marginTop: 6,
+    marginRight: 2,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    margin: SPACING.m,
+    marginBottom: SPACING.xs,
     paddingHorizontal: SPACING.m,
-    paddingVertical: SPACING.s,
-    borderRadius: SPACING.m,
+    paddingVertical: 7,
+    borderRadius: SPACING.s,
     borderWidth: 1,
-    borderColor: COLORS.primary,
-    ...SHADOWS.medium,
+    borderColor: COLORS.border,
+  },
+  fromLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  routeSummaryRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+  },
+  routeChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: SPACING.xs,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  routeChipGreen: {
+    backgroundColor: '#E7F6EA',
+    borderColor: ROUTE_GREEN,
+  },
+  routeChipTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  routeChipValue: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  routeChipTitleGreen: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: ROUTE_GREEN_DARK,
+  },
+  routeChipValueGreen: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+    color: ROUTE_GREEN_DARK,
   },
   searchResultsDropdown: {
     position: 'absolute',
-    top: 60,
-    left: SPACING.m,
-    right: SPACING.m,
+    top: 214,
+    left: 0,
+    right: 0,
     backgroundColor: COLORS.surface,
     borderRadius: SPACING.m,
     ...SHADOWS.large,
@@ -893,7 +1123,7 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.s,
     borderRadius: SPACING.m,
     borderLeftWidth: 4,
-    width: 320,
+    width: 334,
     ...SHADOWS.small,
   },
   locationIconContainer: {
@@ -1005,10 +1235,10 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   wazeButton: {
-    backgroundColor: '#33CCFF',
+    backgroundColor: ROUTE_GREEN,
   },
   googleButton: {
-    backgroundColor: '#4285F4',
+    backgroundColor: ROUTE_GREEN_DARK,
   },
   navButtonText: {
     fontSize: 16,

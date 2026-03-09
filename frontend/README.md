@@ -19,7 +19,19 @@ npm install
 yarn install
 ```
 
-4. Start the Expo app:
+4. Configure environment variables:
+
+```bash
+cp .env.example .env
+```
+
+Set your Google Maps key in `frontend/.env`:
+
+```env
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+```
+
+5. Start the Expo app:
 
 ```bash
 npm start
@@ -36,21 +48,21 @@ npm start --tunnel
 - Persistent auth session check on app startup (`AppNavigator` + AsyncStorage)
 - Bottom-tab navigation for Home, Learn, Record, Stories, and Profile
 - Dark glassmorphism visual system applied across screens
-- Reusable theming via `src/constants/theme.js`
+- Reusable theming and theme context (`src/constants/theme.js`, `src/context/ThemeContext.js`)
 
 ### Learning and Practice
 - Living language learning hub (`LivingLanguageScreen`)
-- Vocabulary learning cards and word practice (`VocabularyScreen`, `VocabularyCard`)
-- Story learning with audio controls, bilingual mode, and child-friendly mode (`StoryScreen`)
+- Vocabulary learning cards and word practice with difficulty flows (`VocabularyScreen`, `VocabularyCard`)
+- Story learning with audio controls, elder mode, and narrator selection (`StoryScreen`)
 - Story library browsing (`StoryLibraryScreen`)
 - Logic-based quiz system with progressive difficulty (easy, medium, hard)
 - Quiz coverage for all supported languages through shared quiz generation (`src/data/logicBasedQuizzes.js`, `src/data/mockData.js`)
 
 ### AI Features
 - AI chat for language conversation practice (`AIChatScreen`)
-- AI pronunciation analysis service with scoring and feedback (`pronunciationCheckerService.js`)
-- Pronunciation comparison and pronunciation tips service methods
+- AI pronunciation analysis, comparison, and pronunciation tips services (`pronunciationCheckerService.js`)
 - Translation utility service for language support (`translationService.js`)
+- AI story generation flow (`AIStoryGeneratorScreen`)
 
 ### Recording and Audio
 - In-app voice recording workflow (`RecordScreen`, `recordingService.js`)
@@ -63,8 +75,7 @@ npm start --tunnel
 - Community story sharing feed (`CommunityStoryScreen`)
 - Upload and publish recorded stories
 - Story interactions: like, comment, bookmark
-- Follow/unfollow storytellers
-- Story search and filtering by language, category, and feed tab
+- Story feed tabs and search/filter support (all/following/popular, language/category)
 - Community contribution entry point (`CommunityContributionScreen`)
 
 ### Progress and Gamification
@@ -85,11 +96,13 @@ npm start --tunnel
 - Multi-member family learning mode (`FamilyLearningScreen`)
 - Role-based family profiles (parent, child, grandparent, teen)
 - Shared and individual progress tracking for family members
+- Family story-time experience (`FamilyStoryTimeScreen`)
 - Emergency contact reference screen (`EmergencyContactsScreen`)
 
 ### Profile and User Data
 - User profile screens (`ProfileScreen`, `UserProfileScreen`)
 - Local persistence for user data and app state (AsyncStorage)
+- In-app notifications screen (`NotificationScreen`)
 
 ### Offline and Data Services
 - Offline learning content caching support (`offlineLearningService.js`)
@@ -97,6 +110,7 @@ npm start --tunnel
 - Offline storage size tracking, cleanup, and sync helpers
 - API abstraction layer for backend integrations (`api.js`)
 - Scoring utilities for quiz and scenario logic (`scoringService.js`)
+- Image scan and OCR-based vocabulary extraction support (`ScanImageScreen`, `ImageVocabularyScreen`, `ocrService.js`)
 
 ## Key Paths
 
