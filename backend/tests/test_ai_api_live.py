@@ -1,7 +1,7 @@
 import os
 import sys
+import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,135 +11,162 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from main import app
 from srcs.core.dependencies import get_current_user
-from srcs.services.ai.elicitation_service import elicitation_service
-from srcs.services.ai.translation_service import translation_service
-from srcs.services.ai.vision_service import vision_service
-from srcs.services.ai.story_service import story_service
-from srcs.services.ai.tts_service import tts_service
-from srcs.services.ai.dictionary_repo import DictionaryRepository
-from srcs.services.ai.mock_clld_data import get_mock_dictionary
-from srcs.routes.ai import get_dictionary_repo
+from srcs.services.ai.dictionary_repo import dictionary_repo
+from srcs.services.ai.ai_dtos import CLLDEntry
 
 # ---------------------------------------------------------------------------
-# MOCK SETUP (No DB Pollution)
+# LIVE SETUP (Connects to real DB)
 # ---------------------------------------------------------------------------
 
-# 1. Mock Authentication
+# Use an isolated language_id to avoid polluting production data
+TEST_LANG_ID = "test-live-run"
+
+# Mock Authentication (bypass JWT)
 async def mock_get_current_user():
-    return {"id": "test-user-123", "username": "test_linguist"}
-
-# 2. Mock Repository
-mock_repo = AsyncMock(spec=DictionaryRepository)
-mock_entries = get_mock_dictionary()
-
-# Setup default mock behaviors
-mock_repo.get_verified.return_value = mock_entries
-mock_repo.get_all.return_value = mock_entries
-mock_repo.save_entries.return_value = len(mock_entries)
-mock_repo.save_entry.return_value = "mock-uuid-123"
-mock_repo.verify_entry.return_value = True
-mock_repo.delete_entry_by_uuid.return_value = True
-
-def mock_get_dictionary_repo():
-    return mock_repo
+    return {"id": "test-user-live", "username": "test_linguist_live"}
 
 app.dependency_overrides[get_current_user] = mock_get_current_user
-app.dependency_overrides[get_dictionary_repo] = mock_get_dictionary_repo
-
-# 3. Inject Mock Repo into Services (Dependency Injection)
-# This is double-safety: injection via dependency overrides handles routes, 
-# and manual injection handles direct service calls if any.
-elicitation_service.repo = mock_repo
-translation_service.repo = mock_repo
-vision_service.repo = mock_repo
-tts_service.repo = mock_repo
 
 client = TestClient(app)
 
 # ---------------------------------------------------------------------------
-# LIVE API TESTS (Phase 1: Elicitation)
+# CLEANUP FIXTURE
 # ---------------------------------------------------------------------------
 
-def test_elicit_text_live():
-    """Test elicitation route with live LLM call."""
+@pytest.fixture
+async def db_cleanup():
+    """Tracks entry IDs created during tests and deletes them after."""
+    created_ids = []
+    yield created_ids
+    
+    print(f"\n[Cleanup] Removing {len(created_ids)} test entries...")
+    for entry_id in created_ids:
+        await dictionary_repo.delete_entry_by_uuid(entry_id)
+
+@pytest.fixture(scope="module")
+def anyio_backend():
+    return "asyncio"
+
+# ---------------------------------------------------------------------------
+# API TESTS
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_elicit_text_live_workflow(db_cleanup):
+    """
+    Test the full elicitation -> verification -> deletion workflow.
+    This hits the Live LLM and Live Database.
+    """
+    # 1. ELICIT
     payload = {
-        "anchor_text": "I want to drink water",
-        "indigenous_response": "Mogihon oku nahu"
+        "anchor_text": "I want to eat rice",
+        "indigenous_response": "Makan nahu oku do baras"
     }
     response = client.post("/ai/elicit/text", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert "draft_dictionary_entry" in data
-    assert data["draft_dictionary_entry"]["word"] != ""
-    # Ensure it didn't hit real DB by checking if mock_repo was called
-    # (Optional, but confirms our safety)
+    
+    entry = data["draft_dictionary_entry"]
+    entry_id = entry["id"]
+    db_cleanup.append(entry_id) # Register for cleanup
+    
+    # Force language_id to our test bucket for safety if LLM hallucinated
+    entry["language_id"] = TEST_LANG_ID
+    
+    # 2. SAVE (Manually via repo for testing, though elicit usually doesn't save automatically)
+    # The route /ai/elicit/text just returns the draft. 
+    # Let's save it so we can test the Management routes.
+    from srcs.services.ai.ai_dtos import CLLDEntry
+    clld_obj = CLLDEntry.model_validate(entry)
+    await dictionary_repo.save_entry(clld_obj)
+    
+    # 3. LIST (Management)
+    list_response = client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
+    assert list_response.status_code == 200
+    entries = list_response.json()
+    assert any(e["id"] == entry_id for e in entries)
+    
+    # 4. VERIFY (Management)
+    verify_response = client.post(f"/ai/dictionary/{entry_id}/verify")
+    assert verify_response.status_code == 200
+    assert verify_response.json()["message"] == "Entry verified successfully"
+    
+    # Verify status changed in DB
+    list_verified = client.get(f"/ai/dictionary?status=verified&language_id={TEST_LANG_ID}")
+    assert any(e["id"] == entry_id for e in list_verified.json())
+    
+    # 5. DELETE (Management)
+    delete_response = client.delete(f"/ai/dictionary/{entry_id}")
+    assert delete_response.status_code == 200
+    
+    # Verify gone
+    list_after = client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
+    assert not any(e["id"] == entry_id for e in list_after.json())
 
-def test_elicit_audio_live():
-    """Test elicitation route with dummy audio file."""
-    # We use a tiny 1-byte file to test the route flow
-    files = {"file": ("test.mp3", b"\x00", "audio/mpeg")}
-    response = client.post("/ai/elicit/audio", files=files)
-    # This might fail if the LLM provider rejects 1-byte audio, 
-    # but the route logic itself is tested.
-    assert response.status_code in [200, 500] 
-
-# ---------------------------------------------------------------------------
-# LIVE API TESTS (Phase 2: Management)
-# ---------------------------------------------------------------------------
-
-def test_list_dictionary_live():
-    """Test listing dictionary entries (Mocked DB)."""
-    response = client.get("/ai/dictionary")
-    assert response.status_code == 200
-    assert len(response.json()) > 0
-
-def test_verify_entry_live():
-    """Test verifying an entry (Mocked DB)."""
-    response = client.post("/ai/dictionary/mock-uuid-123/verify")
-    assert response.status_code == 200
-    assert response.json()["message"] == "Entry verified successfully"
-
-def test_delete_entry_live():
-    """Test deleting an entry (Mocked DB)."""
-    response = client.delete("/ai/dictionary/mock-uuid-123")
-    assert response.status_code == 200
-    assert response.json()["message"] == "Entry deleted successfully"
-
-# ---------------------------------------------------------------------------
-# LIVE API TESTS (Phase 3: Consumption)
-# ---------------------------------------------------------------------------
-
-def test_translate_live():
-    """Test translation route with live LLM + Mocked RAG."""
+@pytest.mark.anyio
+async def test_translate_live(db_cleanup):
+    """Test translation with Live LLM + Live DB (RAG)."""
+    # Setup: Add a custom word to DB
+    test_id = str(uuid.uuid4())
+    db_cleanup.append(test_id)
+    word_entry = CLLDEntry(
+        id=test_id,
+        word="Mogihon",
+        pos="verb",
+        translation_malay="Makan",
+        translation_english="Eat",
+        language_id=TEST_LANG_ID,
+        status="verified"
+    )
+    await dictionary_repo.save_entry(word_entry)
+    
     payload = {
-        "source_text": "The beautiful river flows",
+        "source_text": "I want to eat",
         "source_lang": "English",
-        "target_lang": "Kadazan"
+        "target_lang": "Kadazan",
+        "language_id": TEST_LANG_ID
     }
     response = client.post("/ai/translate", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "translated_text" in data
-    assert len(data["words_used_from_dict"]) >= 0
+    # The LLM should ideally use our injected word "Mogihon"
+    assert "Mogihon" in data["translated_text"] or len(data["words_used_from_dict"]) > 0
 
-def test_vision_live():
-    """Test vision analysis with live LLM."""
+@pytest.mark.anyio
+async def test_vision_live(db_cleanup):
+    """Test vision analysis with Live LLM + Live DB."""
+    # Setup: Add a keyword to DB
+    test_id = str(uuid.uuid4())
+    db_cleanup.append(test_id)
+    await dictionary_repo.save_entry(CLLDEntry(
+        id=test_id,
+        word="Walai",
+        pos="noun",
+        translation_malay="Rumah",
+        translation_english="House",
+        language_id=TEST_LANG_ID,
+        status="verified"
+    ))
+    
     payload = {
-        "description": "A traditional wooden house by the river"
+        "description": "A beautiful big house near the river",
+        "language_id": TEST_LANG_ID
     }
     response = client.post("/ai/vision", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert "detected_english" in data
-    assert "indigenous_word" in data
+    assert data["found_in_dictionary"] is True
+    assert data["indigenous_word"] == "Walai"
 
-def test_story_live():
-    """Test story generation with live LLM."""
+@pytest.mark.anyio
+async def test_story_live():
+    """Test story generation with Live LLM."""
     payload = {
         "annotated_text": [
             {"indigenous_text": "Oku mogihon do walai", "malay_translation": "Saya makan di rumah"}
         ],
-        "grammar_rules": ["S-V-O order"]
+        "grammar_rules": ["S-V-O order", "Subject focus prefix 'm-'"]
     }
     response = client.post("/ai/story", json=payload)
     assert response.status_code == 200
@@ -147,10 +174,26 @@ def test_story_live():
     assert "title" in data
     assert len(data["pages"]) > 0
 
-def test_tts_live():
-    """Test IPA phonetic bridge with live LLM/Rule-base."""
+@pytest.mark.anyio
+async def test_tts_live(db_cleanup):
+    """Test phoneme bridge with Live LLM + Live DB."""
+    # Setup: Add pronunciation hint
+    test_id = str(uuid.uuid4())
+    db_cleanup.append(test_id)
+    await dictionary_repo.save_entry(CLLDEntry(
+        id=test_id,
+        word="Nahu",
+        pos="particle",
+        translation_malay="Sudah",
+        translation_english="Already",
+        cultural_note="Pronounced with a glottal stop at the end /nahuʔ/",
+        language_id=TEST_LANG_ID,
+        status="verified"
+    ))
+    
     payload = {
-        "indigenous_text": "Oku mogihon do walai"
+        "indigenous_text": "Makan nahu oku",
+        "language_id": TEST_LANG_ID
     }
     response = client.post("/ai/tts", json=payload)
     assert response.status_code == 200
@@ -159,6 +202,6 @@ def test_tts_live():
     assert "pronunciation_guide" in data
 
 if __name__ == "__main__":
-    # Allow running directly for quick check if pytest is not available
-    print("Running Live API Tests (Dry Run)...")
-    # In a real shell, one would run `pytest tests/test_ai_api_live.py`
+    import asyncio
+    # For manual running without pytest
+    print("Run this file using: pytest tests/test_ai_api_live.py")
