@@ -1,11 +1,9 @@
 from datetime import datetime
 from typing import List, Literal, Optional
-
 from pydantic import BaseModel, EmailStr
 
-
 class UserMeResponse(BaseModel):
-    """Response for GET /users/me."""
+    # Response for GET /users/me.
 
     id: str
     name: str
@@ -13,7 +11,6 @@ class UserMeResponse(BaseModel):
     role: str
     points: int = 0
     badges: List[str] = []
-
 
 class UserDTO(BaseModel):
     name: str

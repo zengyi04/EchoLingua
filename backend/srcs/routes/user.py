@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends
-
 from dto.user_dto import UserMeResponse
 from srcs.core.dependencies import get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
-
 
 @router.get("/me", response_model=UserMeResponse)
 async def get_current_user_profile(user: dict = Depends(get_current_user)):

@@ -1,8 +1,6 @@
 import tempfile
 from pathlib import Path
-
 from supabase_client import supabase, SUPABASE_URL
-
 
 def upload_recording(file_path: str, file_name: str) -> str:
     """
@@ -22,7 +20,6 @@ def upload_recording(file_path: str, file_name: str) -> str:
         )
     url = f"{SUPABASE_URL}/storage/v1/object/public/recordings/{file_name}"
     return url
-
 
 def upload_recording_from_bytes(file_content: bytes, file_name: str) -> str:
     """

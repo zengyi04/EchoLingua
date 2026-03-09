@@ -1,11 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
-
 from pydantic import BaseModel, Field
 
-
 class CreateStoryRequest(BaseModel):
-    """Request body for POST /stories."""
+    # Request body for POST /stories.
 
     title: str = Field(..., min_length=1, max_length=300)
     language: str = Field(..., min_length=1, max_length=50)
@@ -14,9 +12,8 @@ class CreateStoryRequest(BaseModel):
     audioUrl: Optional[str] = Field(None)
     tags: List[str] = Field(default_factory=list, max_length=20)
 
-
 class StoryResponse(BaseModel):
-    """Story in API responses."""
+    # Story in API responses.
 
     id: str
     title: str
@@ -27,7 +24,6 @@ class StoryResponse(BaseModel):
     createdBy: Optional[str] = None
     tags: List[str] = []
     createdAt: Optional[datetime] = None
-
 
 class StoryDTO(BaseModel):
     title: str
