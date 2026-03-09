@@ -294,28 +294,36 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.profileCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <TouchableOpacity 
-            style={[styles.avatarContainer, { backgroundColor: theme.primary }]}
-            onPress={handleChangeProfilePicture}
-            activeOpacity={0.8}
-          >
-            {currentUser?.profileImage ? (
-              <Image 
-                source={{ uri: currentUser.profileImage }} 
-                style={styles.avatarImage}
-              />
-            ) : (
-              <Text style={[styles.avatarText, { color: theme.surface }]}>
-                {currentUser?.fullName 
-                  ? currentUser.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-                  : 'JD'}
-              </Text>
-            )}
-            <View style={[styles.cameraIconOverlay, { backgroundColor: theme.primary }]}>
-              <Ionicons name="camera" size={16} color={theme.surface} />
-            </View>
-          </TouchableOpacity>
+        <View style={[styles.profileCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+          <View style={styles.avatarWrap}>
+            <TouchableOpacity
+              style={[styles.avatarContainer, { backgroundColor: theme.primary, borderColor: theme.surface }]}
+              onPress={handleChangeProfilePicture}
+              activeOpacity={0.85}
+            >
+              {currentUser?.profileImage ? (
+                <Image
+                  source={{ uri: currentUser.profileImage }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Text style={[styles.avatarText, { color: theme.surface }]}> 
+                  {currentUser?.fullName
+                    ? currentUser.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+                    : 'JD'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.cameraIconOverlay, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={handleChangeProfilePicture}
+              activeOpacity={0.9}
+            >
+              <Ionicons name="camera" size={16} color={theme.primary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.avatarHint, { color: theme.textSecondary }]}>Tap to change photo</Text>
           <Text style={[styles.userName, { color: theme.text }]}>{currentUser?.fullName || 'User Profile'}</Text>
           {userProfile && (
             <>
@@ -738,38 +746,46 @@ const styles = StyleSheet.create({
   topBarTitle: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   content: { padding: SPACING.l, paddingBottom: SPACING.xl },
   profileCard: { backgroundColor: COLORS.glassLight, borderColor: 'rgba(255, 255, 255, 0.6)', borderWidth: 1, borderRadius: SPACING.l, padding: SPACING.l, alignItems: 'center', marginBottom: SPACING.l, ...SHADOWS.small },
+  avatarWrap: {
+    position: 'relative',
+    marginBottom: SPACING.xs,
+  },
   avatarContainer: { 
-    width: 70, 
-    height: 70, 
-    borderRadius: 35, 
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: COLORS.primary, 
     justifyContent: 'center', 
     alignItems: 'center', 
-    marginBottom: SPACING.s,
-    position: 'relative',
+    borderWidth: 3,
     overflow: 'hidden',
   },
   avatarImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 35,
+    borderRadius: 48,
   },
   avatarText: { 
-    fontSize: 28, 
+    fontSize: 34,
     fontWeight: '700', 
     color: COLORS.surface 
   },
   cameraIconOverlay: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    bottom: 2,
+    right: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderWidth: 1,
+    ...SHADOWS.small,
+  },
+  avatarHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: SPACING.s,
   },
   userName: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   userLevel: { fontSize: 13, color: COLORS.textSecondary },
