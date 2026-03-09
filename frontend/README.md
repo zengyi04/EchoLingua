@@ -19,7 +19,19 @@ npm install
 yarn install
 ```
 
-4. Start the Expo app:
+4. Configure environment variables:
+
+```bash
+cp .env.example .env
+```
+
+Set your Google Maps key in `frontend/.env`:
+
+```env
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+```
+
+5. Start the Expo app:
 
 ```bash
 npm start
