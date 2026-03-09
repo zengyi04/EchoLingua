@@ -1,11 +1,12 @@
 """Mock CLLD dictionary data for smoke-testing AI services.
 
-Contains ~12 Kadazan-Malay-English entries representing a minimal
-verified dictionary.  The ``__main__`` block seeds the MongoDB
-``dictionary`` collection so downstream services can read from it.
+Contains ~12 Kadazan-Malay-English entries. The ``__main__`` block
+seeds the MongoDB ``dictionary`` collection using DI.
 """
 
 from srcs.services.ai.ai_dtos import CLLDEntry
+
+__all__ = ["get_mock_dictionary"]
 
 
 def get_mock_dictionary() -> list[CLLDEntry]:
@@ -153,15 +154,16 @@ if __name__ == "__main__":
     import sys
     import traceback
 
-    from srcs.services.ai import dictionary_repo
+    from srcs.services.ai.dictionary_repo import dictionary_repo
 
     async def main() -> None:
-        print("=== Mock CLLD Data — Seeding DB ===\n")
+        print("=== Mock CLLD Data — DI Seeding DB ===\n")
         entries: list[CLLDEntry] = get_mock_dictionary()
 
         try:
+            # Use singleton
             count: int = await dictionary_repo.save_entries(entries)
-            print(f"Seeded {count} verified entries into MongoDB 'dictionary' collection.\n")
+            print(f"Seeded {count} verified entries into MongoDB.\n")
 
             # Verify by fetching back
             verified: list[CLLDEntry] = await dictionary_repo.get_verified()
@@ -170,7 +172,7 @@ if __name__ == "__main__":
                 print(f"  - {e.word} ({e.pos}): {e.translation_english} | audio: {e.source_audio_url}")
 
             print("\nNOTE: These entries are persistent for downstream testing.")
-            print("To clear them, you would need to run a delete command or manually purge the 'dictionary' collection.")
+            print("To clear them, run the dictionary_repo test or manually purge.")
 
         except Exception as exc:
             traceback.print_exc()

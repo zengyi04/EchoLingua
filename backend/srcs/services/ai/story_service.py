@@ -1,7 +1,7 @@
 """Story Service — generates bilingual children's storybooks.
 
-Takes annotated parallel text (indigenous ↔ Malay) plus grammar rules
-and produces a structured storybook with pages and image-generation prompts.
+Combines parallel indigenous-Malay text and grammar rules into a structured
+multipage story via LLM.
 """
 
 import json
@@ -9,73 +9,55 @@ import traceback
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from srcs.services.ai.ai_dtos import (
-    AnnotatedParallelText,
-    StoryGenerateRequest,
-    StoryGenerateResponse,
-    StoryPage,
-)
-from srcs.services.ai.rotating_llm import RotatingLLM, LLMResponse
+from srcs.services.ai.ai_dtos import AnnotatedParallelText, StoryGenerateRequest, StoryGenerateResponse
+from srcs.services.ai.rotating_llm import RotatingLLM, LLMResponse, rotating_llm
 
+__all__ = ["StoryService", "story_service"]
+
+# ---------------------------------------------------------------------------
+# System prompt for story generation
+# ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT: str = """\
-You are a children's book author specialising in bilingual indigenous-language storybooks for Borneo communities.
+You are a children's book author specialising in Borneo indigenous stories.
 
-Given parallel text (indigenous ↔ Malay) and grammar rules, create a short illustrated children's story.
+Your task:
+1. Take a list of parallel sentences (indigenous origin + Malay translation).
+2. Expand them into a bilingual (Indigenous/English) children's storybook.
+3. Ensure the grammar follows the provided rules.
+4. For each page, provide a vivid image-generation prompt for an illustrator.
 
-Rules:
-- Use ONLY the provided indigenous vocabulary and grammar — never invent new words.
-- Each page has: indigenous text, English translation, and a vivid image-generation prompt.
-- Keep sentences short and child-friendly (ages 5-10).
-- The story should teach cultural values or daily life themes.
-
-Return ONLY valid JSON (no markdown fences) matching:
+Return ONLY valid JSON matching this schema (no markdown fences):
 {
-  "title": "<bilingual title>",
+  "title": "<Story Title>",
   "pages": [
     {
       "page_number": 1,
       "indigenous_text": "<text>",
-      "english_translation": "<text>",
-      "image_generation_prompt": "<vivid description for image AI>"
+      "english_translation": "<translation>",
+      "image_generation_prompt": "<vivid detailed description>"
     }
   ]
 }
-
-Generate 3-5 pages.
 """
 
 
 class StoryService:
-    """Generates bilingual children's storybooks from parallel text."""
+    """Generates bilingual stories using Dependency Injection."""
 
-    @staticmethod
+    def __init__(self, llm: RotatingLLM):
+        self.llm = llm
+
     async def generate_book(
-        llm: RotatingLLM,
+        self,
         request: StoryGenerateRequest,
     ) -> StoryGenerateResponse:
-        """Generate a bilingual storybook.
-
-        Args:
-            llm: RotatingLLM instance.
-            request: Parallel text and grammar rules.
-
-        Returns:
-            StoryGenerateResponse with title and pages.
-
-        Raises:
-            RuntimeError: If the LLM fails to return parseable JSON.
-        """
-        parallel_json: str = json.dumps(
-            [t.model_dump() for t in request.annotated_text],
-            ensure_ascii=False,
-        )
-
+        """Create a bilingual storybook with image prompts from parallel text."""
         human_text: str = (
-            f"Parallel text:\n{parallel_json}\n\n"
-            f"Grammar rules:\n"
-            + "\n".join(f"- {rule}" for rule in request.grammar_rules)
-            + "\n\nGenerate a bilingual children's storybook."
+            "Based on these parallel texts and grammar rules, generate a 3-page story.\n\n"
+            f"Parallel Text: {json.dumps([p.model_dump() for p in request.annotated_text], ensure_ascii=False)}\n"
+            f"Grammar Rules: {request.grammar_rules}\n\n"
+            "Produce the story title and pages."
         )
 
         messages = [
@@ -83,49 +65,38 @@ class StoryService:
             HumanMessage(content=human_text),
         ]
 
-        result: LLMResponse = await llm.send_message_get_json(messages, temperature=0.4)
+        result: LLMResponse = await self.llm.send_message_get_json(messages)
         if result.json_data is None:
             raise RuntimeError(f"Failed to parse story JSON: {result.text}")
 
         return StoryGenerateResponse.model_validate(result.json_data)
 
 
+# Global Singleton for DI
+story_service = StoryService(llm=rotating_llm)
+
+
 if __name__ == "__main__":
     import asyncio
     import sys
 
-    from srcs.services.ai.rotating_llm import rotating_llm
-
     async def main() -> None:
-        print("=== Story Service ===\n")
+        print("=== Story Service — DI Test ===\n")
 
         request = StoryGenerateRequest(
             annotated_text=[
-                AnnotatedParallelText(
-                    indigenous_text="Oku mogihon do walai.",
-                    malay_translation="Saya makan di rumah.",
-                ),
-                AnnotatedParallelText(
-                    indigenous_text="Tompok do pogun pomoguon.",
-                    malay_translation="Pokok di kampung cantik.",
-                ),
-                AnnotatedParallelText(
-                    indigenous_text="Nahu do sungoi toos.",
-                    malay_translation="Air di sungai besar.",
-                ),
+                AnnotatedParallelText(indigenous_text="Oku mogihon do walai", malay_translation="Saya makan di rumah"),
+                AnnotatedParallelText(indigenous_text="Pogun diti pomoguon", malay_translation="Kampung ini cantik"),
             ],
             grammar_rules=[
-                "'do' is a locative preposition meaning 'at/in'",
-                "Adjectives follow the noun they modify",
-                "Subject typically comes before the verb",
+                "Subject-Verb-Object word order",
+                "Adjectives follow the noun",
             ],
         )
 
         try:
-            response: StoryGenerateResponse = await StoryService.generate_book(
-                llm=rotating_llm,
-                request=request,
-            )
+            # Use singleton
+            response: StoryGenerateResponse = await story_service.generate_book(request)
             print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False))
         except Exception as exc:
             traceback.print_exc()

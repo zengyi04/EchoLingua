@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import PyMongoError
+import certifi
 
 _env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=_env_path)
@@ -19,7 +20,10 @@ def get_database():
     """Get MongoDB database instance. Creates connection if needed."""
     global _client
     if _client is None:
-        _client = AsyncIOMotorClient(MONGODB_URI)
+        _client = AsyncIOMotorClient(
+            MONGODB_URI,
+            tlsCAFile=certifi.where()
+        )
     return _client[DATABASE_NAME]
 
 def get_users_collection():

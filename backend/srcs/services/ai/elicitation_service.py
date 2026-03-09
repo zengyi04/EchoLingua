@@ -13,7 +13,10 @@ from pathlib import Path
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from srcs.services.ai.ai_dtos import CLLDEntry, ElicitationResponse
-from srcs.services.ai.rotating_llm import RotatingLLM, LLMResponse
+from srcs.services.ai.rotating_llm import RotatingLLM, LLMResponse, rotating_llm
+from srcs.services.ai.dictionary_repo import DictionaryRepository, dictionary_repo
+
+__all__ = ["ElicitationService", "elicitation_service"]
 
 # ---------------------------------------------------------------------------
 # System prompt shared by both audio and text paths
@@ -50,29 +53,19 @@ Return ONLY valid JSON matching this schema (no markdown fences):
 
 
 class ElicitationService:
-    """Drafts CLLD dictionary entries from elicitation sessions."""
+    """Drafts CLLD dictionary entries from elicitation sessions using Dependency Injection."""
 
-    @staticmethod
+    def __init__(self, llm: RotatingLLM, repo: DictionaryRepository):
+        self.llm = llm
+        self.repo = repo
+
     async def process_audio(
-        llm: RotatingLLM,
+        self,
         audio_bytes: bytes,
         mime_type: str = "audio/mp3",
         source_audio_url: str | None = None,
     ) -> ElicitationResponse:
-        """Process an audio recording containing a Malay anchor + indigenous response.
-
-        Args:
-            llm: RotatingLLM instance.
-            audio_bytes: Raw audio file bytes.
-            mime_type: MIME type of the audio (e.g. ``audio/mp3``, ``audio/wav``).
-            source_audio_url: URL where the audio is stored (set on the drafted entry).
-
-        Returns:
-            ElicitationResponse with the drafted dictionary entry.
-
-        Raises:
-            RuntimeError: If the LLM fails to return parseable JSON.
-        """
+        """Process an audio recording containing a Malay anchor + indigenous response."""
         b64_audio: str = base64.b64encode(audio_bytes).decode("utf-8")
 
         messages = [
@@ -83,7 +76,7 @@ class ElicitationService:
             ]),
         ]
 
-        result: LLMResponse = await llm.send_message_get_json(messages)
+        result: LLMResponse = await self.llm.send_message_get_json(messages)
         if result.json_data is None:
             raise RuntimeError(f"Failed to parse elicitation JSON: {result.text}")
 
@@ -92,25 +85,12 @@ class ElicitationService:
             response.draft_dictionary_entry.source_audio_url = source_audio_url
         return response
 
-    @staticmethod
     async def process_text(
-        llm: RotatingLLM,
+        self,
         anchor_text: str,
         indigenous_response: str,
     ) -> ElicitationResponse:
-        """Text-only fallback — draft a CLLD entry without audio.
-
-        Args:
-            llm: RotatingLLM instance.
-            anchor_text: The known-language prompt (e.g. Malay sentence).
-            indigenous_response: The elder's spoken response transcribed to text.
-
-        Returns:
-            ElicitationResponse with the drafted dictionary entry.
-
-        Raises:
-            RuntimeError: If the LLM fails to return parseable JSON.
-        """
+        """Text-only fallback — draft a CLLD entry without audio."""
         human_text: str = (
             f"Anchor phrase (Malay): \"{anchor_text}\"\n"
             f"Indigenous response: \"{indigenous_response}\"\n\n"
@@ -122,12 +102,15 @@ class ElicitationService:
             HumanMessage(content=human_text),
         ]
 
-        result: LLMResponse = await llm.send_message_get_json(messages)
+        result: LLMResponse = await self.llm.send_message_get_json(messages)
         if result.json_data is None:
             raise RuntimeError(f"Failed to parse elicitation JSON: {result.text}")
 
         return ElicitationResponse.model_validate(result.json_data)
 
+
+# Global Singleton for DI
+elicitation_service = ElicitationService(llm=rotating_llm, repo=dictionary_repo)
 
 # ---------------------------------------------------------------------------
 # Test audio file path (relative to project/backend/)
@@ -139,15 +122,11 @@ if __name__ == "__main__":
     import asyncio
     import sys
 
-    from srcs.services.ai import dictionary_repo
-    from srcs.services.ai.rotating_llm import rotating_llm
-
     async def _test_audio_mode() -> ElicitationResponse:
         """Test with a real audio file."""
         print(f"Found test audio: {_TEST_AUDIO_PATH}\n")
         audio_bytes: bytes = _TEST_AUDIO_PATH.read_bytes()
-        return await ElicitationService.process_audio(
-            llm=rotating_llm,
+        return await elicitation_service.process_audio(
             audio_bytes=audio_bytes,
             mime_type="audio/mp3",
             source_audio_url=f"file://{_TEST_AUDIO_PATH}",
@@ -156,21 +135,13 @@ if __name__ == "__main__":
     async def _test_text_mode() -> ElicitationResponse:
         """Fallback to text mode."""
         print("No test audio found. Falling back to text mode.\n")
-        print(
-            "TIP: To test audio mode, record a short .mp3:\n"
-            "  1. Say a Malay anchor phrase (e.g. 'Saya mahu makan')\n"
-            "  2. Pause 1 second\n"
-            "  3. Say an indigenous response (or gibberish)\n"
-            f"  4. Save as: {_TEST_AUDIO_PATH}\n"
-        )
-        return await ElicitationService.process_text(
-            llm=rotating_llm,
+        return await elicitation_service.process_text(
             anchor_text="Saya mahu makan",
             indigenous_response="Mogihon oku mokan",
         )
 
     async def main() -> None:
-        print("=== Elicitation Service ===\n")
+        print("=== Elicitation Service — DI Test ===\n")
 
         try:
             if _TEST_AUDIO_PATH.exists():
@@ -180,14 +151,13 @@ if __name__ == "__main__":
 
             print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False))
 
-            # Save drafted entry to DB
-            doc_id: str = await dictionary_repo.save_entry(response.draft_dictionary_entry)
+            # Save drafted entry to DB via repo
+            doc_id: str = await elicitation_service.repo.save_entry(response.draft_dictionary_entry)
             print(f"\nSaved to DB → _id: {doc_id}")
 
-            # Cleanup: remove the test entry to keep DB stateless
-            deleted = await dictionary_repo.delete_entry_by_uuid(response.draft_dictionary_entry.id)
-            if deleted:
-                print(f"Cleanup: removed test entry {response.draft_dictionary_entry.id}")
+            # Cleanup
+            await elicitation_service.repo.delete_entry_by_uuid(response.draft_dictionary_entry.id)
+            print(f"Cleanup: removed test entry {response.draft_dictionary_entry.id}")
 
         except Exception as exc:
             traceback.print_exc()

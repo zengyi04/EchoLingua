@@ -17,5 +17,5 @@ API_BASE_URL = os.getenv("API_BASE_URL", f"http://localhost:{PORT}")  # Public U
 
 DEBUG = True
 
-GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite-preview")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
 GEMINI_API_KEY_LIST = os.getenv("GEMINI_API_KEY_LIST", "").split(",")
