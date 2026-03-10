@@ -197,15 +197,16 @@ async def generate_story(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/tts", response_model=TTSResponse)
-async def get_phonemes(
+async def get_audio(
     request: TTSAPIRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Convert indigenous text to IPA phonemes."""
+    """Convert indigenous text to IPA phonemes and synthesize audio."""
     try:
-        return await tts_service.to_phonemes_with_db(
+        return await tts_service.to_audio_with_db(
             indigenous_text=request.indigenous_text,
             language_id=request.language_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

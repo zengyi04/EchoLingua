@@ -184,7 +184,9 @@ class TTSAPIRequest(BaseModel):
 
 
 class TTSResponse(BaseModel):
-    """Phoneme bridge result."""
+    """Phoneme bridge result + Synthesized audio URL."""
 
     ipa_phonemes: str
     pronunciation_guide: str
+    audio_url: str | None = Field(None, description="URL of the synthesized audio file")
+

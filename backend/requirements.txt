@@ -13,3 +13,4 @@ langchain-google-genai
 dnspython
 certifi
 pytest
+gTTS

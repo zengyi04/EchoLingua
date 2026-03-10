@@ -88,8 +88,8 @@ Generates a 3-page bilingual children's storybook.
 - **Response**: `StoryGenerateResponse`
 - **Side Effect**: Automatically persists the generated story (including rich page data) to the core `stories` collection, making it visible in the main gallery.
 
-### `POST /ai/tts` (Phonetic Bridge)
-**Warning**: This service currently acts as a **Phonetic Bridge**, not a full audio synthesizer.
+### `POST /ai/tts` (Synthesis)
+Converts indigenous text to IPA phonemes and synthesizes audio via **gTTS**.
 - **Request Body**: `TTSAPIRequest`
   ```json
   {
@@ -101,10 +101,12 @@ Generates a 3-page bilingual children's storybook.
   ```json
   {
     "ipa_phonemes": "/waig/",
-    "pronunciation_guide": "wah-ig"
+    "pronunciation_guide": "wah-ig",
+    "audio_url": "https://storage.supabase.co/.../tts_kadazan_...mp3"
   }
   ```
-- **Note**: The API loads the dictionary for `language_id` automatically. The client does NOT provide the dictionary.
+- **Note**: The service uses an LLM-generated pronunciation guide to drive the speech engine for maximum accuracy. Auto-uploads to Supabase.
+
 
 ---
 
