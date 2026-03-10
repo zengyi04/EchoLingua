@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
 from srcs.core.dependencies import get_current_user
 from srcs.services.ai.ai_dtos import (
     ElicitationTextRequest, ElicitationResponse,
@@ -166,14 +166,55 @@ async def extract_vision(
     request: VisionAPIRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Detect objects and look up indigenous vocab."""
+    """Detect objects from text description (fallback)."""
     try:
         return await vision_service.extract_vocab_with_db(
             description=request.description,
             language_id=request.language_id
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.post("/vision/image", response_model=VisionResponse)
+async def extract_vision_image(
+    file: UploadFile = File(...),
+    language_id: str = Form("kadazan-demo"),
+    user: dict = Depends(get_current_user)
+):
+    """Detect objects in an uploaded image and look up indigenous vocab."""
+    try:
+        image_bytes: bytes = await file.read()
+        
+        # 1. Upload to Supabase (consistent with audio elicitation)
+        file_ext: str = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+        unique_filename: str = f"vision_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.{file_ext}"
+        image_url: str = upload_recording_from_bytes(image_bytes, unique_filename)
+        
+        # 2. Register metadata in 'recordings'
+        rec_collection = get_recordings_collection()
+        user_id_val: str = str(user.get("_id") or user.get("id"))
+        
+        await rec_collection.insert_one({
+            "userId": ObjectId(user_id_val),
+            "audioUrl": image_url, # Reusing audioUrl field for generic media URL
+            "language": language_id,
+            "aiProcessed": True,
+            "createdAt": datetime.utcnow(),
+            "tags": ["vision_image"]
+        })
+
+        # 3. AI Processing
+        return await vision_service.extract_vocab_with_db(
+            image_bytes=image_bytes,
+            mime_type=file.content_type or "image/jpeg",
+            language_id=language_id
+        )
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc))
 
 @router.post("/story", response_model=StoryGenerateResponse)
 async def generate_story(

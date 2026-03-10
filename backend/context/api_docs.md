@@ -312,7 +312,7 @@ Context-aware translation using verified vocabulary.
   ```
 
 #### `POST /ai/vision`
-Extract vocabulary from an image description.
+Identify indigenous words from a text description.
 - **Body**: 
   ```json
   {
@@ -328,6 +328,16 @@ Extract vocabulary from an image description.
     "found_in_dictionary": true
   }
   ```
+
+#### `POST /ai/vision/image`
+Upload an image to identify indigenous vocabulary.
+- **Body**: `multipart/form-data`
+  - `file`: Image file (jpg, png, etc.)
+  - `language_id`: String (default: `kadazan-demo`)
+- **Response**: Same as `POST /ai/vision`.
+- **Side Effects**: 
+  1. Uploads image to Supabase.
+  2. Registers metadata in `recordings` collection with tag `["vision_image"]`.
 
 #### `POST /ai/story`
 Generate a multi-page bilingual storybook.
