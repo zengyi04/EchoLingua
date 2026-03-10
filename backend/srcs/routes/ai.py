@@ -14,6 +14,10 @@ from srcs.services.ai.vision_service import vision_service
 from srcs.services.ai.story_service import story_service
 from srcs.services.ai.tts_service import tts_service
 from srcs.services.ai.dictionary_repo import DictionaryRepository, dictionary_repo
+from srcs.services.storage_service import upload_recording_from_bytes
+from database import get_recordings_collection
+from datetime import datetime
+from bson import ObjectId
 
 
 def get_dictionary_repo() -> DictionaryRepository:
@@ -31,12 +35,20 @@ async def elicit_text(
     request: ElicitationTextRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Draft a dictionary entry from anchor text and indigenous response."""
+    """Draft and persist a dictionary entry from text elicitation."""
     try:
-        return await elicitation_service.process_text(
+        response = await elicitation_service.process_text(
             anchor_text=request.anchor_text,
             indigenous_response=request.indigenous_response
         )
+        
+        # Override language_id if provided in request, otherwise use LLM's guess
+        if request.language_id:
+            response.draft_dictionary_entry.language_id = request.language_id
+            
+        # Save to dictionary repo
+        await elicitation_service.repo.save_entry(response.draft_dictionary_entry)
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -45,13 +57,41 @@ async def elicit_audio(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
-    """Draft a dictionary entry from an audio recording."""
+    """
+    Draft a dictionary entry from an audio recording.
+    1. Upload to Supabase
+    2. Register in 'recordings' collection
+    3. Process with AI and save to 'dictionary'
+    """
     try:
         audio_bytes = await file.read()
-        return await elicitation_service.process_audio(
+        
+        # 1. Upload to Supabase
+        file_name = f"elicit_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+        audio_url = upload_recording_from_bytes(audio_bytes, file_name)
+        
+        # 2. Register metadata in 'recordings'
+        rec_collection = get_recordings_collection()
+        await rec_collection.insert_one({
+            "userId": user["_id"],
+            "audioUrl": audio_url,
+            "language": "kadazan-demo", # Default for now
+            "aiProcessed": True,
+            "createdAt": datetime.utcnow(),
+            "tags": ["elicitation"]
+        })
+
+        # 3. AI Processing
+        response = await elicitation_service.process_audio(
             audio_bytes=audio_bytes,
-            mime_type=file.content_type or "audio/mp3"
+            mime_type=file.content_type or "audio/mp3",
+            source_audio_url=audio_url
         )
+        
+        # 4. Save to dictionary repo
+        await elicitation_service.repo.save_entry(response.draft_dictionary_entry)
+        
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -140,10 +180,20 @@ async def generate_story(
     request: StoryGenerateRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Generate a bilingual children's story."""
+    """Generate a bilingual children's story and save to the core collection."""
     try:
-        return await story_service.generate_book(request)
+        story_response = await story_service.generate_book(request)
+        
+        # Get user ID safely (handle both ObjectId and string if necessary)
+        user_id = user.get("_id") or user.get("id")
+        
+        # Persist to database so it appears in the main 'Stories' gallery
+        await story_service.save_to_db(story_response, str(user_id))
+        
+        return story_response
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/tts", response_model=TTSResponse)

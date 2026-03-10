@@ -50,6 +50,7 @@ class ElicitationTextRequest(BaseModel):
 
     anchor_text: str
     indigenous_response: str
+    language_id: str | None = Field(None, description="Target language ID (e.g. kadazan-demo)")
 
 
 class ElicitationResponse(BaseModel):
@@ -143,6 +144,7 @@ class StoryPage(BaseModel):
     indigenous_text: str
     english_translation: str
     image_generation_prompt: str
+    image_url: str | None = Field(None, description="URL of the generated/stored image for this page")
 
 
 class StoryGenerateRequest(BaseModel):
@@ -150,6 +152,7 @@ class StoryGenerateRequest(BaseModel):
 
     annotated_text: list[AnnotatedParallelText]
     grammar_rules: list[str]
+    language: str = Field(default="Kadazan", description="Target language name")
 
 
 class StoryGenerateResponse(BaseModel):
@@ -157,6 +160,8 @@ class StoryGenerateResponse(BaseModel):
 
     title: str
     pages: list[StoryPage]
+    language: str | None = None
+    createdBy: str | None = None
 
 
 # ---------------------------------------------------------------------------

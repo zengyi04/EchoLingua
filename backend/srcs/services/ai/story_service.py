@@ -6,9 +6,12 @@ multipage story via LLM.
 
 import json
 import traceback
+from datetime import datetime
+from bson import ObjectId
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from database import get_stories_collection
 from srcs.services.ai.ai_dtos import AnnotatedParallelText, StoryGenerateRequest, StoryGenerateResponse
 from srcs.services.ai.rotating_llm import RotatingLLM, LLMResponse, rotating_llm
 
@@ -66,10 +69,34 @@ class StoryService:
         ]
 
         result: LLMResponse = await self.llm.send_message_get_json(messages)
-        if result.json_data is None:
-            raise RuntimeError(f"Failed to parse story JSON: {result.text}")
+        response = StoryGenerateResponse.model_validate(result.json_data)
+        response.language = request.language
+        return response
 
-        return StoryGenerateResponse.model_validate(result.json_data)
+    async def save_to_db(
+        self,
+        story_data: StoryGenerateResponse,
+        user_id: str,
+    ) -> str:
+        """Persist a generated story to the core 'stories' collection."""
+        collection = get_stories_collection()
+        
+        # Map AI-specific fields to the core story schema
+        # We store the rich 'pages' in a new field, but keep 'text' for compatibility
+        summary_text = "\n\n".join([f"Page {p.page_number}: {p.indigenous_text}" for p in story_data.pages])
+        
+        doc = {
+            "title": story_data.title,
+            "language": story_data.language or "Unknown",
+            "text": summary_text,
+            "pages": [p.model_dump() for p in story_data.pages],
+            "createdBy": ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id,
+            "tags": ["ai-generated"],
+            "createdAt": datetime.utcnow(),
+        }
+        
+        result = await collection.insert_one(doc)
+        return str(result.inserted_id)
 
 
 # Global Singleton for DI

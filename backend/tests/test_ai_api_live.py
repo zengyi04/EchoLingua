@@ -21,6 +21,7 @@ from srcs.services.ai.dictionary_repo import DictionaryRepository
 from srcs.services.ai.ai_dtos import CLLDEntry
 from srcs.routes.ai import get_dictionary_repo
 import database
+from bson import ObjectId
 
 # ---------------------------------------------------------------------------
 # LIVE SETUP (Connects to real DB)
@@ -31,7 +32,11 @@ TEST_LANG_ID = "test-live-run"
 
 # Mock Authentication (bypass JWT)
 async def mock_get_current_user():
-    return {"id": "test-user-live", "username": "test_linguist_live"}
+    return {
+        "_id": ObjectId("65edc9f1f1d1e1e1e1e1e1e1"), 
+        "id": "test-user-live", 
+        "username": "test_linguist_live"
+    }
 
 app.dependency_overrides[get_current_user] = mock_get_current_user
 
@@ -104,7 +109,8 @@ async def test_elicit_text_live_workflow(async_client: AsyncClient, repo: Dictio
     # 1. ELICIT
     payload = {
         "anchor_text": "I want to eat rice",
-        "indigenous_response": "Makan nahu oku do baras"
+        "indigenous_response": "Makan nahu oku do baras",
+        "language_id": TEST_LANG_ID
     }
     response = await async_client.post("/ai/elicit/text", json=payload)
     assert response.status_code == 200
@@ -114,15 +120,8 @@ async def test_elicit_text_live_workflow(async_client: AsyncClient, repo: Dictio
     entry_id = entry["id"]
     db_cleanup.append(entry_id) # Register for cleanup
     
-    # Force language_id to our test bucket for safety if LLM hallucinated
-    entry["language_id"] = TEST_LANG_ID
-    
-    # 2. SAVE (Manually via repo for testing, though elicit usually doesn't save automatically)
-    # The route /ai/elicit/text just returns the draft. 
-    # Let's save it so we can test the Management routes.
-    from srcs.services.ai.ai_dtos import CLLDEntry
-    clld_obj = CLLDEntry.model_validate(entry)
-    await repo.save_entry(clld_obj)
+    # 2. VERIFY THAT IT WAS SAVED AUTOMATICALLY
+    # (No need to manual save anymore, the route does it)
     
     # 3. LIST (Management)
     list_response = await async_client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
@@ -204,7 +203,7 @@ async def test_vision_live(async_client: AsyncClient, repo: DictionaryRepository
     assert data["indigenous_word"] == "Walai"
 
 @pytest.mark.anyio
-async def test_story_live(async_client: AsyncClient):
+async def test_story_live(async_client: AsyncClient, repo: DictionaryRepository):
     """Test story generation with Live LLM."""
     payload = {
         "annotated_text": [
