@@ -8,3 +8,9 @@ supabase
 passlib[bcrypt]
 PyJWT[crypto]
 python-multipart
+langchain-core
+langchain-google-genai
+dnspython
+certifi
+pytest
+gTTS
