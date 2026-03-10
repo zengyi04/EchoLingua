@@ -4,15 +4,23 @@ import uuid
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+import os
+import sys
+import uuid
+from pathlib import Path
+
+import pytest
+from httpx import AsyncClient, ASGITransport
 
 # Add project root to path for imports
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from main import app
 from srcs.core.dependencies import get_current_user
-from srcs.services.ai.dictionary_repo import dictionary_repo
+from srcs.services.ai.dictionary_repo import DictionaryRepository
 from srcs.services.ai.ai_dtos import CLLDEntry
+from srcs.routes.ai import get_dictionary_repo
+import database
 
 # ---------------------------------------------------------------------------
 # LIVE SETUP (Connects to real DB)
@@ -27,32 +35,68 @@ async def mock_get_current_user():
 
 app.dependency_overrides[get_current_user] = mock_get_current_user
 
-client = TestClient(app)
+# ---------------------------------------------------------------------------
+# FIXTURES
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# CLEANUP FIXTURE
-# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def anyio_backend():
+    return "asyncio"
 
 @pytest.fixture
-async def db_cleanup():
+async def async_client():
+    """Async client for testing FastAPI with httpx."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+
+from srcs.services.ai.elicitation_service import elicitation_service
+from srcs.services.ai.translation_service import translation_service
+from srcs.services.ai.vision_service import vision_service
+from srcs.services.ai.tts_service import tts_service
+
+@pytest.fixture
+async def repo():
+    """
+    Fresh DictionaryRepository per test.
+    Resets the global database client and patches all AI services to use the fresh repo.
+    """
+    # Reset the global client so it's recreated in the current event loop
+    database._client = None
+    collection = database.get_dictionary_collection()
+    r = DictionaryRepository(collection=collection)
+    
+    # Patch all services that use a repository singleton
+    # This is critical because the services were initialized with a stale repo
+    elicitation_service.repo = r
+    translation_service.repo = r
+    vision_service.repo = r
+    tts_service.repo = r
+
+    # Override the dependency in the app
+    app.dependency_overrides[get_dictionary_repo] = lambda: r
+    
+    yield r
+    
+    # Clean up override
+    if get_dictionary_repo in app.dependency_overrides:
+        del app.dependency_overrides[get_dictionary_repo]
+
+@pytest.fixture
+async def db_cleanup(repo: DictionaryRepository):
     """Tracks entry IDs created during tests and deletes them after."""
     created_ids = []
     yield created_ids
     
     print(f"\n[Cleanup] Removing {len(created_ids)} test entries...")
     for entry_id in created_ids:
-        await dictionary_repo.delete_entry_by_uuid(entry_id)
-
-@pytest.fixture(scope="module")
-def anyio_backend():
-    return "asyncio"
+        await repo.delete_entry_by_uuid(entry_id)
 
 # ---------------------------------------------------------------------------
 # API TESTS
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
-async def test_elicit_text_live_workflow(db_cleanup):
+async def test_elicit_text_live_workflow(async_client: AsyncClient, repo: DictionaryRepository, db_cleanup):
     """
     Test the full elicitation -> verification -> deletion workflow.
     This hits the Live LLM and Live Database.
@@ -62,7 +106,7 @@ async def test_elicit_text_live_workflow(db_cleanup):
         "anchor_text": "I want to eat rice",
         "indigenous_response": "Makan nahu oku do baras"
     }
-    response = client.post("/ai/elicit/text", json=payload)
+    response = await async_client.post("/ai/elicit/text", json=payload)
     assert response.status_code == 200
     data = response.json()
     
@@ -78,33 +122,33 @@ async def test_elicit_text_live_workflow(db_cleanup):
     # Let's save it so we can test the Management routes.
     from srcs.services.ai.ai_dtos import CLLDEntry
     clld_obj = CLLDEntry.model_validate(entry)
-    await dictionary_repo.save_entry(clld_obj)
+    await repo.save_entry(clld_obj)
     
     # 3. LIST (Management)
-    list_response = client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
+    list_response = await async_client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
     assert list_response.status_code == 200
     entries = list_response.json()
     assert any(e["id"] == entry_id for e in entries)
     
     # 4. VERIFY (Management)
-    verify_response = client.post(f"/ai/dictionary/{entry_id}/verify")
+    verify_response = await async_client.post(f"/ai/dictionary/{entry_id}/verify")
     assert verify_response.status_code == 200
     assert verify_response.json()["message"] == "Entry verified successfully"
     
     # Verify status changed in DB
-    list_verified = client.get(f"/ai/dictionary?status=verified&language_id={TEST_LANG_ID}")
+    list_verified = await async_client.get(f"/ai/dictionary?status=verified&language_id={TEST_LANG_ID}")
     assert any(e["id"] == entry_id for e in list_verified.json())
     
     # 5. DELETE (Management)
-    delete_response = client.delete(f"/ai/dictionary/{entry_id}")
+    delete_response = await async_client.delete(f"/ai/dictionary/{entry_id}")
     assert delete_response.status_code == 200
     
     # Verify gone
-    list_after = client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
+    list_after = await async_client.get(f"/ai/dictionary?language_id={TEST_LANG_ID}")
     assert not any(e["id"] == entry_id for e in list_after.json())
 
 @pytest.mark.anyio
-async def test_translate_live(db_cleanup):
+async def test_translate_live(async_client: AsyncClient, repo: DictionaryRepository, db_cleanup):
     """Test translation with Live LLM + Live DB (RAG)."""
     # Setup: Add a custom word to DB
     test_id = str(uuid.uuid4())
@@ -118,7 +162,7 @@ async def test_translate_live(db_cleanup):
         language_id=TEST_LANG_ID,
         status="verified"
     )
-    await dictionary_repo.save_entry(word_entry)
+    await repo.save_entry(word_entry)
     
     payload = {
         "source_text": "I want to eat",
@@ -126,20 +170,20 @@ async def test_translate_live(db_cleanup):
         "target_lang": "Kadazan",
         "language_id": TEST_LANG_ID
     }
-    response = client.post("/ai/translate", json=payload)
+    response = await async_client.post("/ai/translate", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "translated_text" in data
     # The LLM should ideally use our injected word "Mogihon"
-    assert "Mogihon" in data["translated_text"] or len(data["words_used_from_dict"]) > 0
+    assert "Mogihon" in data["translated_text"] or len(data.get("words_used_from_dict", [])) > 0
 
 @pytest.mark.anyio
-async def test_vision_live(db_cleanup):
+async def test_vision_live(async_client: AsyncClient, repo: DictionaryRepository, db_cleanup):
     """Test vision analysis with Live LLM + Live DB."""
     # Setup: Add a keyword to DB
     test_id = str(uuid.uuid4())
     db_cleanup.append(test_id)
-    await dictionary_repo.save_entry(CLLDEntry(
+    await repo.save_entry(CLLDEntry(
         id=test_id,
         word="Walai",
         pos="noun",
@@ -153,14 +197,14 @@ async def test_vision_live(db_cleanup):
         "description": "A beautiful big house near the river",
         "language_id": TEST_LANG_ID
     }
-    response = client.post("/ai/vision", json=payload)
+    response = await async_client.post("/ai/vision", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert data["found_in_dictionary"] is True
     assert data["indigenous_word"] == "Walai"
 
 @pytest.mark.anyio
-async def test_story_live():
+async def test_story_live(async_client: AsyncClient):
     """Test story generation with Live LLM."""
     payload = {
         "annotated_text": [
@@ -168,19 +212,19 @@ async def test_story_live():
         ],
         "grammar_rules": ["S-V-O order", "Subject focus prefix 'm-'"]
     }
-    response = client.post("/ai/story", json=payload)
+    response = await async_client.post("/ai/story", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "title" in data
     assert len(data["pages"]) > 0
 
 @pytest.mark.anyio
-async def test_tts_live(db_cleanup):
+async def test_tts_live(async_client: AsyncClient, repo: DictionaryRepository, db_cleanup):
     """Test phoneme bridge with Live LLM + Live DB."""
     # Setup: Add pronunciation hint
     test_id = str(uuid.uuid4())
     db_cleanup.append(test_id)
-    await dictionary_repo.save_entry(CLLDEntry(
+    await repo.save_entry(CLLDEntry(
         id=test_id,
         word="Nahu",
         pos="particle",
@@ -195,7 +239,7 @@ async def test_tts_live(db_cleanup):
         "indigenous_text": "Makan nahu oku",
         "language_id": TEST_LANG_ID
     }
-    response = client.post("/ai/tts", json=payload)
+    response = await async_client.post("/ai/tts", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "ipa_phonemes" in data
