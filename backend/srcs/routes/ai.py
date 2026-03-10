@@ -75,6 +75,7 @@ async def elicit_audio(
         await rec_collection.insert_one({
             "userId": user["_id"],
             "audioUrl": audio_url,
+            "transcript": "[Elicitation Audio]",
             "language": "kadazan-demo", # Default for now
             "aiProcessed": True,
             "createdAt": datetime.utcnow(),
@@ -199,6 +200,7 @@ async def extract_vision_image(
         await rec_collection.insert_one({
             "userId": ObjectId(user_id_val),
             "audioUrl": image_url, # Reusing audioUrl field for generic media URL
+            "transcript": "[Vision Image]",
             "language": language_id,
             "aiProcessed": True,
             "createdAt": datetime.utcnow(),
