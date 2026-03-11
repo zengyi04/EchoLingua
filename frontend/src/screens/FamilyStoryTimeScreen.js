@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
-import { WORLD_LANGUAGES } from '../constants/languages';
+import { UNIFIED_LANGUAGE_OPTIONS } from '../constants/translationLanguages';
 
 const AUDIENCE_FILTERS = ['all', 'adult', 'child'];
 
@@ -76,7 +76,7 @@ const STORY_FORMATS = [
   { key: 'long-novel', label: 'Long-form Novel' },
 ];
 
-const SAMPLE_STORIES = WORLD_LANGUAGES.flatMap((language) => {
+const SAMPLE_STORIES = UNIFIED_LANGUAGE_OPTIONS.flatMap((language) => {
   return STORY_FORMATS.flatMap((format) => {
     return ['adult', 'child'].map((audience) => {
       const pages = buildPages(language.id, language.label, audience, format.label);
@@ -111,7 +111,7 @@ export default function FamilyStoryTimeScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const languageOptions = useMemo(() => {
-    return ['all', ...WORLD_LANGUAGES.map((lang) => lang.id)];
+    return ['all', ...UNIFIED_LANGUAGE_OPTIONS.map((lang) => lang.id)];
   }, []);
 
   const visibleStories = useMemo(() => {
@@ -201,7 +201,7 @@ export default function FamilyStoryTimeScreen({ navigation, route }) {
             const languageLabel =
               item === 'all'
                 ? 'All Languages'
-                : WORLD_LANGUAGES.find((lang) => lang.id === item)?.label || item;
+                : UNIFIED_LANGUAGE_OPTIONS.find((lang) => lang.id === item)?.label || item;
             return (
               <TouchableOpacity
                 key={item}

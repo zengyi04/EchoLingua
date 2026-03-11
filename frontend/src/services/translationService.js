@@ -4,6 +4,35 @@
  * For production, consider using Google Translate API with a paid key for better quality
  */
 
+import { aiApiService } from './aiApiService';
+
+const INDIGENOUS_DICTIONARY_LANGUAGE_IDS = new Set([
+  'iban',
+  'bidayuh',
+  'kadazan',
+  'murut',
+  'melanau',
+  'penan',
+]);
+
+const shouldUseDictionaryAi = (sourceLanguageId, targetLanguageId) =>
+  INDIGENOUS_DICTIONARY_LANGUAGE_IDS.has(String(sourceLanguageId || '').toLowerCase()) ||
+  INDIGENOUS_DICTIONARY_LANGUAGE_IDS.has(String(targetLanguageId || '').toLowerCase());
+
+const normalizeForCompare = (value) =>
+  String(value || '')
+    .replace(/[{}\[\]"'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const isUnchangedTranslation = (source, translated) => {
+  const a = normalizeForCompare(source);
+  const b = normalizeForCompare(translated);
+  if (!a || !b) return false;
+  return a === b;
+};
+
 // Language code mapping for translations
 const LANGUAGE_CODES = {
   english: 'en',
@@ -40,6 +69,25 @@ export const translateText = async (text, languageId) => {
   try {
     if (!text || !languageId) {
       return text || '';
+    }
+
+    if (shouldUseDictionaryAi('english', languageId)) {
+      try {
+        const aiResponse = await aiApiService.translate({
+          sourceText: text,
+          sourceLang: 'English',
+          targetLang: languageId,
+          languageId: 'kadazan-demo',
+        });
+        if (aiResponse?.translated_text && !isUnchangedTranslation(text, aiResponse.translated_text)) {
+          return aiResponse.translated_text;
+        }
+        if (aiResponse?.translated_text) {
+          console.warn('AI translate returned unchanged text; falling back to MyMemory');
+        }
+      } catch (aiError) {
+        console.warn('AI translation unavailable, falling back to MyMemory:', aiError?.message || aiError);
+      }
     }
 
     const targetCode = LANGUAGE_CODES[languageId] || 'en';
@@ -109,6 +157,25 @@ export const translateTextBetween = async (text, sourceLanguageId, targetLanguag
 
     if (sourceLanguageId === targetLanguageId) {
       return text;
+    }
+
+    if (shouldUseDictionaryAi(sourceLanguageId, targetLanguageId)) {
+      try {
+        const aiResponse = await aiApiService.translate({
+          sourceText: text,
+          sourceLang: sourceLanguageId,
+          targetLang: targetLanguageId,
+          languageId: 'kadazan-demo',
+        });
+        if (aiResponse?.translated_text && !isUnchangedTranslation(text, aiResponse.translated_text)) {
+          return aiResponse.translated_text;
+        }
+        if (aiResponse?.translated_text) {
+          console.warn('AI translateBetween returned unchanged text; falling back to MyMemory');
+        }
+      } catch (aiError) {
+        console.warn('AI translateBetween unavailable, falling back to MyMemory:', aiError?.message || aiError);
+      }
     }
 
     const sourceCode = LANGUAGE_CODES[sourceLanguageId] || 'en';

@@ -17,6 +17,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { WORLD_LANGUAGES } from '../constants/languages';
+import {
+  TRANSLATION_LANGUAGE_OPTIONS,
+  getLanguageLabelById,
+} from '../constants/translationLanguages';
+import { dictionaryApiService } from '../services/dictionaryApiService';
 
 const CORE_WORD_TEMPLATES = [
   { key: 'hello', word: 'Hello', translation: 'Hello', pronunciation: 'heh-loh', partOfSpeech: 'Greeting', category: 'Greetings' },
@@ -112,33 +117,6 @@ const DICTIONARY_DATA = [...BORNEO_LANGUAGE_ENTRIES, ...GENERATED_WORLD_LANGUAGE
 
 const COMMUNITY_ENTRIES_KEY = 'dictionaryCommunityEntries';
 const USER_STORAGE_KEY = '@echolingua_current_user';
-const TRANSLATION_LANGUAGE_IDS = [
-  'english',
-  'malay',
-  'indonesian',
-  'mandarin',
-  'spanish',
-  'french',
-  'arabic',
-  'japanese',
-  'korean',
-  'german',
-  'portuguese',
-  'thai',
-  'vietnamese',
-  'russian',
-  'italian',
-  'turkish',
-  'hindi',
-  'iban',
-  'bidayuh',
-  'kadazan',
-  'murut',
-];
-
-const TRANSLATION_LANGUAGE_OPTIONS = WORLD_LANGUAGES.filter((lang) =>
-  TRANSLATION_LANGUAGE_IDS.includes(lang.id)
-);
 
 const sortWordsAtoZ = (items) =>
   [...items].sort((a, b) => a.word.localeCompare(b.word, undefined, { sensitivity: 'base' }));
@@ -168,9 +146,40 @@ const parseWordsFromText = (text) => {
   return unique;
 };
 
-const getLanguageLabelById = (languageId) => {
-  const found = WORLD_LANGUAGES.find((lang) => lang.id === languageId);
-  return found?.label || languageId;
+const normalizeLanguageId = (value) => {
+  if (!value) return 'kadazan-demo';
+  return String(value).trim().toLowerCase().replace(/\s+/g, '-');
+};
+
+const mapApiEntryToWord = (entry) => {
+  const languageId = normalizeLanguageId(entry?.language_id || 'kadazan-demo');
+  const languageLabel = getLanguageLabelById(languageId);
+  const english = entry?.translation_english || '';
+  const malay = entry?.translation_malay || '';
+
+  return {
+    id: entry?.id,
+    apiEntryId: entry?.id,
+    word: entry?.word || 'Unknown',
+    language: languageLabel,
+    translation: english || malay || 'No translation',
+    pronunciation: 'N/A',
+    partOfSpeech: entry?.pos || 'Unknown',
+    examples: [
+      english ? `English: ${english}` : null,
+      malay ? `Malay: ${malay}` : null,
+    ].filter(Boolean),
+    relatedWords: [],
+    category: 'Community',
+    meaningAndUsage: english || malay || '',
+    culturalContext: entry?.cultural_note || '',
+    pronunciationAudioUri: entry?.source_audio_url || null,
+    pronunciationAudioName: entry?.source_audio_url ? 'Source audio' : null,
+    verificationStatus: entry?.status === 'verified' ? 'Verified by language expert' : 'Pending expert review',
+    statusRaw: entry?.status || 'pending_verification',
+    source: 'api',
+    createdAt: new Date().toISOString(),
+  };
 };
 
 export default function DictionaryScreen({ navigation }) {
@@ -182,7 +191,9 @@ export default function DictionaryScreen({ navigation }) {
   const [favorites, setFavorites] = useState([]);
   const [recentSearches, setRecentSearches] = useState([]);
   const [communityEntries, setCommunityEntries] = useState([]);
+  const [dictionaryApiEntries, setDictionaryApiEntries] = useState([]);
   const [showDocumentationProject, setShowDocumentationProject] = useState(false);
+  const [isDictionarySyncing, setIsDictionarySyncing] = useState(false);
   const [newWord, setNewWord] = useState('');
   const [newLanguage, setNewLanguage] = useState('');
   const [newMeaningUsage, setNewMeaningUsage] = useState('');
@@ -199,15 +210,16 @@ export default function DictionaryScreen({ navigation }) {
   const pronunciationSoundRef = useRef(null);
 
   const dictionaryWords = useMemo(() => {
-    const merged = [...DICTIONARY_DATA, ...communityEntries];
+    const merged = [...DICTIONARY_DATA, ...communityEntries, ...dictionaryApiEntries];
     return sortWordsAtoZ(merged);
-  }, [communityEntries]);
+  }, [communityEntries, dictionaryApiEntries]);
 
   useEffect(() => {
     loadFavorites();
     loadRecentSearches();
     loadCommunityEntries();
     loadCurrentUserRole();
+    loadDictionaryApiEntries();
   }, []);
 
   useEffect(() => {
@@ -283,22 +295,59 @@ export default function DictionaryScreen({ navigation }) {
     }
   };
 
+  const loadDictionaryApiEntries = async () => {
+    try {
+      setIsDictionarySyncing(true);
+      const entries = await dictionaryApiService.getEntries();
+      if (Array.isArray(entries)) {
+        setDictionaryApiEntries(entries.map(mapApiEntryToWord));
+      }
+    } catch (error) {
+      console.error('Load dictionary API entries error:', error);
+    } finally {
+      setIsDictionarySyncing(false);
+    }
+  };
+
   const userCanVerifyEntries =
     currentUserRole === 'admin' || currentUserRole === 'moderator' || currentUserRole === 'language_expert';
 
-  const verifyCommunityEntry = async (entryId) => {
+  const verifyCommunityEntry = async (entry) => {
     if (!userCanVerifyEntries) {
       Alert.alert('Moderator Access', 'Only moderators or language experts can verify entries.');
       return;
     }
 
-    const updatedEntries = communityEntries.map((entry) => {
-      if (entry.id !== entryId) {
-        return entry;
+    if (!entry) {
+      return;
+    }
+
+    if (entry.source === 'api' && entry.apiEntryId) {
+      try {
+        await dictionaryApiService.verifyEntry(entry.apiEntryId);
+        await loadDictionaryApiEntries();
+        if (selectedWord?.id === entry.id) {
+          setSelectedWord({
+            ...entry,
+            verificationStatus: 'Verified by language expert',
+            statusRaw: 'verified',
+          });
+        }
+        Alert.alert('Verified', 'Entry verified successfully in backend dictionary.');
+      } catch (error) {
+        console.error('Verify API dictionary entry error:', error);
+        Alert.alert('Verification Failed', error?.message || 'Could not verify this entry.');
+      }
+      return;
+    }
+
+    const updatedEntries = communityEntries.map((item) => {
+      if (item.id !== entry.id) {
+        return item;
       }
 
       return {
-        ...entry,
+        ...item,
         verificationStatus: 'Verified by language expert',
         verifiedAt: new Date().toISOString(),
       };
@@ -306,11 +355,33 @@ export default function DictionaryScreen({ navigation }) {
 
     await saveCommunityEntries(updatedEntries);
 
-    if (selectedWord?.id === entryId) {
-      const verifiedEntry = updatedEntries.find((entry) => entry.id === entryId);
+    if (selectedWord?.id === entry.id) {
+      const verifiedEntry = updatedEntries.find((item) => item.id === entry.id);
       if (verifiedEntry) {
         setSelectedWord(verifiedEntry);
       }
+    }
+  };
+
+  const rejectApiEntry = async (entry) => {
+    if (!userCanVerifyEntries) {
+      Alert.alert('Moderator Access', 'Only moderators or language experts can reject entries.');
+      return;
+    }
+
+    if (!entry?.apiEntryId) {
+      Alert.alert('Unavailable', 'This entry is not linked to backend dictionary API.');
+      return;
+    }
+
+    try {
+      await dictionaryApiService.deleteEntry(entry.apiEntryId);
+      await loadDictionaryApiEntries();
+      setSelectedWord(null);
+      Alert.alert('Entry Removed', 'The dictionary entry was deleted from backend review queue.');
+    } catch (error) {
+      console.error('Delete API dictionary entry error:', error);
+      Alert.alert('Delete Failed', error?.message || 'Could not delete this entry.');
     }
   };
 
@@ -483,29 +554,36 @@ export default function DictionaryScreen({ navigation }) {
       return;
     }
 
-    const entry = {
-      id: `community-${Date.now()}`,
-      word: newWord.trim(),
-      language: newLanguage.trim(),
-      translation: newMeaningUsage.trim(),
-      pronunciation: newPronunciation.trim() || 'N/A',
-      partOfSpeech: 'Community Entry',
-      examples: [newMeaningUsage.trim()],
-      relatedWords: newCulturalContext.trim() ? [newCulturalContext.trim()] : [],
-      category: 'Community',
-      meaningAndUsage: newMeaningUsage.trim(),
-      culturalContext: newCulturalContext.trim(),
-      pronunciationAudioUri: uploadedPronunciation?.uri || null,
-      pronunciationAudioName: uploadedPronunciation?.name || null,
-      verificationStatus: 'Pending expert review',
-      source: 'community',
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const response = uploadedPronunciation?.uri
+        ? await dictionaryApiService.elicitFromAudio({
+            fileUri: uploadedPronunciation.uri,
+            fileName: uploadedPronunciation.name,
+            mimeType: uploadedPronunciation.mimeType,
+          })
+        : await dictionaryApiService.elicitFromText({
+            anchorText: newMeaningUsage.trim(),
+            indigenousResponse: newWord.trim(),
+            languageId: normalizeLanguageId(newLanguage.trim()),
+          });
 
-    const updatedEntries = sortWordsAtoZ([...communityEntries, entry]);
-    await saveCommunityEntries(updatedEntries);
-    resetContributionForm();
-    Alert.alert('Contribution Submitted', 'Your word is saved locally and pending language expert verification.');
+      const draftEntry = response?.draft_dictionary_entry;
+      if (!draftEntry) {
+        throw new Error('Backend did not return a dictionary draft entry.');
+      }
+
+      const mapped = mapApiEntryToWord(draftEntry);
+      setDictionaryApiEntries((prev) => {
+        const withoutDup = prev.filter((item) => item.id !== mapped.id);
+        return sortWordsAtoZ([mapped, ...withoutDup]);
+      });
+
+      resetContributionForm();
+      Alert.alert('Contribution Submitted', 'Your word was sent to API and is pending language expert verification.');
+    } catch (error) {
+      console.error('Create dictionary entry via API error:', error);
+      Alert.alert('Submission Failed', error?.message || 'Could not submit to API. Please try again.');
+    }
   };
 
   const openScanOptions = () => {
@@ -644,10 +722,10 @@ export default function DictionaryScreen({ navigation }) {
               <View style={[styles.pronunciationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
                 <Text style={[styles.exampleText, { color: theme.text }]}>Status: {selectedWord.verificationStatus}</Text>
               </View>
-              {selectedWord.source === 'community' && selectedWord.verificationStatus !== 'Verified by language expert' ? (
+              {(selectedWord.source === 'community' || selectedWord.source === 'api') && selectedWord.verificationStatus !== 'Verified by language expert' ? (
                 <TouchableOpacity
                   style={[styles.secondaryActionBtn, { borderColor: theme.border, marginTop: SPACING.s }]}
-                  onPress={() => verifyCommunityEntry(selectedWord.id)}
+                  onPress={() => verifyCommunityEntry(selectedWord)}
                   disabled={!userCanVerifyEntries}
                 >
                   <Ionicons
@@ -662,6 +740,27 @@ export default function DictionaryScreen({ navigation }) {
                     ]}
                   >
                     Expert Verify
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {selectedWord.source === 'api' && selectedWord.verificationStatus !== 'Verified by language expert' ? (
+                <TouchableOpacity
+                  style={[styles.secondaryActionBtn, { borderColor: theme.border, marginTop: SPACING.s }]}
+                  onPress={() => rejectApiEntry(selectedWord)}
+                  disabled={!userCanVerifyEntries}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={userCanVerifyEntries ? (theme.error || '#EF4444') : theme.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.secondaryActionText,
+                      { color: userCanVerifyEntries ? (theme.error || '#EF4444') : theme.textSecondary },
+                    ]}
+                  >
+                    Reject Entry
                   </Text>
                 </TouchableOpacity>
               ) : null}
@@ -713,7 +812,11 @@ export default function DictionaryScreen({ navigation }) {
 
   const categories = ['all', ...new Set(dictionaryWords.map((w) => w.category))];
   const languages = ['all', ...new Set(dictionaryWords.map((w) => w.language))];
-  const verifiedCount = communityEntries.filter((entry) => entry.verificationStatus === 'Verified by language expert').length;
+  const localVerifiedCount = communityEntries.filter((entry) => entry.verificationStatus === 'Verified by language expert').length;
+  const apiVerifiedCount = dictionaryApiEntries.filter((entry) => entry.statusRaw === 'verified').length;
+  const apiPendingCount = dictionaryApiEntries.filter((entry) => entry.statusRaw !== 'verified').length;
+  const verifiedCount = localVerifiedCount + apiVerifiedCount;
+  const pendingCount = (communityEntries.length - localVerifiedCount) + apiPendingCount;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -870,6 +973,9 @@ export default function DictionaryScreen({ navigation }) {
         <Text style={[styles.resultsText, { color: theme.textSecondary }]}>
           {sortedFilteredWords.length} word{sortedFilteredWords.length !== 1 ? 's' : ''} found (A-Z)
         </Text>
+        {isDictionarySyncing ? (
+          <Text style={[styles.resultsText, { color: theme.textSecondary }]}>Syncing dictionary from API...</Text>
+        ) : null}
       </View>
 
       {/* Words List */}
@@ -1007,7 +1113,7 @@ export default function DictionaryScreen({ navigation }) {
               <Text style={styles.primaryActionText}>Add to Living Dictionary</Text>
             </TouchableOpacity>
 
-            <Text style={[styles.moderationHint, { color: theme.textSecondary }]}>Moderation: language experts verify entries. Verified: {verifiedCount}. Pending: {communityEntries.length - verifiedCount}.</Text>
+            <Text style={[styles.moderationHint, { color: theme.textSecondary }]}>Moderation: language experts verify entries. Verified: {verifiedCount}. Pending: {pendingCount}.</Text>
           </View>
         </View>
       ) : null}

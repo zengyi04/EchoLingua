@@ -10,14 +10,16 @@ import { COLORS, SPACING, SHADOWS, FONTS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { prepareSingleRecording, stopAndReleaseRecording } from '../services/recordingService';
 import { translateText } from '../services/translationService';
+import { storyApiService } from '../services/storyApiService';
 import { WORLD_LANGUAGES, getBorneoLanguages } from '../constants/languages';
+import { recordingService as backendRecordingService, storyService } from '../services/api';
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL || 'gemini-2.0-flash';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
+const COMMUNITY_STORIES_STORAGE_KEY = '@echolingua_community_stories';
 const RECORDINGS_STORAGE_KEY = '@echolingua_recordings';
 const ELDER_VOICES_STORAGE_KEY = '@echolingua_elder_voices';
 const AI_TEXT_DRAFTS_KEY = '@echolingua_ai_text_drafts';
+const isObjectId = (value) => /^[a-f\d]{24}$/i.test(String(value || ''));
 
 export default function AIStoryGeneratorScreen() {
   const { theme } = useTheme();
@@ -118,6 +120,35 @@ export default function AIStoryGeneratorScreen() {
       if (raw) {
         setRecordings(JSON.parse(raw));
       }
+
+      if (currentUser?.id && isObjectId(currentUser.id)) {
+        try {
+          const backendRecs = await backendRecordingService.getAll(null, currentUser.id);
+          if (Array.isArray(backendRecs) && backendRecs.length > 0) {
+            const mapped = backendRecs.map((rec) => ({
+              id: rec.id,
+              uri: rec.audioUrl,
+              timestamp: rec.createdAt || new Date().toISOString(),
+              fileName: `Recording ${new Date(rec.createdAt || Date.now()).toLocaleTimeString()}`,
+              transcript: rec.transcript || '',
+            }));
+            setRecordings((prev) => {
+              const merged = [...mapped, ...prev];
+              const dedup = [];
+              const seen = new Set();
+              merged.forEach((item) => {
+                if (!seen.has(item.id)) {
+                  seen.add(item.id);
+                  dedup.push(item);
+                }
+              });
+              return dedup;
+            });
+          }
+        } catch (backendError) {
+          console.warn('Recording list API unavailable, using local recordings only:', backendError?.message || backendError);
+        }
+      }
     } catch (e) {
       console.error('Failed to load recordings', e);
     }
@@ -178,6 +209,31 @@ export default function AIStoryGeneratorScreen() {
     } catch (e) {
       console.error('Failed to load user and contacts', e);
     }
+  };
+
+  const getPreferredLearningLanguage = () => {
+    const candidates = Array.isArray(currentUser?.languages)
+      ? currentUser.languages
+      : typeof currentUser?.languages === 'string' && currentUser.languages.trim()
+        ? currentUser.languages.split(',').map((item) => item.trim()).filter(Boolean)
+        : [];
+
+    const first = candidates[0];
+    if (!first) {
+      return 'Kadazan';
+    }
+
+    const byId = WORLD_LANGUAGES.find((lang) => lang.id.toLowerCase() === String(first).toLowerCase());
+    if (byId) {
+      return byId.label;
+    }
+
+    const byLabel = WORLD_LANGUAGES.find((lang) => lang.label.toLowerCase() === String(first).toLowerCase());
+    if (byLabel) {
+      return byLabel.label;
+    }
+
+    return first;
   };
 
   useEffect(() => {
@@ -245,6 +301,25 @@ export default function AIStoryGeneratorScreen() {
       const updatedRecs = [newRec, ...recordings];
       setRecordings(updatedRecs);
       await AsyncStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(updatedRecs));
+
+      if (currentUser?.id && isObjectId(currentUser.id)) {
+        try {
+          const upload = await backendRecordingService.upload(
+            uri,
+            currentUser.id,
+            getPreferredLearningLanguage(),
+            true,
+            'private',
+            ''
+          );
+          const recordingId = upload?.recording?.id;
+          if (recordingId) {
+            await backendRecordingService.getById(recordingId).catch(() => null);
+          }
+        } catch (uploadError) {
+          console.warn('Recording upload API failed, continuing local flow:', uploadError?.message || uploadError);
+        }
+      }
 
       // After recording, open the action sheet to let user decide
       setMode('input'); // Reset mode to ensure modal is visible
@@ -415,7 +490,16 @@ export default function AIStoryGeneratorScreen() {
 
     setMode('processing');
     setLoadingMessage('Analyzing existing recording...');
-    await processAudioFile(rec.uri);
+    try {
+      await processAudioFile(rec.uri);
+    } catch (error) {
+      console.error('Failed to process recording for story:', error);
+      Alert.alert(
+        'Could Not Generate Story',
+        error?.message || 'Transcription failed. Please check your API key and try again.'
+      );
+      setMode('input');
+    }
   };
 
   const ensureRecordingTranscript = async (rec) => {
@@ -427,10 +511,7 @@ export default function AIStoryGeneratorScreen() {
     try {
       setIsTranslating(true);
 
-      const audioResponse = await fetch(rec.uri);
-      const buffer = await audioResponse.arrayBuffer();
-      const base64Audio = toBase64(new Uint8Array(buffer));
-      const transcriptionText = await transcribeAudio(base64Audio);
+      const transcriptionText = await transcribeAudio(rec.uri);
 
       if (!transcriptionText || !transcriptionText.trim()) {
         Alert.alert('Transcription Failed', 'Unable to transcribe this recording. Please try again.');
@@ -464,21 +545,19 @@ export default function AIStoryGeneratorScreen() {
   };
 
   const processAudioFile = async (uri) => {
+      console.log('🎙️ Processing audio file for story generation:', uri);
       // 1. Transcribe
       setLoadingMessage('Transcribing audio...');
-      const audioResponse = await fetch(uri);
-      const buffer = await audioResponse.arrayBuffer();
-      const base64Audio = toBase64(new Uint8Array(buffer));
-
-      const transcriptionText = await transcribeAudio(base64Audio);
+      const transcriptionText = await transcribeAudio(uri);
       
+      console.log('📝 Transcribed text:', transcriptionText);
       if (!transcriptionText) {
-        throw new Error('Transcription failed');
+        throw new Error('Transcription failed. Please login and ensure backend is running.');
       }
 
-      // 2. Generate Story
-      setLoadingMessage('Weaving the story magic...');
-      await generateStoryFromText(transcriptionText);
+      // 2. Generate Story via Backend AI API
+      setLoadingMessage('Generating your story through AI service...');
+      await generateStoryFromText(transcriptionText, uri);
   };
 
   const handleTextGenerate = async () => {
@@ -548,142 +627,106 @@ export default function AIStoryGeneratorScreen() {
     }
   };
 
-  const transcribeAudio = async (base64Audio) => {
-    // MOCK MODE: If backend is unavailable or fails, use this mock
-    const useMock = true; 
-    
+  const transcribeAudio = async (audioUri) => {
     try {
-      if (useMock || !GEMINI_API_KEY) {
-        throw new Error('Using Mock Transcription');
-      }
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [
-                { text: 'Transcribe this audio exactly. Return only the text. If it is already text, fix grammar.' },
-                { inline_data: { mime_type: 'audio/mp4', data: base64Audio } }
-              ]
-            }]
-          })
-        }
-      );
-      const data = await response.json();
-      return data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      return await storyApiService.transcribeAudioFromBackend(audioUri);
     } catch (e) {
-      // API Transcription unavailable, using mock data
-      
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      return "Long ago, in the deep forests of Borneo, there lived a small mouse deer named Sang Kancil. He was small but very clever, always outsmarting the bigger animals like the crocodile and the tiger.";
+      console.error('Transcription failed:', e?.message || e);
+      return '';
     }
   };
 
-  const generateStoryFromText = async (seedText) => {
-    // MOCK MODE: If backend is unavailable or fails, use this mock
-    const useMock = true;
-
+  const generateStoryFromText = async (seedText, sourceAudioUri = null) => {
     try {
-      setLoadingMessage('Illustrating and expanding...');
+      setLoadingMessage('Contacting AI service to create your story...');
       
-      if (useMock || !GEMINI_API_KEY) {
-        throw new Error('Using Mock Generation');
-      }
+      console.log('📖 Starting story generation from seed text:', seedText);
+      const preferredLanguage = getPreferredLearningLanguage();
 
-      const prompt = `
-        You are an expert indigenous storyteller.
-        Take this fragment: "${seedText}"
-        
-        Create a full children's story based on it.
-        Return a JSON object with this EXACT structure (no markdown formatting, just raw JSON):
+      // Prepare data for backend AI story endpoint according to API docs
+      // The backend expects: annotated_text, grammar_rules, language
+      const annotatedText = [
         {
-          "title": "Story Title",
-          "summary": "Short summary",
-          "language": "English (but use indigenous names/concepts)",
-          "pages": [
-            { "text": "Paragraph 1...", "imagePrompt": "Description of image for page 1" },
-            { "text": "Paragraph 2...", "imagePrompt": "Description of image for page 2" },
-            { "text": "Paragraph 3...", "imagePrompt": "Description of image for page 3" }
-          ]
+          indigenous_text: seedText,
+          malay_translation: seedText // Placeholder: ideally this would be translated
         }
-        Keep it to 3-5 pages.
-      `;
+      ];
+      
+      const grammarRules = [
+        'Subject-Verb-Object (SVO)',
+        'Simple present tense for narration',
+        'Use appropriate cultural context'
+      ];
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
-          })
-        }
+      // Call the backend AI story generation API
+      const storyResponse = await storyApiService.generateStory(
+        annotatedText,
+        grammarRules,
+        preferredLanguage
       );
-      
-      const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      const storyObj = JSON.parse(cleanJson);
-      
-      finishGeneration(storyObj, seedText);
 
-    } catch (e) {
-      // API Generation unavailable, using mock data
+      console.log('✅ Story generated successfully:', storyResponse);
       
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      const mockStory = {
-        title: "Sang Kancil and the River",
-        summary: "A clever mouse deer tricks the crocodiles to cross the river.",
-        language: "English / Malay Folklore",
-        pages: [
-          { 
-            text: "One hot afternoon, Sang Kancil the mouse deer wanted to cross the river to eat the delicious fruits on the other side. But the river was full of hungry crocodiles.", 
-            imagePrompt: "A small mouse deer standing by a river bank looking at floating crocodiles" 
-          },
-          { 
-            text: "Sang Kancil called out to the King of Crocodiles, 'The King has ordered me to count all the crocodiles in the river for a feast! Line up so I can count you!'", 
-            imagePrompt: "Crocodiles lining up across the river forming a bridge" 
-          },
-          { 
-            text: "The foolish crocodiles lined up from one bank to the other. Sang Kancil jumped on their backs, 'One! Two! Three!' he counted as he hopped across.", 
-            imagePrompt: "Mouse deer jumping on the backs of crocodiles" 
-          },
-          { 
-            text: "When he reached the other side, he laughed, 'Thank you for the bridge!' and ran off to enjoy the fruits, leaving the angry crocodiles behind.", 
-            imagePrompt: "Mouse deer eating fruits on the river bank, crocodiles looking angry in the water" 
-          }
-        ]
-      };
-      
-      finishGeneration(mockStory, seedText);
+      // The backend response includes the story with title, pages, etc.
+      // and has already persisted it to the database
+      finishGeneration(storyResponse, seedText, sourceAudioUri);
+
+    } catch (error) {
+      console.error('❌ Story generation error:', error);
+      setMode('input');
+      Alert.alert(
+        'Story Generation Failed',
+        'Could not generate story. Please try again or use the text input method.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
-  const finishGeneration = async (storyObj, sourceText = '') => {
+  const finishGeneration = async (storyObj, sourceText = '', sourceAudioUri = null) => {
+      console.log('🎯 Finalizing story generation:', { title: storyObj.title, pages: storyObj.pages?.length });
+
+      const normalizedPages = (storyObj.pages || []).map((p, index) => ({
+        page_number: p.page_number || index + 1,
+        text: p.text || p.indigenous_text || '',
+        translation: p.translation || p.english_translation || '',
+        imagePrompt: p.imagePrompt || p.image_generation_prompt || '',
+        image_url: p.image_url || null,
+        indigenous_text: p.indigenous_text || p.text || '',
+        english_translation: p.english_translation || p.translation || '',
+      }));
+      
+      // The backend returns: { title, pages: [...], language, createdBy }
+      // Pages have: page_number, indigenous_text, english_translation, image_generation_prompt, image_url
       const newStory = {
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString(),
+        id: storyObj.id || Date.now().toString(), // Backend may provide ID
+        title: storyObj.title || 'Untitled Story',
+        summary: storyObj.summary || storyObj.title || '',
+        language: storyObj.language || 'Kadazan',
+        pages: normalizedPages,
+        createdBy: storyObj.createdBy,
+        createdAt: storyObj.createdAt || new Date().toISOString(),
         isAiGenerated: true,
+        audioUri: sourceAudioUri || null,
+        transcript: sourceText || inputText.trim(),
         sourceText: sourceText || inputText.trim(),
-        ...storyObj
+        // Map pages to the expected format for display
+        text: normalizedPages.map((p, i) => `Page ${i + 1}: ${p.text}`).join('\n\n') || ''
       };
       
+      console.log('✅ Story object prepared:', newStory);
       setGeneratedStory(newStory);
       setMode('input');
       setLoadingMessage('');
       
-      // Show modal to enter title and description
-      setStoryTitle(newStory.title || '');
-      setStoryDescription(newStory.summary || '');
-      setShowCreateStoryModal(true);
+      // Use AI-generated title and description directly (no user input modal)
+      setStoryTitle(newStory.title);
+      setStoryDescription(newStory.summary);
+      
+      // Skip the title/description modal and go straight to recipient selection
+      // Default to saving to "My Creations" automatically
+      setSelectedRecipients(['my_stories']);
+      setShowCreateStoryModal(false);
+      setShowRecipientModal(true);
   };
 
   // Helper function to get unique key for contact
@@ -857,9 +900,11 @@ export default function AIStoryGeneratorScreen() {
 
       const normalizedTitle = storyTitle.trim();
       const normalizedDescription = storyDescription.trim() || generatedStory?.summary || '';
+      const fullStoryText =
+        generatedStory?.pages?.map((page, idx) => `Page ${idx + 1}: ${page.text || page.indigenous_text || ''}`).join('\n\n') || '';
       const normalizedText = (
+        fullStoryText ||
         translatedText ||
-        inputText ||
         generatedStory?.sourceText ||
         generatedStory?.summary ||
         ''
@@ -889,35 +934,76 @@ export default function AIStoryGeneratorScreen() {
         summary: normalizedDescription,
         text: normalizedText,
         sourceText: normalizedText,
+        language: generatedStory?.language || getPreferredLearningLanguage(),
+        languageId: WORLD_LANGUAGES.find(
+          (lang) => lang.label.toLowerCase() === String(generatedStory?.language || getPreferredLearningLanguage()).toLowerCase()
+        )?.id || null,
         author: currentUser?.fullName || 'AI Generator',
         authorEmail: currentUser?.email || null,
         authorId: currentUser?.id || null,
         authorRole: currentUser?.role || 'learner',
         category: 'AI Generated',
         recipients: selectedRecipients,
+        pages: generatedStory?.pages || [],
         // Include audio recording data if present
         ...(generatedStory?.audioUri && {
           audioUri: generatedStory.audioUri,
           duration: generatedStory.duration,
-          transcript: generatedStory.transcript || normalizedText,
+          transcript: generatedStory.transcript || generatedStory.sourceText || normalizedText,
         }),
       };
 
       // Save to My Creations (My Creation in Story Library)
       if (myStoriesSelected) {
-        const existingRaw = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
-        const existing = existingRaw ? JSON.parse(existingRaw) : [];
-        await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify([updatedStory, ...existing]));
+        try {
+          try {
+            await storyService.create({
+              title: normalizedTitle,
+              language: updatedStory.language,
+              text: normalizedText,
+              tags: ['ai-generated'],
+              pages: updatedStory.pages || [],
+            });
+          } catch (createError) {
+            console.warn('Manual /stories create endpoint failed, using local save only:', createError?.message || createError);
+          }
+
+          const existingRaw = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+          const existing = existingRaw ? JSON.parse(existingRaw) : [];
+          const updated = [updatedStory, ...existing];
+          await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(updated));
+          console.log('✅ Story saved to "My Creations" local storage:', {
+            title: updatedStory.title,
+            totalStories: updated.length,
+            storyId: updatedStory.id,
+            isBackendGenerated: !!updatedStory.createdBy
+          });
+        } catch (err) {
+          console.error('❌ Failed to save to My Creations:', err);
+          Alert.alert('Error', 'Could not save story to My Creations');
+        }
       }
 
-      // Save to Community Story
+      // Save to Community Story (also persisted by backend)
       if (communitySelected) {
-        const existingRaw = await AsyncStorage.getItem('@echolingua_stories');
-        const existing = existingRaw ? JSON.parse(existingRaw) : [];
-        await AsyncStorage.setItem('@echolingua_stories', JSON.stringify([updatedStory, ...existing]));
-        
-        // Create notifications for all users about new community story
-        await createCommunityStoryNotifications(updatedStory);
+        try {
+          console.log('📢 Community story already in backend. Marking for community access...');
+          // Story is already in backend, just save locally for offline access
+          const existingRaw = await AsyncStorage.getItem(COMMUNITY_STORIES_STORAGE_KEY);
+          const existing = existingRaw ? JSON.parse(existingRaw) : [];
+          
+          // Don't duplicate if already saved in My Creations
+          const alreadySaved = existing.some(s => s.id === updatedStory.id);
+          if (!alreadySaved) {
+            await AsyncStorage.setItem(COMMUNITY_STORIES_STORAGE_KEY, JSON.stringify([updatedStory, ...existing]));
+          }
+          
+          console.log('✅ Community story synced locally');
+          // Create notifications for all users about new community story
+          await createCommunityStoryNotifications(updatedStory);
+        } catch (err) {
+          console.warn('⚠️ Community story sync issue:', err);
+        }
       }
 
       // Share to Emergency Contacts (Other Creation)
@@ -940,7 +1026,7 @@ export default function AIStoryGeneratorScreen() {
           [
             {
               text: 'View Community',
-              onPress: () => navigation.navigate('CommunityStory')
+              onPress: () => navigation.navigate('MainTabs', { screen: 'StoriesTab', params: { initialTab: 'library' } })
             },
             { text: 'OK' }
           ]
@@ -952,7 +1038,7 @@ export default function AIStoryGeneratorScreen() {
           [
             {
               text: 'View My Stories',
-              onPress: () => navigation.navigate('MainTabs', { screen: 'StoriesTab' })
+              onPress: () => navigation.navigate('MainTabs', { screen: 'StoriesTab', params: { initialTab: 'creations' } })
             },
             { text: 'OK' }
           ]
@@ -961,7 +1047,13 @@ export default function AIStoryGeneratorScreen() {
         Alert.alert(
           'Story Saved! 🎉', 
           `"${storyTitle}" has been shared with ${emergencyContactIds.length} emergency contact(s).`,
-          [{ text: 'OK' }]
+          [
+            { 
+              text: 'View Shared',
+              onPress: () => navigation.navigate('MainTabs', { screen: 'StoriesTab', params: { initialTab: 'shared' } })
+            },
+            { text: 'OK' }
+          ]
         );
       } else {
         Alert.alert(
@@ -1032,24 +1124,6 @@ export default function AIStoryGeneratorScreen() {
   useEffect(() => {
     loadRecordingsFromStorage();
   }, []);
-
-  // Helper
-  function toBase64(bytes) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    let result = '';
-    let i = 0;
-    while (i < bytes.length) {
-      const a = bytes[i++];
-      const b = i < bytes.length ? bytes[i++] : undefined;
-      const c = i < bytes.length ? bytes[i++] : undefined;
-      const triplet = (a << 16) | ((b || 0) << 8) | (c || 0);
-      result += chars[(triplet >> 18) & 63];
-      result += chars[(triplet >> 12) & 63];
-      result += b === undefined ? '=' : chars[(triplet >> 6) & 63];
-      result += c === undefined ? '=' : chars[triplet & 63];
-    }
-    return result;
-  }
 
   // --- RENDER ---
   
@@ -1693,7 +1767,7 @@ export default function AIStoryGeneratorScreen() {
                  }}>
                    <Ionicons name="people-outline" size={32} color={theme.textSecondary} />
                    <Text style={{ color: theme.textSecondary, marginTop: SPACING.s, textAlign: 'center' }}>
-                     No emergency contacts found in your profile. Add contacts in Profile > Emergency Contacts.
+                     No emergency contacts found in your profile. Add contacts in Profile Emergency Contacts.
                    </Text>
                  </View>
                )}

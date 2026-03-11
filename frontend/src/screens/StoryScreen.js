@@ -10,6 +10,9 @@ import { stories } from '../data/mockData';
 import { COLORS, SPACING, SHADOWS, FONTS, GLASS_EFFECTS } from '../constants/theme';
 import { playSound } from '../services/soundService';
 import { useTheme } from '../context/ThemeContext';
+import { WORLD_LANGUAGES } from '../constants/languages';
+import { aiApiService } from '../services/aiApiService';
+import { storyService } from '../services/api';
 
 const ELDER_VOICES_STORAGE_KEY = '@echolingua_elder_voices';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
@@ -17,6 +20,7 @@ const STORIES_STORAGE_KEY = '@echolingua_stories';
 export default function StoryScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
+  const [failedPageImages, setFailedPageImages] = useState({});
   const [showTranslation, setShowTranslation] = useState(false);
   const [isElderMode, setIsElderMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -52,10 +56,33 @@ export default function StoryScreen() {
 
   const route = useRoute();
   const { storyId, story: passedStory } = route.params || {};
-  const story = passedStory || stories.find(s => s.id === storyId) || stories[0]; 
-  
-  // Check if this is a community story (has audioUri) or default story (has pages)
-  const isCommunityStory = !!story.audioUri; 
+  const [storyState, setStoryState] = useState(passedStory || stories.find(s => s.id === storyId) || stories[0]);
+  const story = storyState;
+
+  useEffect(() => {
+    const loadLatestStory = async () => {
+      if (!storyId) return;
+      try {
+        const backendStory = await storyService.getById(storyId);
+        if (backendStory) {
+          setStoryState((prev) => ({
+            ...prev,
+            ...backendStory,
+            // Keep local pages if backend returned none (manual-create stories don't store pages)
+            pages: (backendStory.pages?.length > 0) ? backendStory.pages : prev.pages,
+          }));
+        }
+      } catch (error) {
+        console.warn('Story detail API unavailable, using local story payload:', error?.message || error);
+      }
+    };
+    loadLatestStory();
+  }, [storyId]);
+
+  const hasStoryPages = Array.isArray(story.pages) && story.pages.length > 0;
+
+  // Treat as community transcript-only story only when it has no page content.
+  const isCommunityStory = !!story.audioUri && !hasStoryPages;
 
   const buildReadableStoryText = () => {
     if (isCommunityStory) {
@@ -63,14 +90,78 @@ export default function StoryScreen() {
     }
 
     if (Array.isArray(story.pages) && story.pages.length > 0) {
-      return story.pages.map((page) => page.text).join(' ');
+      return story.pages
+        .map((page) => page.text || page.indigenous_text || page.english_translation || '')
+        .join(' ');
+    }
+
+    if (typeof story.text === 'string' && story.text.trim()) {
+      return story.text.trim();
     }
 
     return story.title || 'Story content unavailable.';
   };
 
+  const getPageImageUri = (page, index) => {
+    const pageKey = `${story?.id || 'story'}-${index}`;
+
+    // If an image already failed for this page, render prompt placeholder instead of random stock photos.
+    if (failedPageImages[pageKey]) {
+      return null;
+    }
+
+    if (page?.image_url) {
+      return page.image_url;
+    }
+
+    const prompt = (page?.imagePrompt || page?.image_generation_prompt || page?.text || page?.indigenous_text || '').trim();
+    if (!prompt) {
+      return null;
+    }
+
+    // Fallback image generation from prompt when backend does not provide image_url.
+    return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=768&nologo=true`;
+  };
+
+  const getPageImageSourceLabel = (page, index) => {
+    const pageKey = `${story?.id || 'story'}-${index}`;
+    if (failedPageImages[pageKey]) {
+      return page?.image_url ? 'AI image unavailable on this device/network' : 'Fallback illustration placeholder';
+    }
+
+    if (page?.image_url) {
+      return 'AI image (backend)';
+    }
+
+    const prompt = (page?.imagePrompt || page?.image_generation_prompt || page?.text || page?.indigenous_text || '').trim();
+    if (prompt) {
+      return 'AI image (prompt-based)';
+    }
+
+    return 'No image source';
+  };
+
   const getSpeechLanguageCode = () => {
-    const langId = story.languageId || '';
+    const preferredCandidates = Array.isArray(currentUser?.languages)
+      ? currentUser.languages
+      : typeof currentUser?.languages === 'string' && currentUser.languages.trim()
+        ? currentUser.languages.split(',').map((item) => item.trim()).filter(Boolean)
+        : [];
+
+    const storyLanguageRaw = story.languageId || story.language || '';
+    const preferredRaw = preferredCandidates[0] || '';
+
+    const resolveLanguageId = (value) => {
+      if (!value) return '';
+      const normalized = String(value).toLowerCase();
+      const byId = WORLD_LANGUAGES.find((lang) => lang.id.toLowerCase() === normalized);
+      if (byId) return byId.id;
+      const byLabel = WORLD_LANGUAGES.find((lang) => lang.label.toLowerCase() === normalized);
+      if (byLabel) return byLabel.id;
+      return normalized;
+    };
+
+    const langId = resolveLanguageId(storyLanguageRaw) || resolveLanguageId(preferredRaw) || 'english';
     const map = {
       english: 'en-US',
       malay: 'ms-MY',
@@ -89,6 +180,12 @@ export default function StoryScreen() {
       italian: 'it-IT',
       turkish: 'tr-TR',
       hindi: 'hi-IN',
+      iban: 'ms-MY',
+      bidayuh: 'ms-MY',
+      kadazan: 'ms-MY',
+      murut: 'ms-MY',
+      melanau: 'ms-MY',
+      penan: 'ms-MY',
     };
 
     return map[langId] || 'en-US';
@@ -236,6 +333,34 @@ export default function StoryScreen() {
     if (!text || text.trim().length === 0) {
       Alert.alert('Audio Unavailable', 'No readable story content found.');
       return;
+    }
+
+    // Try backend TTS first for higher-fidelity pronunciation.
+    try {
+      const tts = await aiApiService.tts({
+        indigenousText: text.slice(0, 500),
+        languageId: story.languageId || 'kadazan-demo',
+      });
+      if (tts?.audio_url) {
+        if (audioSound) {
+          await audioSound.unloadAsync();
+        }
+        const { sound } = await Audio.Sound.createAsync({ uri: tts.audio_url }, { shouldPlay: true });
+        setAudioSound(sound);
+        setIsPlaying(true);
+        setAudioSource('recorded');
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status?.isLoaded) {
+            setPlaybackStatus({ position: status.positionMillis || 0, duration: status.durationMillis || 1 });
+          }
+          if (status?.didJustFinish) {
+            setIsPlaying(false);
+          }
+        });
+        return;
+      }
+    } catch (ttsError) {
+      console.warn('Backend TTS unavailable, using local speech fallback:', ttsError?.message || ttsError);
     }
 
     if (selectedVoice) {
@@ -608,8 +733,7 @@ export default function StoryScreen() {
                  <View style={[styles.translationBox, { backgroundColor: theme.glassMedium, borderLeftColor: theme.secondary }]}>
                    <Text style={[styles.translationLabel, { color: theme.secondary }]}>Translation:</Text>
                    <Text style={[styles.translationText, { color: theme.textSecondary }]}>
-                     Translation feature coming soon...
-                     {/* TODO: Implement dynamic translation based on user language preference */}
+                     {story.description || story.summary || story.transcript || 'Translation unavailable for this story.'}
                    </Text>
                  </View>
                )}
@@ -618,12 +742,28 @@ export default function StoryScreen() {
             // Default story: Show pages
             story.pages?.map((page, index) => (
               <View key={index} style={styles.pageContainer}>
+                 {getPageImageUri(page, index) ? (
+                   <View>
+                     <Image
+                       source={{ uri: getPageImageUri(page, index) }}
+                       style={[styles.illustrationPlaceholder, { resizeMode: 'cover' }]}
+                       onError={() => {
+                         const pageKey = `${story?.id || 'story'}-${index}`;
+                         setFailedPageImages((prev) => ({ ...prev, [pageKey]: true }));
+                       }}
+                     />
+                     <Text style={[styles.imageSourceLabel, { color: theme.textSecondary }]}>
+                       {getPageImageSourceLabel(page, index)}
+                     </Text>
+                   </View>
+                 ) : null}
+
                  {/* AI Illustration Placeholder */}
-                 {page.imagePrompt && (
+                 {!getPageImageUri(page, index) && (page.imagePrompt || page.image_generation_prompt || page.text || page.indigenous_text) && (
                    <View style={[styles.illustrationPlaceholder, { backgroundColor: theme.surfaceVariant }]}>
                       <MaterialIcons name="image" size={40} color={theme.textSecondary} />
                       <Text style={[styles.illustrationText, { color: theme.textSecondary }]}>
-                        [AI Illustration would appear here based on: "{page.imagePrompt}"]
+                        [AI Illustration would appear here based on: "{page.imagePrompt || page.image_generation_prompt}"]
                       </Text>
                    </View>
                  )}
@@ -633,15 +773,14 @@ export default function StoryScreen() {
                    { color: theme.text },
                    isElderMode && styles.elderText
                  ]}>
-                    {page.text}
+                    {page.text || page.indigenous_text || page.english_translation || 'No story text available.'}
                  </Text>
                  
                  {showTranslation && (
                    <View style={[styles.translationBox, { backgroundColor: theme.glassMedium, borderLeftColor: theme.secondary }]}>
                      <Text style={[styles.translationLabel, { color: theme.secondary }]}>Translation:</Text>
                      <Text style={[styles.translationText, { color: theme.textSecondary }]}>
-                       {page.translation}
-                       {/* TODO: Implement dynamic translation based on user language preference */}
+                       {page.translation || page.english_translation || 'Translation unavailable for this page.'}
                      </Text>
                    </View>
                  )}
@@ -1021,17 +1160,25 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.s,
   },
   illustrationPlaceholder: {
+    width: '100%',
     height: 200,
     borderRadius: SPACING.m,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SPACING.m,
     padding: SPACING.m,
+    overflow: 'hidden',
   },
   illustrationText: {
     marginTop: 8,
     textAlign: 'center',
     fontSize: 12,
+    fontStyle: 'italic',
+  },
+  imageSourceLabel: {
+    fontSize: 11,
+    marginTop: -8,
+    marginBottom: SPACING.s,
     fontStyle: 'italic',
   },
   optionRow: {

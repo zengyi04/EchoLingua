@@ -8,9 +8,19 @@ const GOOGLE_VISION_ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate
 const OCR_SPACE_ENDPOINT = 'https://api.ocr.space/parse/image';
 
 const readImageAsBase64 = async (imageUri) => {
-  return FileSystem.readAsStringAsync(imageUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  // Expo SDK 54+ favors the new File API. Keep a safe fallback for older shapes.
+  if (typeof FileSystem.File === 'function') {
+    const file = new FileSystem.File(imageUri);
+    return file.base64();
+  }
+
+  if (typeof FileSystem.readAsStringAsync === 'function') {
+    return FileSystem.readAsStringAsync(imageUri, {
+      encoding: 'base64',
+    });
+  }
+
+  throw new Error('FileSystem base64 reader is unavailable in this runtime.');
 };
 
 const extractWithGoogleVision = async (base64, apiKey) => {

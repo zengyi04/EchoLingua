@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { authService } from '../services/api';
 
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const USERS_DATABASE_KEY = '@echolingua_users_database';
@@ -47,38 +48,20 @@ export default function LoginScreen({ navigation }) {
     setIsLoading(true);
 
     try {
-      // Load users database
-      const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
-      const users = usersData ? JSON.parse(usersData) : [];
+      // Use Backend API for login
+      const data = await authService.login(email.trim(), password);
+      const user = data.user;
 
-      // Find user
-      const user = users.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase().trim()
-      );
-
-      if (!user) {
-        Alert.alert('Error', 'Account not found. Please sign up first.');
-        setIsLoading(false);
-        return;
+      // Store user info safely
+      // authService.login already handles token storage, but we might want to store user details 
+      // if not handled there fully or for legacy code compatibility
+      if (user) {
+        // Remove password just in case backend sends it (it shouldn't)
+        const { password: _, ...userSafe } = user;
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userSafe));
       }
 
-      // Verify password (in production, use proper hashing)
-      if (user.password !== password) {
-        Alert.alert('Error', 'Incorrect password');
-        setIsLoading(false);
-        return;
-      }
-
-      // Remove password before storing current user
-      const { password: _, ...userWithoutPassword } = user;
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userWithoutPassword));
-
-      // Update user's lastActive timestamp in database
-      const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase().trim());
-      users[userIndex] = { ...user, lastActive: new Date().toISOString() };
-      await AsyncStorage.setItem(USERS_DATABASE_KEY, JSON.stringify(users));
-
-      Alert.alert('Success', `Welcome back, ${user.fullName}!`, [
+      Alert.alert('Success', `Welcome back, ${user.name || user.email}!`, [
         {
           text: 'OK',
           onPress: () => {
@@ -91,7 +74,9 @@ export default function LoginScreen({ navigation }) {
       ]);
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'Failed to login. Please try again.');
+      // Fallback for demo purposes if backend fails? 
+      // For now, let's keep it strict to the backend as requested.
+      Alert.alert('Error', error.message || 'Failed to login. Please try again.');
     } finally {
       setIsLoading(false);
     }

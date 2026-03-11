@@ -6,6 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { analyticsService } from '../services/api';
 
 const SIDEBAR_WIDTH = 132;
 const COLLAPSED_SIDEBAR_WIDTH = 52;
@@ -219,6 +220,24 @@ export default function LanguageVitalityDashboard() {
   const loadDashboardMetrics = async () => {
     try {
       setIsLoading(true);
+      try {
+        const usage = await analyticsService.getLanguageUsage();
+        if (usage && typeof usage === 'object') {
+          const usageEntries = Object.entries(usage).slice(0, 6);
+          if (usageEntries.length > 0) {
+            setActivityData(
+              usageEntries.map(([month, value]) => ({
+                month: String(month).slice(0, 3),
+                value: Number(value) || 0,
+                label: String(value),
+              }))
+            );
+          }
+        }
+      } catch (analyticsError) {
+        console.warn('Analytics API unavailable, using local metrics fallback:', analyticsError?.message || analyticsError);
+      }
+
       const [quizRaw, scenarioRaw, recordingsRaw, usersRaw, learningMinutesRaw] = await Promise.all([
         AsyncStorage.getItem(QUIZ_RESULTS_KEY),
         AsyncStorage.getItem(SCENARIO_RESULTS_KEY),

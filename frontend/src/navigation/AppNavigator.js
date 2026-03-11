@@ -15,7 +15,6 @@ import VocabularyScreen from '../screens/VocabularyScreen';
 import StoryScreen from '../screens/StoryScreen';
 import StoryLibraryScreen from '../screens/StoryLibraryScreen';
 import QuizScreen from '../screens/QuizScreen';
-import RecordScreen from '../screens/RecordScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import LivingLanguageScreen from '../screens/LivingLanguageScreen';
 import MapScreen from '../screens/MapScreen';
@@ -137,7 +136,7 @@ export default function AppNavigator() {
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       
       {/* Feature Screens */}
-      <Stack.Screen name="Record" component={RecordScreen} />
+      <Stack.Screen name="Record" component={AIStoryGeneratorScreen} />
       <Stack.Screen name="CommunityStory" component={CommunityStoryScreen} />
       <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />

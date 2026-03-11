@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { aiApiService } from '../services/aiApiService';
 
 const MOCK_DETECTED_OBJECTS = [
   {
@@ -47,20 +48,41 @@ export default function ImageVocabularyScreen() {
   const [playingAudio, setPlayingAudio] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const performMockDetection = () => {
+  const detectFromApi = async (imageUri) => {
     setIsProcessing(true);
-    // Simulate API delay
-    setTimeout(() => {
+    try {
+      const response = await aiApiService.visionFromImage({
+        fileUri: imageUri,
+        languageId: 'kadazan-demo',
+      });
+
+      const mapped = {
+        id: `vision-${Date.now()}`,
+        name: response?.detected_english || 'Detected Object',
+        indigenous: response?.indigenous_word || 'Not found',
+        pronunciation: (response?.indigenous_word || '').toLowerCase(),
+        translation: response?.detected_english || 'Unknown',
+        description: response?.found_in_dictionary
+          ? 'Found in verified dictionary'
+          : 'Not found in verified dictionary',
+        confidence: response?.found_in_dictionary ? 95 : 65,
+      };
+
+      setDetectedObjects([mapped]);
+      setSelectedObject(mapped);
+    } catch (error) {
+      console.error('Vision image API failed, using mock fallback:', error);
       setDetectedObjects(MOCK_DETECTED_OBJECTS);
-      setIsProcessing(false);
       setSelectedObject(MOCK_DETECTED_OBJECTS[0]);
-    }, 2000);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const pickImage = async () => {
     // No permissions request is necessary for launching the image library
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
@@ -68,7 +90,7 @@ export default function ImageVocabularyScreen() {
 
     if (!result.canceled) {
       setUploadedImage(result.assets[0].uri);
-      performMockDetection();
+      detectFromApi(result.assets[0].uri);
     }
   };
 
@@ -80,6 +102,7 @@ export default function ImageVocabularyScreen() {
     }
 
     let result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
@@ -87,7 +110,7 @@ export default function ImageVocabularyScreen() {
 
     if (!result.canceled) {
       setUploadedImage(result.assets[0].uri);
-      performMockDetection();
+      detectFromApi(result.assets[0].uri);
     }
   };
 

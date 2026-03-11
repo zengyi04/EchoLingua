@@ -10,9 +10,9 @@ import { prepareSingleRecording, stopAndReleaseRecording } from '../services/rec
 import { translateTextBetween } from '../services/translationService';
 import { WORLD_LANGUAGES } from '../constants/languages';
 import { useTheme } from '../context/ThemeContext';
+import { communityApiService } from '../services/communityApiService';
+import { aiApiService } from '../services/aiApiService';
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL || 'gemini-2.0-flash';
 const CHAT_HISTORY_KEY = '@echolingua_ai_chat_history';
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const ELDER_VOICES_STORAGE_KEY = '@echolingua_elder_voices'; // From AIStoryGenerator
@@ -81,12 +81,6 @@ function toBase64(bytes) {
     result += c === undefined ? '=' : chars[triplet & 63];
   }
   return result;
-}
-
-function assertGeminiConfig() {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY in environment variables.');
-  }
 }
 
 function resolveLanguageId(languageValue) {
@@ -299,8 +293,28 @@ export default function AIChatScreen({ navigation, route }) {
     persistHistory();
   }, [messages, historyLoaded]);
 
-  const requestGemini = async (parts, includeHistory = true) => {
-    assertGeminiConfig();
+  const requestAiReply = async (prompt, includeHistory = true) => {
+    if (mode === 'living_language') {
+      try {
+        const rawUser = await AsyncStorage.getItem(USER_STORAGE_KEY);
+        const parsedUser = rawUser ? JSON.parse(rawUser) : null;
+        const fallbackUserId = `local-${Date.now()}`;
+        const userId = String(parsedUser?.id || fallbackUserId);
+        const scenarioId = String(targetLanguage || preferredLanguageId || 'living-language');
+
+        const response = await communityApiService.livingLanguageChat({
+          userId,
+          scenarioId,
+          message: prompt,
+        });
+
+        if (response?.ai_reply) {
+          return response.ai_reply;
+        }
+      } catch (apiError) {
+        console.warn('Living-language backend chat failed, falling back to general AI chat:', apiError?.message || apiError);
+      }
+    }
 
     let finalSystemContext = SYSTEM_CONTEXT;
     const activeLanguage = targetLanguage || preferredLanguageId;
@@ -325,44 +339,26 @@ export default function AIChatScreen({ navigation, route }) {
       `;
     }
 
-    // Build conversation history for context
     const conversationHistory = includeHistory
       ? messages.slice(-10).map((msg) => ({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.text }],
+          role: msg.role,
+          text: msg.text,
         }))
       : [];
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: finalSystemContext }] },
-          contents: [
-            ...conversationHistory,
-            { role: 'user', parts },
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            topP: 0.9,
-            maxOutputTokens: 700,
-          },
-        }),
-      }
-    );
+    const response = await aiApiService.chat({
+      message: prompt,
+      history: conversationHistory,
+      systemContext: finalSystemContext,
+      targetLanguage: activeLanguage,
+      mode,
+    });
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error ${response.status}`);
+    if (!response?.ai_reply) {
+      throw new Error('No response text from backend chat API');
     }
 
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error('No response text from Gemini');
-    }
-    return text;
+    return response.ai_reply;
   };
 
   const sendText = async () => {
@@ -377,13 +373,13 @@ export default function AIChatScreen({ navigation, route }) {
     setLoading(true);
 
     try {
-      const answer = await requestGemini([{ text: prompt }]);
+      const answer = await requestAiReply(prompt);
       const botMessage = { id: `${Date.now()}-a`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
       speakResponse(answer);
     } catch (error) {
       Alert.alert('AI Error', 'Unable to get answer right now. Please try again.');
-      console.error('Gemini text request failed:', error);
+      console.error('AI chat request failed:', error);
     } finally {
       setLoading(false);
     }
@@ -440,43 +436,14 @@ export default function AIChatScreen({ navigation, route }) {
       const buffer = await audioResponse.arrayBuffer();
       const base64Audio = toBase64(new Uint8Array(buffer));
 
-      // Use Gemini to transcribe audio to text
+      // Use backend to transcribe audio to text
       console.log('🎤 Transcribing audio to text...');
-      const transcriptionResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text: `Please transcribe this audio to text. The user might be speaking in ${targetLanguage || preferredLanguageId || 'English'} or mixed languages. Only return the transcribed text with no explanations.`,
-                  },
-                  {
-                    inline_data: {
-                      mime_type: 'audio/mp4',
-                      data: base64Audio,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: { temperature: 0.7 },
-          }),
-        }
-      );
-
-      if (!transcriptionResponse.ok) {
-        const errorData = await transcriptionResponse.json();
-        console.error('Transcription error:', errorData);
-        throw new Error('Failed to transcribe audio');
-      }
-
-      const transcriptionData = await transcriptionResponse.json();
-      const transcribedText = transcriptionData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const transcriptionResult = await aiApiService.transcribeAudio({
+        base64Audio,
+        mimeType: 'audio/mp4',
+        targetLanguage: targetLanguage || preferredLanguageId || 'English',
+      });
+      const transcribedText = transcriptionResult?.transcribed_text || '';
 
       if (!transcribedText.trim()) {
         Alert.alert('Transcription Failed', 'Could not transcribe audio. Please try again.');
@@ -509,13 +476,13 @@ export default function AIChatScreen({ navigation, route }) {
       setLoading(true);
 
       try {
-        const answer = await requestGemini([{ text: finalInput }]);
+        const answer = await requestAiReply(finalInput);
         const botMessage = { id: `${Date.now()}-voice-a`, role: 'assistant', text: answer };
         setMessages((prev) => [...prev, botMessage]);
         
         speakResponse(answer);
       } catch (geminiError) {
-        console.error('Gemini text request failed after voice:', geminiError);
+        console.error('AI chat request failed after voice:', geminiError);
         Alert.alert('AI Error', 'I heard you, but could not reply. Please try again.');
       }
     } catch (error) {
@@ -544,12 +511,12 @@ export default function AIChatScreen({ navigation, route }) {
       setMessages((prev) => [...prev, userMessage]);
       setInput('');
 
-      const answer = await requestGemini([{ text: messageText }]);
+      const answer = await requestAiReply(messageText);
       const botMessage = { id: `${Date.now()}-assistant`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
       speakResponse(answer);
     } catch (error) {
-      console.error('Gemini text request failed:', error);
+      console.error('AI chat request failed:', error);
       Alert.alert('AI Error', 'Could not get response. Please try again.');
     } finally {
       setLoading(false);

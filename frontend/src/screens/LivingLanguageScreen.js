@@ -9,7 +9,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { translateText } from '../services/translationService';
-import { WORLD_LANGUAGES } from '../constants/languages';
+import { UNIFIED_LANGUAGE_OPTIONS } from '../constants/translationLanguages';
 import {
   prepareSingleRecording,
   stopAndReleaseRecording,
@@ -39,7 +39,7 @@ const SPEECH_CODES = {
   hindi: 'hi-IN',
 };
 
-const LANGUAGE_CHOICES = WORLD_LANGUAGES.map((language) => ({
+const LANGUAGE_CHOICES = UNIFIED_LANGUAGE_OPTIONS.map((language) => ({
   id: language.id,
   label: `${language.flag} ${language.label}`,
   plainLabel: language.label,

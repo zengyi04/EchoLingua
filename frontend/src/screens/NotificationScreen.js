@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { communityApiService } from '../services/communityApiService';
 
 const NOTIFICATIONS_KEY = '@echolingua_notifications';
 const USER_STORAGE_KEY = '@echolingua_current_user';
@@ -39,6 +40,27 @@ export default function NotificationScreen() {
       const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
       if (userData) {
         const user = JSON.parse(userData);
+
+        try {
+          const apiNotifications = await communityApiService.getNotifications(user.id);
+          if (Array.isArray(apiNotifications)) {
+            const normalized = apiNotifications.map((n) => ({
+              id: String(n._id || n.id || `${Date.now()}-${Math.random()}`),
+              type: 'story',
+              title: 'Community Update',
+              message: n.message || '',
+              timestamp: n.createdAt || new Date().toISOString(),
+              read: false,
+              recipientId: user.id,
+            }));
+            normalized.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            setNotifications(normalized);
+            return;
+          }
+        } catch (apiError) {
+          console.warn('Notification API unavailable, using local fallback:', apiError?.message || apiError);
+        }
+
         const notifData = await AsyncStorage.getItem(NOTIFICATIONS_KEY);
         if (notifData) {
           const allNotifications = JSON.parse(notifData);

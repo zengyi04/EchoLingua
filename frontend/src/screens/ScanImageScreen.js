@@ -14,14 +14,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
-import { WORLD_LANGUAGES } from '../constants/languages';
+import {
+  TRANSLATION_LANGUAGE_OPTIONS,
+  detectLanguageFromText,
+  getLanguageLabelById,
+} from '../constants/translationLanguages';
 import { extractTextFromImage as extractTextFromImageService } from '../services/ocrService';
 import { translateTextBetween } from '../services/translationService';
-
-const TRANSLATION_LANGUAGE_OPTIONS = WORLD_LANGUAGES.map((language) => ({
-  id: language.id,
-  label: language.label,
-}));
+import { aiApiService } from '../services/aiApiService';
 
 const parseWordsFromText = (text) => {
   if (!text) return [];
@@ -46,6 +46,18 @@ const ScanImageScreen = ({ navigation }) => {
   const [sourceLanguageId, setSourceLanguageId] = useState('english');
   const [targetLanguageId, setTargetLanguageId] = useState('malay');
   const [ocrProvider, setOcrProvider] = useState('none');
+  const [detectedLanguageId, setDetectedLanguageId] = useState(null);
+  const [detectedLanguageConfidence, setDetectedLanguageConfidence] = useState(0);
+
+  const applyDetectedLanguage = (value) => {
+    const detection = detectLanguageFromText(value);
+    setDetectedLanguageId(detection.languageId);
+    setDetectedLanguageConfidence(detection.confidence);
+
+    if (detection.languageId) {
+      setSourceLanguageId(detection.languageId);
+    }
+  };
 
   const processImageForWords = async (imageUri) => {
     setIsExtractingText(true);
@@ -65,7 +77,27 @@ const ScanImageScreen = ({ navigation }) => {
         );
       }
       setScanText(extracted);
-      setScannedWords(parseWordsFromText(extracted));
+      applyDetectedLanguage(extracted);
+      const parsedWords = parseWordsFromText(extracted);
+      setScannedWords(parsedWords);
+
+      // Enrich first detected phrase with backend /ai/vision text endpoint.
+      if (parsedWords.length > 0) {
+        try {
+          const vision = await aiApiService.visionFromText({
+            description: parsedWords.slice(0, 6).join(' '),
+            languageId: 'kadazan-demo',
+          });
+          if (vision?.indigenous_word) {
+            setScannedWords((prev) => {
+              const merged = [vision.indigenous_word.toLowerCase(), ...prev];
+              return [...new Set(merged)];
+            });
+          }
+        } catch (visionError) {
+          console.warn('Vision text enrichment failed:', visionError?.message || visionError);
+        }
+      }
     } catch (error) {
       console.error('Process image error:', error);
       Alert.alert('Error', 'Failed to process image. Please try again.');
@@ -83,7 +115,7 @@ const ScanImageScreen = ({ navigation }) => {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.9,
       });
@@ -100,7 +132,7 @@ const ScanImageScreen = ({ navigation }) => {
   const uploadImageToScan = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.9,
       });
@@ -115,6 +147,7 @@ const ScanImageScreen = ({ navigation }) => {
   };
 
   const extractWordsFromTypedText = () => {
+    applyDetectedLanguage(scanText);
     const words = parseWordsFromText(scanText);
     setScannedWords(words);
     setTranslatedWords([]);
@@ -146,11 +179,6 @@ const ScanImageScreen = ({ navigation }) => {
     } finally {
       setIsTranslating(false);
     }
-  };
-
-  const getLanguageLabelById = (id) => {
-    const lang = TRANSLATION_LANGUAGE_OPTIONS.find((l) => l.id === id);
-    return lang?.label || id;
   };
 
   return (
@@ -214,6 +242,8 @@ const ScanImageScreen = ({ navigation }) => {
                   setScannedWords([]);
                   setTranslatedWords([]);
                   setOcrProvider('none');
+                  setDetectedLanguageId(null);
+                  setDetectedLanguageConfidence(0);
                 }}
               >
                 <Ionicons name="refresh" size={20} color={theme.primary} />
@@ -263,6 +293,14 @@ const ScanImageScreen = ({ navigation }) => {
         {scanImageUri && (
           <View style={[styles.detectedSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Detected Words ({scannedWords.length})</Text>
+            <View style={[styles.detectedLanguageBox, { backgroundColor: theme.background, borderColor: theme.border }]}> 
+              <Ionicons name="earth" size={16} color={theme.primary} />
+              <Text style={[styles.detectedLanguageText, { color: theme.text }]}> 
+                {detectedLanguageId
+                  ? `Detected Language: ${getLanguageLabelById(detectedLanguageId)} (${Math.round(detectedLanguageConfidence * 100)}% confidence)`
+                  : 'Detected Language: Not sure yet. Please select From Language manually.'}
+              </Text>
+            </View>
             {scannedWords.length > 0 ? (
               <View style={styles.wordsGrid}>
                 {scannedWords.map((word, index) => (
@@ -503,6 +541,23 @@ const styles = StyleSheet.create({
     padding: SPACING.m,
     marginBottom: SPACING.m,
     gap: SPACING.s,
+  },
+  detectedLanguageBox: {
+    marginTop: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: SPACING.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  detectedLanguageText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   wordsGrid: {
     flexDirection: 'row',

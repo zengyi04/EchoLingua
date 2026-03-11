@@ -17,7 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
-import { WORLD_LANGUAGES } from '../constants/languages';
+import { UNIFIED_LANGUAGE_OPTIONS } from '../constants/translationLanguages';
+import { authService } from '../services/api';
 
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const USERS_DATABASE_KEY = '@echolingua_users_database';
@@ -47,10 +48,10 @@ export default function SignUpScreen({ navigation }) {
   const filteredLanguages = useMemo(() => {
     const query = languageSearch.trim().toLowerCase();
     if (!query) {
-      return WORLD_LANGUAGES;
+      return UNIFIED_LANGUAGE_OPTIONS;
     }
 
-    return WORLD_LANGUAGES.filter((language) => {
+    return UNIFIED_LANGUAGE_OPTIONS.filter((language) => {
       return (
         language.label.toLowerCase().includes(query) ||
         language.region.toLowerCase().includes(query)
@@ -102,60 +103,44 @@ export default function SignUpScreen({ navigation }) {
     setIsLoading(true);
 
     try {
-      // Load existing users
-      const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
-      const users = usersData ? JSON.parse(usersData) : [];
-
-      // Check if email already exists
-      const existingUser = users.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase().trim()
+      // Connect to Backend API for registration
+      const data = await authService.register(
+        fullName.trim(),
+        email.trim(),
+        password,
+        selectedRole
       );
+      
+      const user = data.user;
 
-      if (existingUser) {
-        Alert.alert('Error', 'An account with this email already exists');
-        setIsLoading(false);
-        return;
+      // Store local user data for compatibility or extra fields not on backend
+      if (user) {
+         // Create local user structure compatible with existing code
+         const userWithLocalData = {
+           ...user,
+           fullName: user.name || fullName.trim(),
+           age: age.trim() || null,
+           community: community.trim() || null,
+           languages: selectedLanguages,
+         };
+         await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userWithLocalData));
       }
 
-      // Create new user
-      const newUser = {
-        id: Date.now().toString(),
-        fullName: fullName.trim(),
-        email: email.toLowerCase().trim(),
-        password, // In production, hash this properly
-        role: selectedRole,
-        age: age.trim() || null,
-        community: community.trim() || null,
-        languages: selectedLanguages,
-        avatar: '👤',
-        joinedAt: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-        storiesCount: 0,
-        followers: 0,
-        following: 0,
-        totalLikes: 0,
-        emergencyContacts: [], // For sending recordings
-      };
-
-      // Save to users database
-      users.push(newUser);
-      await AsyncStorage.setItem(USERS_DATABASE_KEY, JSON.stringify(users));
-
-      Alert.alert(
-        'Success',
-        `Account created successfully! Please log in with your credentials.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.navigate('Login');
-            },
+      Alert.alert('Success', 'Account created successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+             // Navigation logic, backend login successful, go to MainTabs
+             navigation.reset({
+              index: 0,
+              routes: [{ name: 'MainTabs' }],
+            });
           },
-        ]
-      );
+        },
+      ]);
     } catch (error) {
-      console.error('Sign up error:', error);
-      Alert.alert('Error', 'Failed to create account. Please try again.');
+       console.error('Sign up error:', error);
+       Alert.alert('Error', error.message || 'Failed to create account. Please try again.');
     } finally {
       setIsLoading(false);
     }

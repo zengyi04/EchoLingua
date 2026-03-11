@@ -5,25 +5,26 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getUserProfile, getAverageScoreByDifficulty } from '../services/scoringService';
-import { WORLD_LANGUAGES, getBorneoLanguages, getLanguagesByRegion } from '../constants/languages';
+import { UNIFIED_LANGUAGE_OPTIONS } from '../constants/translationLanguages';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import * as ImagePicker from 'expo-image-picker';
+import { userService } from '../services/api';
 
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const USERS_DB_KEY = '@echolingua_users_database';
 
 // Group languages by region for organized display
 const LANGUAGE_GROUPS = [
-  { title: 'Indigenous Borneo', languages: getBorneoLanguages() },
-  { title: 'Southeast Asia', languages: getLanguagesByRegion('Southeast Asia') },
-  { title: 'Major World Languages', languages: WORLD_LANGUAGES.filter(l => l.region === 'Global' || ['mandarin', 'spanish', 'hindi', 'arabic', 'french', 'german', 'japanese', 'korean', 'portuguese', 'russian'].includes(l.id)) },
-  { title: 'East Asia', languages: getLanguagesByRegion('East Asia').filter(l => !['mandarin', 'japanese', 'korean'].includes(l.id)) },
-  { title: 'South Asia', languages: getLanguagesByRegion('South Asia').filter(l => l.id !== 'hindi') },
-  { title: 'Europe', languages: WORLD_LANGUAGES.filter(l => l.region.includes('Europe') && !['french', 'german', 'russian'].includes(l.id)) },
-  { title: 'Middle East & Africa', languages: WORLD_LANGUAGES.filter(l => l.region.includes('Middle East') || l.region.includes('Africa')) },
-  { title: 'Americas', languages: WORLD_LANGUAGES.filter(l => l.region.includes('America')) },
-  { title: 'Oceania', languages: getLanguagesByRegion('Oceania') },
+  { title: 'Indigenous Borneo', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region === 'Borneo') },
+  { title: 'Southeast Asia', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region === 'Southeast Asia') },
+  { title: 'Major World Languages', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region === 'Global' || ['mandarin', 'spanish', 'hindi', 'arabic', 'french', 'german', 'japanese', 'korean', 'portuguese', 'russian'].includes(l.id)) },
+  { title: 'East Asia', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region === 'East Asia' && !['mandarin', 'japanese', 'korean'].includes(l.id)) },
+  { title: 'South Asia', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region === 'South Asia' && l.id !== 'hindi') },
+  { title: 'Europe', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region.includes('Europe') && !['french', 'german', 'russian'].includes(l.id)) },
+  { title: 'Middle East & Africa', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region.includes('Middle East') || l.region.includes('Africa')) },
+  { title: 'Americas', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region.includes('America')) },
+  { title: 'Oceania', languages: UNIFIED_LANGUAGE_OPTIONS.filter((l) => l.region === 'Oceania') },
 ];
 
 export default function ProfileScreen() {
@@ -55,11 +56,25 @@ export default function ProfileScreen() {
 
   const loadUserProfile = async () => {
     try {
+      let serverUser = null;
+      try {
+        serverUser = await userService.getProfile();
+      } catch (serverError) {
+        console.warn('Server profile unavailable, using local profile:', serverError?.message || serverError);
+      }
+
       // Load current user from AsyncStorage
       const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
       if (userData) {
         const user = JSON.parse(userData);
-        setCurrentUser(user);
+        const mergedUser = serverUser
+          ? {
+              ...user,
+              ...serverUser,
+              fullName: serverUser.name || user.fullName || user.name,
+            }
+          : user;
+        setCurrentUser(mergedUser);
         const storedLanguages = Array.isArray(user.languages)
           ? user.languages
           : typeof user.languages === 'string' && user.languages.trim()
@@ -189,7 +204,7 @@ export default function ProfileScreen() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -213,7 +228,7 @@ export default function ProfileScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -290,7 +305,11 @@ export default function ProfileScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={theme.primary} />
         </TouchableOpacity>
-        <Text style={[styles.topBarTitle, { color: theme.text }]}>Profile</Text>
+        <View style={styles.topBarCenter}>
+          <Text style={[styles.topBarTitle, { color: theme.primary }]}>Profile</Text>
+          <Text style={[styles.topBarSubtitle, { color: theme.textSecondary }]}>Manage your account and preferences</Text>
+        </View>
+        <View style={styles.topBarRightSpacer} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -742,8 +761,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  topBarBackButton: { padding: SPACING.xs, marginRight: SPACING.s },
-  topBarTitle: { fontSize: 20, fontWeight: '700', color: COLORS.text },
+  topBarBackButton: { padding: SPACING.xs },
+  topBarCenter: { flex: 1, marginLeft: SPACING.s },
+  topBarTitle: { fontSize: 20, fontWeight: '700', color: COLORS.primary },
+  topBarSubtitle: { fontSize: 12, color: COLORS.textSecondary },
+  topBarRightSpacer: { width: 40 },
   content: { padding: SPACING.l, paddingBottom: SPACING.xl },
   profileCard: { backgroundColor: COLORS.glassLight, borderColor: 'rgba(255, 255, 255, 0.6)', borderWidth: 1, borderRadius: SPACING.l, padding: SPACING.l, alignItems: 'center', marginBottom: SPACING.l, ...SHADOWS.small },
   avatarWrap: {

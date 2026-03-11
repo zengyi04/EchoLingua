@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { stories } from '../data/mockData';
 import { WORLD_LANGUAGES } from '../constants/languages';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { storyService } from '../services/api';
 
 const STORIES_STORAGE_KEY = '@echolingua_stories';
 const USER_STORAGE_KEY = '@echolingua_current_user';
@@ -18,9 +19,11 @@ const USERS_DATABASE_KEY = '@echolingua_users_database';
 export default function StoryLibraryScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
+  const route = useRoute();
   const [createdStories, setCreatedStories] = useState([]);
   const [sharedStories, setSharedStories] = useState([]);
-  const [activeTab, setActiveTab] = useState('library'); // 'library' | 'creations' | 'shared'
+  // 'library' | 'creations' | 'shared'
+  const [activeTab, setActiveTab] = useState('library');
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [deleteMode, setDeleteMode] = useState(false);
@@ -38,14 +41,26 @@ export default function StoryLibraryScreen() {
     }
   };
 
-  // Load created/generated stories from AsyncStorage
   const loadCreatedStories = async () => {
     try {
-      const storiesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
-      const loadedStories = storiesJson ? JSON.parse(storiesJson) : [];
-      setCreatedStories(loadedStories);
+      console.log('📚 Loading created stories from backend...');
+      // First try to fetch from Backend (User's created stories)
+      const backendStories = await storyService.getAllMine();
+      console.log('✅ Backend stories loaded:', backendStories);
+      setCreatedStories(backendStories || []);
     } catch (error) {
-      console.error('Failed to load created stories:', error);
+      console.warn('⚠️ Backend fetch failed, falling back to local storage:', error.message);
+      // Fallback to LOCAL STORAGE
+      try {
+        const storiesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+        console.log('📖 Local storage stories:', storiesJson);
+        const loadedStories = storiesJson ? JSON.parse(storiesJson) : [];
+        console.log('✅ Loaded', loadedStories.length, 'stories from local storage');
+        setCreatedStories(loadedStories);
+      } catch (localError) {
+        console.error('❌ Failed to load local stories:', localError);
+        setCreatedStories([]);
+      }
     }
   };
 
@@ -87,9 +102,20 @@ export default function StoryLibraryScreen() {
   // Load stories when screen is focused
   useFocusEffect(
     React.useCallback(() => {
+      console.log('🔄 StoryLibraryScreen focused - reloading stories');
+      
+      // Check for tab parameter from navigation
+      if (route.params?.initialTab) {
+        console.log('📍 Switching to tab:', route.params.initialTab);
+        setActiveTab(route.params.initialTab);
+        // Clean up params so it doesn't force switch next time if unwanted
+        navigation.setParams({ initialTab: undefined });
+      }
+
       loadCurrentUser();
       loadCreatedStories();
-    }, [])
+      loadSharedStories();
+    }, [navigation, route]) // Re-run when navigation or route changes
   );
 
   // Load shared stories when user is loaded
@@ -112,6 +138,17 @@ export default function StoryLibraryScreen() {
   const toggleDeleteMode = () => {
     setDeleteMode(!deleteMode);
     setSelectedStories([]);
+  };
+
+  const handleEditPress = () => {
+    if (activeTab === 'library') {
+      setActiveTab('creations');
+      setDeleteMode(true);
+      setSelectedStories([]);
+      return;
+    }
+
+    toggleDeleteMode();
   };
 
   // Toggle story selection
@@ -141,7 +178,17 @@ export default function StoryLibraryScreen() {
           onPress: async () => {
             try {
               if (activeTab === 'creations') {
-                // Delete from created stories
+                // Delete logic
+                for (const storyId of selectedStories) {
+                  try {
+                    // Try to delete from Backend
+                    await storyService.delete(storyId);
+                  } catch (apiError) {
+                    console.warn(`Could not delete story ${storyId} from backend`);
+                  }
+                }
+
+                // Also update local state and storage as backup
                 const updatedStories = createdStories.filter(story => !selectedStories.includes(story.id));
                 await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(updatedStories));
                 setCreatedStories(updatedStories);
@@ -254,7 +301,7 @@ export default function StoryLibraryScreen() {
           </View>
             <Text style={[styles.title, { color: theme.text, marginTop: 4, marginBottom: 4 }]} numberOfLines={1}>{item.title}</Text>
             <Text style={[styles.storyDesc, { color: theme.textSecondary }]} numberOfLines={2}>
-              {item.summary || item.description || "No description available."}
+              {item.summary || item.description || item.text || "No description available."}
             </Text>
 
             <View style={styles.metaRow}>
@@ -288,53 +335,56 @@ export default function StoryLibraryScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            if (deleteMode) {
-              setDeleteMode(false);
-              setSelectedStories([]);
-            } else {
-              navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab');
-            }
-          }}
-        >
-          <Ionicons name={deleteMode ? "close" : "chevron-back"} size={24} color={theme.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerTextContainer}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>{deleteMode ? 'Select Stories' : 'Story Library'}</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
-            {deleteMode ? `${selectedStories.length} selected` : 'Discover ancient wisdom & tales'}
-          </Text>
-        </View>
-        {/* Action Icons */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          {deleteMode ? (
-            <TouchableOpacity
-              onPress={handleDeleteSelected}
-              style={{ padding: 8 }}
-            >
-              <Ionicons name="trash" size={24} color={selectedStories.length > 0 ? theme.error : theme.textSecondary} />
-            </TouchableOpacity>
-          ) : (
-            <>
-              {(activeTab === 'creations' || activeTab === 'shared') && (
-                <TouchableOpacity
-                  onPress={toggleDeleteMode}
-                  style={{ padding: 8 }}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={24} color={theme.text} />
-                </TouchableOpacity>
-              )}
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <View style={styles.headerTopRow}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              if (deleteMode) {
+                setDeleteMode(false);
+                setSelectedStories([]);
+              } else {
+                navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab');
+              }
+            }}
+          >
+            <Ionicons name={deleteMode ? "close" : "chevron-back"} size={24} color={theme.primary} />
+          </TouchableOpacity>
+
+          <View style={styles.headerTextContainer}>
+            <Text style={[styles.headerTitle, { color: theme.primary }]}>{deleteMode ? 'Select Stories' : 'Story Library'}</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
+              {deleteMode ? `${selectedStories.length} selected` : 'Discover ancient wisdom & tales'}
+            </Text>
+          </View>
+
+          <View style={styles.headerActions}>
+            {deleteMode ? (
               <TouchableOpacity
-                onPress={() => navigation.navigate('AIStoryGenerator')}
+                onPress={handleDeleteSelected}
                 style={{ padding: 8 }}
               >
-                <Ionicons name="add-circle-outline" size={24} color={theme.primary} />
+                <Ionicons name="trash" size={24} color={selectedStories.length > 0 ? theme.error : theme.textSecondary} />
               </TouchableOpacity>
-            </>
-          )}
+            ) : (
+              <>
+                {(activeTab === 'creations' || activeTab === 'shared') && (
+                  <TouchableOpacity
+                    onPress={handleEditPress}
+                    style={{ padding: 8 }}
+                  >
+                    <Ionicons name="create-outline" size={24} color={theme.text} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('AIStoryGenerator')}
+                  style={{ padding: 8 }}
+                >
+                  <Ionicons name="add-circle-outline" size={24} color={theme.primary} />
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
         </View>
       </View>
 
@@ -415,30 +465,38 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.l,
-    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
     backgroundColor: COLORS.glassLight,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.4)',
+    ...SHADOWS.small,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   backButton: {
     padding: SPACING.xs,
-    marginRight: SPACING.m,
   },
   headerTextContainer: {
     flex: 1,
+    marginLeft: SPACING.s,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
+    gap: 8,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
     color: COLORS.primary,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: COLORS.textSecondary,
-    marginTop: 2,
   },
   createSection: {
     paddingHorizontal: SPACING.l,

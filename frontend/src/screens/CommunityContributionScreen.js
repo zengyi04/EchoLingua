@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { communityApiService } from '../services/communityApiService';
 
 const MOCK_SUBMISSIONS = [
   {
@@ -38,19 +40,108 @@ const CATEGORIES = ['Story', 'Phrase', 'Cultural Knowledge'];
 export default function CommunityContributionScreen() {
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const [submissions, setSubmissions] = useState(MOCK_SUBMISSIONS);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [xpInfo, setXpInfo] = useState({ xp: 0, level: 0 });
   const [activeTab, setActiveTab] = useState('contribute');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [hasAudioFile, setHasAudioFile] = useState(false);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [vitality, setVitality] = useState(null);
 
-  const handleSubmit = () => {
+  useEffect(() => {
+    loadCommunityData();
+  }, []);
+
+  const loadCommunityData = async () => {
+    try {
+      const userRaw = await AsyncStorage.getItem('@echolingua_current_user');
+      const user = userRaw ? JSON.parse(userRaw) : null;
+      setCurrentUser(user);
+
+      try {
+        const pending = await communityApiService.getPendingStories();
+        if (Array.isArray(pending) && pending.length > 0) {
+          setSubmissions(
+            pending.map((item) => ({
+              id: item._id || item.id,
+              title: item.title || 'Untitled',
+              category: 'Story',
+              status: item.status === 'approved' ? 'Approved' : item.status === 'rejected' ? 'Rejected' : 'Pending',
+              date: item.createdAt ? new Date(item.createdAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+              adminComment: '',
+            }))
+          );
+        }
+      } catch (pendingError) {
+        console.warn('Pending moderation API unavailable, showing local submissions:', pendingError?.message || pendingError);
+      }
+
+      if (user?.id) {
+        try {
+          const xp = await communityApiService.getXp(user.id);
+          if (xp) {
+            setXpInfo({ xp: Number(xp.xp || 0), level: Number(xp.level || 0) });
+          }
+        } catch (xpError) {
+          console.warn('XP API unavailable:', xpError?.message || xpError);
+        }
+      }
+
+      try {
+        const board = await communityApiService.getLeaderboard();
+        if (Array.isArray(board)) {
+          setLeaderboard(board.slice(0, 5));
+        }
+      } catch (boardError) {
+        console.warn('Leaderboard API unavailable:', boardError?.message || boardError);
+      }
+
+      try {
+        const vitalityStats = await communityApiService.getVitalityStats();
+        if (vitalityStats) {
+          setVitality(vitalityStats);
+        }
+      } catch (vitalityError) {
+        console.warn('Vitality API unavailable:', vitalityError?.message || vitalityError);
+      }
+    } catch (error) {
+      console.error('Load community data error:', error);
+    }
+  };
+
+  const handleSubmit = async () => {
     if (!title || !description || !selectedCategory) {
       alert('Please fill in all required fields');
       return;
     }
-    console.log('📤 Submission sent - Sound: success chime');
-    alert('Contribution submitted successfully!');
+
+    try {
+      if (!currentUser?.id) {
+        throw new Error('Please login first before submitting contributions.');
+      }
+
+      await communityApiService.uploadStory({
+        createdBy: currentUser.id,
+        title,
+        text: description,
+        language: selectedCategory,
+        elderConsent: true,
+      });
+
+      await communityApiService.addXp(currentUser.id, 20).catch(() => null);
+      await communityApiService.dailyCheckin(currentUser.id).catch(() => null);
+      await communityApiService.createNotification('admin', `New contribution submitted: ${title}`).catch(() => null);
+      await loadCommunityData();
+      alert('Contribution submitted successfully to backend!');
+    } catch (error) {
+      console.error('Community submit failed:', error);
+      alert(error?.message || 'Failed to submit contribution.');
+      return;
+    }
+
     setTitle('');
     setDescription('');
     setSelectedCategory('');
@@ -90,7 +181,20 @@ export default function CommunityContributionScreen() {
   };
 
   const renderSubmissionCard = ({ item }) => (
-    <View style={[styles.submissionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+    <TouchableOpacity
+      style={[styles.submissionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+      activeOpacity={0.85}
+      onLongPress={async () => {
+        if (item.status !== 'Pending') return;
+        try {
+          await communityApiService.verifyStory(item.id, 'approved');
+          await loadCommunityData();
+          alert('Submission approved in moderation API.');
+        } catch (error) {
+          console.error('Verify submission failed:', error);
+        }
+      }}
+    >
       <View style={styles.submissionHeader}>
         <View style={styles.submissionTitleContainer}>
           <Text style={[styles.submissionTitle, { color: theme.text }]}>{item.title}</Text>
@@ -128,7 +232,7 @@ export default function CommunityContributionScreen() {
           <Text style={[styles.adminCommentText, { color: theme.textSecondary }]}>{item.adminComment}</Text>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -339,25 +443,25 @@ export default function CommunityContributionScreen() {
           <View style={styles.submissionsSection}>
             <View style={styles.statsRow}>
               <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text style={[styles.statNumber, { color: theme.text }]}>{MOCK_SUBMISSIONS.length}</Text>
+                <Text style={[styles.statNumber, { color: theme.text }]}>{submissions.length}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Total</Text>
               </View>
               <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Text style={[styles.statNumber, { color: theme.success || COLORS.success }]}>
-                  {MOCK_SUBMISSIONS.filter((s) => s.status === 'Approved').length}
+                  {submissions.filter((s) => s.status === 'Approved').length}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Approved</Text>
               </View>
               <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Text style={[styles.statNumber, { color: theme.accent || COLORS.accent }]}>
-                  {MOCK_SUBMISSIONS.filter((s) => s.status === 'Pending').length}
+                  {submissions.filter((s) => s.status === 'Pending').length}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Pending</Text>
               </View>
             </View>
 
             <FlatList
-              data={MOCK_SUBMISSIONS}
+              data={submissions}
               renderItem={renderSubmissionCard}
               keyExtractor={(item) => item.id}
               scrollEnabled={false}
@@ -397,7 +501,7 @@ export default function CommunityContributionScreen() {
 
                 <View style={styles.profileStatItem}>
                   <MaterialCommunityIcons name="trophy" size={24} color={theme.accent || COLORS.accent} />
-                  <Text style={[styles.profileStatNumber, { color: theme.text }]}>245</Text>
+                  <Text style={[styles.profileStatNumber, { color: theme.text }]}>{xpInfo.xp}</Text>
                   <Text style={[styles.profileStatLabel, { color: theme.textSecondary }]}>Points Earned</Text>
                 </View>
 
@@ -458,6 +562,27 @@ export default function CommunityContributionScreen() {
                   <Text style={styles.activityTime}>5d ago</Text>
                 </View>
               </View>
+            </View>
+
+            <View style={[styles.activityCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.activityTitle, { color: theme.text }]}>Leaderboard (Top 5)</Text>
+              {leaderboard.length === 0 ? (
+                <Text style={[styles.activityText, { color: theme.textSecondary }]}>No leaderboard data.</Text>
+              ) : (
+                leaderboard.map((item, index) => (
+                  <View key={`${item.userId || item._id || index}`} style={styles.activityItem}>
+                    <View style={[styles.activityDot, { backgroundColor: theme.primary }]} />
+                    <Text style={[styles.activityText, { color: theme.text }]}>User {String(item.userId || item._id || '').slice(-4)}</Text>
+                    <Text style={[styles.activityTime, { color: theme.textSecondary }]}>{item.xp || 0} XP</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <View style={[styles.activityCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.activityTitle, { color: theme.text }]}>Language Vitality</Text>
+              <Text style={[styles.activityText, { color: theme.textSecondary }]}>Score: {vitality?.vitalityScore ?? 'N/A'}</Text>
+              <Text style={[styles.activityText, { color: theme.textSecondary }]}>Status: {vitality?.status || 'N/A'}</Text>
             </View>
           </View>
         )}

@@ -4,10 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import VocabularyCard from '../components/VocabularyCard';
-import { vocabularyList } from '../data/mockData';
+import { lessonService } from '../services/api';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
-import { WORLD_LANGUAGES } from '../constants/languages';
+import { UNIFIED_LANGUAGE_OPTIONS } from '../constants/translationLanguages';
 
 const SPEECH_CODES = {
   malay: 'ms-MY',
@@ -33,21 +33,54 @@ const SPEECH_CODES = {
   tamil: 'ta-IN',
 };
 
-const LANGUAGE_OPTIONS = WORLD_LANGUAGES.map((language) => ({
+const LANGUAGE_OPTIONS = UNIFIED_LANGUAGE_OPTIONS.map((language) => ({
   id: language.id,
   label: language.label,
   flag: language.flag,
   speechCode: SPEECH_CODES[language.id] || 'en-US',
 }));
 
-const VOCABULARY_BY_DIFFICULTY = {
-  easy: vocabularyList.filter((word) => word.difficulty === 'easy'),
-  medium: vocabularyList.filter((word) => word.difficulty === 'medium'),
-  hard: vocabularyList.filter((word) => word.difficulty === 'hard'),
-};
-
 export default function VocabularyScreen() {
   const { theme } = useTheme();
+  // State for fetched vocabulary
+  const [vocabularyList, setVocabularyList] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load vocabulary on mount
+  React.useEffect(() => {
+    loadVocabulary();
+  }, []);
+
+  const loadVocabulary = async () => {
+    try {
+      const lessons = await lessonService.getAll(null, null, 'Vocabulary');
+      // Assume backend returns lessons which contain vocabulary arrays
+      // We might need to flatten or restructure depending on exact backend response
+      // Based on docs: Lesson has "vocabulary" array
+      if (Array.isArray(lessons)) {
+        if (lessons[0]?.id) {
+          await lessonService.getById(lessons[0].id).catch(() => null);
+        }
+        const allVocab = lessons.flatMap(l => l.vocabulary?.map(v => ({
+             ...v, 
+             difficulty: l.difficulty || 'medium', // Fallback
+             category: l.category || 'General'
+        })) || []);
+        setVocabularyList(allVocab);
+      }
+    } catch (error) {
+      console.error('Failed to load vocabulary:', error);
+      // Fallback or empty state handled by empty array
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const VOCABULARY_BY_DIFFICULTY = useMemo(() => ({
+    easy: vocabularyList.filter((word) => word.difficulty === 'easy'),
+    medium: vocabularyList.filter((word) => word.difficulty === 'medium' || !word.difficulty),
+    hard: vocabularyList.filter((word) => word.difficulty === 'hard'),
+  }), [vocabularyList]);
   const navigation = useNavigation();
   const [selectedLevel, setSelectedLevel] = useState('easy');
   const [savedWords, setSavedWords] = useState({ easy: [], medium: [], hard: [] });
@@ -88,6 +121,33 @@ export default function VocabularyScreen() {
 
   const isWordSaved = (word, level) => savedWords[level].some((w) => w.id === word.id);
 
+  const createStarterLesson = async () => {
+    try {
+      await lessonService.create({
+        title: 'Starter Vocabulary Pack',
+        category: 'Vocabulary',
+        difficulty: 'beginner',
+        language: fromLanguage.label,
+        vocabulary: [
+          { word: 'Kopivosian', translation: 'Hello' },
+          { word: 'Waig', translation: 'Water' },
+        ],
+        quiz: [
+          {
+            question: "What is 'Hello'?",
+            options: ['Kopivosian', 'Waig'],
+            answer: 'Kopivosian',
+          },
+        ],
+      });
+      await loadVocabulary();
+      Alert.alert('Lesson Created', 'Starter lesson saved to backend lessons API.');
+    } catch (error) {
+      console.error('Create starter lesson failed:', error);
+      Alert.alert('Create Failed', error?.message || 'Could not create starter lesson.');
+    }
+  };
+
   const selectLanguage = (lang) => {
     if (selectingLanguageType === 'from') {
       setFromLanguage(lang);
@@ -116,7 +176,7 @@ export default function VocabularyScreen() {
           <Text style={[styles.headerTitle, { color: theme.text }]}>Learn Vocabulary</Text>
           <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Practice pronunciation and test yourself</Text>
         </View>
-        <TouchableOpacity style={styles.testButton} onPress={() => setTestingMode(!testingMode)}>
+        <TouchableOpacity style={styles.testButton} onPress={() => setTestingMode(!testingMode)} onLongPress={createStarterLesson}>
           <MaterialCommunityIcons
             name="clipboard-check"
             size={24}

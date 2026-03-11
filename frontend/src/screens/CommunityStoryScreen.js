@@ -22,12 +22,33 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { communityApiService } from '../services/communityApiService';
 
 const SEEN_STORIES_KEY = '@echolingua_seen_stories';
-const STORIES_STORAGE_KEY = '@echolingua_stories';
+const COMMUNITY_STORIES_STORAGE_KEY = '@echolingua_community_stories';
 const LEGACY_COMMUNITY_STORIES_KEY = 'communityStories';
 const NOTIFICATIONS_KEY = '@echolingua_notifications';
 const USER_STORAGE_KEY = '@echolingua_current_user';
+const isObjectId = (value) => /^[a-f\d]{24}$/i.test(String(value || ''));
+
+const mapBackendStoryToCommunityCard = (story) => ({
+  id: story.id,
+  title: story.title || 'Untitled',
+  description: story.text || '',
+  author: story.createdBy ? `User ${String(story.createdBy).slice(-4)}` : 'Community',
+  authorAvatar: '👤',
+  userId: story.createdBy || null,
+  language: story.language || 'Unknown',
+  category: (story.tags && story.tags[0]) || 'Story',
+  likes: Number(story.likes || 0),
+  comments: Number(story.comments || 0),
+  bookmarks: Number(story.bookmarks || 0),
+  audioUri: story.audioUrl || null,
+  imageUri: null,
+  uploadedAt: story.createdAt || new Date().toISOString(),
+  isFollowing: false,
+  commentsList: [],
+});
 
 const formatTime = (seconds) => {
   if (!seconds) return '00:00';
@@ -158,7 +179,20 @@ export default function CommunityStoryScreen({ navigation }) {
 
   const loadStories = async () => {
     try {
-      const primary = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+      try {
+        const backendStories = await communityApiService.listStories();
+        if (Array.isArray(backendStories) && backendStories.length > 0) {
+          setStories(backendStories.map((story) => mapBackendStoryToCommunityCard({
+            id: story._id,
+            ...story,
+          })));
+          return;
+        }
+      } catch (backendError) {
+        console.warn('Community stories backend load failed, using local fallback:', backendError?.message || backendError);
+      }
+
+      const primary = await AsyncStorage.getItem(COMMUNITY_STORIES_STORAGE_KEY);
       const legacy = await AsyncStorage.getItem(LEGACY_COMMUNITY_STORIES_KEY);
       const stored = primary || legacy;
 
@@ -166,7 +200,7 @@ export default function CommunityStoryScreen({ navigation }) {
         const parsed = JSON.parse(stored);
         setStories(parsed);
         if (!primary && legacy) {
-          await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(parsed));
+          await AsyncStorage.setItem(COMMUNITY_STORIES_STORAGE_KEY, JSON.stringify(parsed));
         }
       } else {
         // Sample stories
@@ -223,7 +257,7 @@ export default function CommunityStoryScreen({ navigation }) {
             commentsList: [],
           },
         ];
-        await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(sampleStories));
+        await AsyncStorage.setItem(COMMUNITY_STORIES_STORAGE_KEY, JSON.stringify(sampleStories));
         await AsyncStorage.setItem(LEGACY_COMMUNITY_STORIES_KEY, JSON.stringify(sampleStories));
         setStories(sampleStories);
       }
@@ -234,7 +268,7 @@ export default function CommunityStoryScreen({ navigation }) {
 
   const saveStories = async (updatedStories) => {
     try {
-      await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(updatedStories));
+      await AsyncStorage.setItem(COMMUNITY_STORIES_STORAGE_KEY, JSON.stringify(updatedStories));
       await AsyncStorage.setItem(LEGACY_COMMUNITY_STORIES_KEY, JSON.stringify(updatedStories));
       setStories(updatedStories);
     } catch (error) {
@@ -254,6 +288,14 @@ export default function CommunityStoryScreen({ navigation }) {
     
     setLikedStories(updatedLiked);
     await AsyncStorage.setItem('@user_liked_stories', JSON.stringify(updatedLiked));
+
+    if (currentUser?.id && isObjectId(currentUser.id) && isObjectId(storyId)) {
+      try {
+        await communityApiService.likeStory(storyId, currentUser.id);
+      } catch (error) {
+        console.warn('Like API failed, kept local like state:', error?.message || error);
+      }
+    }
     
     const updatedStories = stories.map((story) => {
       if (story.id === storyId) {
@@ -278,6 +320,14 @@ export default function CommunityStoryScreen({ navigation }) {
     
     setCollectedStories(updatedCollected);
     await AsyncStorage.setItem('@user_collected_stories', JSON.stringify(updatedCollected));
+
+    if (currentUser?.id && isObjectId(currentUser.id) && isObjectId(storyId) && !isCollected) {
+      try {
+        await communityApiService.bookmarkStory(storyId, currentUser.id);
+      } catch (error) {
+        console.warn('Bookmark API failed, kept local bookmark state:', error?.message || error);
+      }
+    }
     
     const updatedStories = stories.map((story) => {
       if (story.id === storyId) {
@@ -569,6 +619,30 @@ export default function CommunityStoryScreen({ navigation }) {
       return;
     }
 
+    if (currentUser?.id && isObjectId(currentUser.id)) {
+      try {
+        await communityApiService.uploadStory({
+          createdBy: currentUser.id,
+          title: storyTitle,
+          text: storyDescription,
+          language: storyLanguage,
+          elderConsent: true,
+        });
+
+        setStoryTitle('');
+        setStoryDescription('');
+        setSelectedAudio(null);
+        setSelectedImage(null);
+        setSelectedFile(null);
+        setShowUploadModal(false);
+        await loadStories();
+        Alert.alert('Success', 'Your story has been uploaded to community API.');
+        return;
+      } catch (uploadError) {
+        console.warn('Community upload API failed, saving local fallback:', uploadError?.message || uploadError);
+      }
+    }
+
     const newStory = {
       id: Date.now().toString(),
       title: storyTitle,
@@ -649,6 +723,14 @@ export default function CommunityStoryScreen({ navigation }) {
   const handleAddComment = () => {
     if (!newComment.trim() || !selectedStory) return;
 
+    if (currentUser?.id && isObjectId(currentUser.id) && isObjectId(selectedStory.id)) {
+      communityApiService
+        .commentStory(selectedStory.id, currentUser.id, newComment.trim())
+        .catch((error) => {
+          console.warn('Comment API failed, saving local fallback:', error?.message || error);
+        });
+    }
+
     const comment = {
       id: Date.now().toString(),
       author: 'You',
@@ -676,6 +758,27 @@ export default function CommunityStoryScreen({ navigation }) {
   const openComments = (story) => {
     setSelectedStory(story);
     setShowCommentModal(true);
+
+    if (isObjectId(story?.id)) {
+      communityApiService
+        .getStoryComments(story.id)
+        .then((apiComments) => {
+          if (Array.isArray(apiComments)) {
+            setSelectedStory((prev) => ({
+              ...prev,
+              commentsList: apiComments.map((item) => ({
+                id: String(item._id || item.id || Date.now()),
+                author: item.userId || 'Community',
+                text: item.text || '',
+                time: item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Just now',
+              })),
+            }));
+          }
+        })
+        .catch((error) => {
+          console.warn('Comments API unavailable, showing local comments:', error?.message || error);
+        });
+    }
   };
 
   const filteredStories = stories.filter((story) => {
