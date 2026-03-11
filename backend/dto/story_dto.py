@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class CreateStoryRequest(BaseModel):
@@ -11,6 +11,7 @@ class CreateStoryRequest(BaseModel):
     childrenVersion: Optional[str] = Field(None, max_length=2000)
     audioUrl: Optional[str] = Field(None)
     tags: List[str] = Field(default_factory=list, max_length=20)
+    pages: List[Dict[str, Any]] = Field(default_factory=list)
 
 class StoryResponse(BaseModel):
     # Story in API responses.

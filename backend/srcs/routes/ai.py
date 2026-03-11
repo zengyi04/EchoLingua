@@ -6,7 +6,9 @@ from srcs.services.ai.ai_dtos import (
     VisionRequest, VisionAPIRequest, VisionResponse,
     StoryGenerateRequest, StoryGenerateResponse,
     TTSRequest, TTSAPIRequest, TTSResponse,
-    CLLDEntry
+    CLLDEntry,
+    ChatAPIRequest, ChatResponse,
+    TranscribeAPIRequest, TranscribeResponse,
 )
 from srcs.services.ai.elicitation_service import elicitation_service
 from srcs.services.ai.translation_service import translation_service
@@ -250,6 +252,67 @@ async def get_audio(
             indigenous_text=request.indigenous_text,
             language_id=request.language_id
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# General Chat
+# ---------------------------------------------------------------------------
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat(
+    request: ChatAPIRequest,
+    user: dict = Depends(get_current_user)
+):
+    """General AI chat with optional conversation history."""
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+        from srcs.services.ai.rotating_llm import rotating_llm
+
+        lang = request.target_language or "the target language"
+        messages = []
+        if request.system_context:
+            messages.append(SystemMessage(content=request.system_context))
+        else:
+            messages.append(SystemMessage(content=f"You are a helpful multilingual AI assistant helping users learn {lang}."))
+
+        for h in request.history:
+            if h.role == "user":
+                messages.append(HumanMessage(content=h.text))
+            elif h.role in ("assistant", "ai"):
+                messages.append(AIMessage(content=h.text))
+
+        messages.append(HumanMessage(content=request.message))
+        result = await rotating_llm.send_message(messages, temperature=0.7)
+        return ChatResponse(ai_reply=result.text, model=result.model)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Voice Transcription
+# ---------------------------------------------------------------------------
+
+@router.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe_audio(
+    request: TranscribeAPIRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Transcribe base64-encoded audio to text."""
+    try:
+        from langchain_core.messages import HumanMessage
+        from srcs.services.ai.rotating_llm import rotating_llm
+
+        lang = request.target_language or "English"
+        messages = [
+            HumanMessage(content=[
+                {"type": "text", "text": f"Please transcribe this audio to text. The speaker may be using {lang} or mixed languages. Return only the transcribed text with no explanations."},
+                {"type": "media", "mime_type": request.mime_type, "data": request.base64_audio},
+            ])
+        ]
+        result = await rotating_llm.send_message(messages, temperature=0.1)
+        return TranscribeResponse(transcribed_text=result.text.strip())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

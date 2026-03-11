@@ -190,3 +190,39 @@ class TTSResponse(BaseModel):
     pronunciation_guide: str
     audio_url: str | None = Field(None, description="URL of the synthesized audio file")
 
+
+# ---------------------------------------------------------------------------
+# General Chat
+# ---------------------------------------------------------------------------
+
+class ChatHistoryMessage(BaseModel):
+    role: str  # user | assistant | system
+    text: str
+
+
+class ChatAPIRequest(BaseModel):
+    message: str
+    system_context: str | None = None
+    target_language: str | None = None
+    mode: str | None = None
+    history: list["ChatHistoryMessage"] = []
+
+
+class ChatResponse(BaseModel):
+    ai_reply: str
+    model: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Voice Transcription
+# ---------------------------------------------------------------------------
+
+class TranscribeAPIRequest(BaseModel):
+    base64_audio: str
+    mime_type: str = "audio/mp4"
+    target_language: str | None = None
+
+
+class TranscribeResponse(BaseModel):
+    transcribed_text: str
+

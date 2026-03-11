@@ -39,6 +39,18 @@ class ChatMessage(BaseModel):
     scenarioId: str
     message: str
 
+
+@router.get("/stories")
+async def list_community_stories():
+    """Return only approved community stories for the public community feed."""
+    cursor = stories.find({"status": "approved"}).sort("createdAt", -1)
+    results = await cursor.to_list(length=200)
+    for item in results:
+        item["_id"] = str(item["_id"])
+        if item.get("createdBy") is not None:
+            item["createdBy"] = str(item["createdBy"])
+    return results
+
 # ==========================================
 # 1. STORY INTERACTIONS (Likes, Comments, Bookmarks)
 # ==========================================
@@ -146,7 +158,7 @@ async def verify_story(story_id: str, status: str):
     if status == "approved":
         story = await stories.find_one({"_id": ObjectId(story_id)})
         if story:
-            await add_xp(story["userId"], 50) 
+            await add_xp(str(story.get("createdBy", "")), 50) 
         
     return {"message": f"Story marked as {status}"}
 
