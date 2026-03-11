@@ -22,25 +22,35 @@ __all__ = ["StoryService", "story_service"]
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT: str = """\
-You are a children's book author specialising in Borneo indigenous stories.
+You are a children's book author.
 
 Your task:
-1. Take a list of parallel sentences (indigenous origin + Malay translation).
-2. Expand them into a bilingual (Indigenous/English) children's storybook.
-3. Ensure the grammar follows the provided rules.
-4. For each page, provide a vivid image-generation prompt for an illustrator.
+1. Take a list of parallel sentences (source sentence + Malay translation/reference).
+2. Expand them into a bilingual children's storybook in the requested target language.
+3. The field `indigenous_text` must contain the story text in the requested target language exactly.
+4. The field `english_translation` must contain a natural English translation of that page.
+5. Ensure the grammar follows the provided rules.
+6. For each page, provide a vivid image-generation prompt for an illustrator.
+
+Critical rules:
+- Always write the story in the requested target language.
+- Do not switch to a different language unless the requested target language is that language.
+- If the requested target language is Thai, output Thai script.
+- If the requested target language is Malay, output Malay.
+- If the requested target language is a Borneo indigenous language, output that language.
+- Keep the title in the requested target language.
 
 Return ONLY valid JSON matching this schema (no markdown fences):
 {
-  "title": "<Story Title>",
-  "pages": [
-    {
-      "page_number": 1,
-      "indigenous_text": "<text>",
-      "english_translation": "<translation>",
-      "image_generation_prompt": "<vivid detailed description>"
-    }
-  ]
+    "title": "<Story Title in target language>",
+    "pages": [
+        {
+            "page_number": 1,
+            "indigenous_text": "<text in target language>",
+            "english_translation": "<English translation>",
+            "image_generation_prompt": "<vivid detailed description>"
+        }
+    ]
 }
 """
 
@@ -58,9 +68,10 @@ class StoryService:
         """Create a bilingual storybook with image prompts from parallel text."""
         human_text: str = (
             "Based on these parallel texts and grammar rules, generate a 3-page story.\n\n"
+            f"Target Language: {request.language}\n"
             f"Parallel Text: {json.dumps([p.model_dump() for p in request.annotated_text], ensure_ascii=False)}\n"
             f"Grammar Rules: {request.grammar_rules}\n\n"
-            "Produce the story title and pages."
+            "Produce the story title and pages. Make sure `indigenous_text` is written in the Target Language."
         )
 
         messages = [

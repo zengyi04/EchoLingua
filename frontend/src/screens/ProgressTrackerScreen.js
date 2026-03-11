@@ -8,6 +8,7 @@ import {
   Dimensions,
   Alert,
   Animated,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,9 +18,13 @@ import { useTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
+const COMMUNITY_STORIES_KEY = '@echolingua_stories';
+const USER_STORAGE_KEY = '@echolingua_current_user';
+
 export default function ProgressTrackerScreen({ navigation, route }) {
   const { theme } = useTheme();
   const selectedFamilyAccount = route?.params?.familyAccount || null;
+  const [showShareModal, setShowShareModal] = useState(false);
   const [progressData, setProgressData] = useState({
     vocabularyLearned: 0,
     totalVocabulary: 500,
@@ -181,6 +186,59 @@ export default function ProgressTrackerScreen({ navigation, route }) {
     } catch (error) {
       console.error('Error handling daily check-in:', error);
       Alert.alert('Error', 'Failed to process check-in. Please try again.');
+    }
+  };
+
+  const handleShareProgress = async () => {
+    try {
+      const userDataRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      const user = userDataRaw ? JSON.parse(userDataRaw) : null;
+      const authorName = user?.name || user?.username || 'Community Learner';
+
+      const shareMessage = `I'm making progress in my language learning journey! 🌍\n\n📚 Words Learned: ${progressData.vocabularyLearned}\n📊 Quizzes Taken: ${progressData.quizzesTaken}\n🎤 Pronunciation: ${progressData.pronunciationAccuracy}%\n🔥 Daily Streak: ${progressData.dailyStreak} days\n⭐ Level: ${progressData.level}\n\nJoin me in preserving indigenous languages! 💪`;
+
+      const newStory = {
+        id: Date.now().toString(),
+        title: 'Learning Progress Share',
+        description: shareMessage,
+        author: authorName,
+        authorAvatar: '📈',
+        language: 'Progress Update',
+        category: 'Learning Share',
+        likes: 0,
+        comments: 0,
+        bookmarks: 0,
+        audioUri: null,
+        timestamp: new Date().toISOString(),
+        uploadedAt: new Date().toISOString(),
+        isFollowing: false,
+        commentsList: [],
+      };
+
+      const storiesRaw = await AsyncStorage.getItem(COMMUNITY_STORIES_KEY);
+      const stories = storiesRaw ? JSON.parse(storiesRaw) : [];
+      const updatedStories = [newStory, ...stories];
+
+      await AsyncStorage.setItem(COMMUNITY_STORIES_KEY, JSON.stringify(updatedStories));
+      setShowShareModal(false);
+
+      Alert.alert(
+        '✨ Shared to Community!',
+        'Your learning milestone has been shared. Your progress inspires others to learn!',
+        [
+          { 
+            text: 'View Community', 
+            onPress: () => navigation.navigate('CommunityStory') 
+          },
+          { 
+            text: 'Done',
+            onPress: () => setShowShareModal(false)
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to share progress:', error);
+      Alert.alert('Share Failed', 'Unable to share right now. Please try again.');
     }
   };
 
@@ -678,9 +736,14 @@ export default function ProgressTrackerScreen({ navigation, route }) {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>My Progress</Text>
-        <TouchableOpacity onPress={() => loadProgressData()}>
-          <Ionicons name="refresh" size={24} color={theme.primary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => setShowShareModal(true)} style={styles.headerIcon}>
+            <MaterialCommunityIcons name="share-variant" size={24} color={theme.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => loadProgressData()} style={styles.headerIcon}>
+            <Ionicons name="refresh" size={24} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {selectedFamilyAccount && (
@@ -723,6 +786,78 @@ export default function ProgressTrackerScreen({ navigation, route }) {
         {selectedTab === 'achievements' && renderAchievementsTab()}
         {selectedTab === 'stats' && renderStatsTab()}
       </View>
+
+      {/* Share Progress Modal */}
+      <Modal
+        visible={showShareModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowShareModal(false)}
+      >
+        <View style={styles.shareModalOverlay}>
+          <View style={[styles.shareModalContent, { backgroundColor: theme.surface }]}>
+            <View style={styles.shareModalIcon}>
+              <MaterialCommunityIcons name="share-variant" size={48} color={theme.primary} />
+            </View>
+
+            <Text style={[styles.shareModalTitle, { color: theme.text }]}>
+              Share Your Progress
+            </Text>
+
+            <Text style={[styles.shareModalSubtitle, { color: theme.textSecondary }]}>
+              Inspire others in the community with your learning milestone!
+            </Text>
+
+            <View style={styles.shareModalStats}>
+              <View style={styles.shareStatItem}>
+                <Text style={[styles.shareStatValue, { color: theme.primary }]}>
+                  {progressData.vocabularyLearned}
+                </Text>
+                <Text style={[styles.shareStatLabel, { color: theme.textSecondary }]}>
+                  Words Learned
+                </Text>
+              </View>
+              <View style={styles.shareStatItem}>
+                <Text style={[styles.shareStatValue, { color: theme.primary }]}>
+                  {progressData.dailyStreak}
+                </Text>
+                <Text style={[styles.shareStatLabel, { color: theme.textSecondary }]}>
+                  Streak Days
+                </Text>
+              </View>
+              <View style={styles.shareStatItem}>
+                <Text style={[styles.shareStatValue, { color: theme.primary }]}>
+                  {progressData.level}
+                </Text>
+                <Text style={[styles.shareStatLabel, { color: theme.textSecondary }]}>
+                  Current Level
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.shareModalButtonContainer}>
+              <TouchableOpacity
+                style={[styles.shareModalButton, { backgroundColor: theme.surfaceVariant }]}
+                onPress={() => setShowShareModal(false)}
+              >
+                <Text style={[styles.shareModalButtonText, { color: theme.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.shareModalButton, { backgroundColor: theme.primary }]}
+                onPress={handleShareProgress}
+              >
+                <MaterialCommunityIcons name="share-variant" size={18} color={theme.surface} />
+                <Text style={[styles.shareModalButtonText, { color: theme.surface }]}>
+                  Share
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -747,6 +882,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: SPACING.s,
+    alignItems: 'center',
+  },
+  headerIcon: {
+    padding: SPACING.xs,
+  },
   familyContextBanner: {
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.s,
@@ -758,27 +901,29 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row',
-    paddingHorizontal: SPACING.l,
-    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
     gap: SPACING.s,
   },
   tab: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.s,
+    minHeight: 68,
     borderRadius: 12,
     backgroundColor: COLORS.surface,
-    gap: SPACING.xs,
+    gap: 4,
   },
   activeTab: {
     backgroundColor: COLORS.primary,
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: COLORS.textSecondary,
+    textAlign: 'center',
   },
   activeTabText: {
     color: COLORS.surface,
@@ -1039,5 +1184,84 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     lineHeight: 22,
     marginBottom: SPACING.m,
+  },
+  shareModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.l,
+  },
+  shareModalContent: {
+    borderRadius: 20,
+    padding: SPACING.l,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 320,
+    ...SHADOWS.large,
+  },
+  shareModalIcon: {
+    marginBottom: SPACING.m,
+  },
+  shareModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: SPACING.s,
+    textAlign: 'center',
+  },
+  shareModalSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: SPACING.l,
+    lineHeight: 20,
+  },
+  shareModalStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    gap: SPACING.xs,
+    width: '100%',
+    marginBottom: SPACING.l,
+    paddingVertical: SPACING.xs,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary + '10',
+  },
+  shareStatItem: {
+    flex: 1,
+    minHeight: 74,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 10,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: SPACING.s,
+    backgroundColor: 'rgba(255, 255, 255, 0.55)',
+  },
+  shareStatValue: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  shareStatLabel: {
+    fontSize: 11,
+    marginTop: 3,
+    textAlign: 'center',
+  },
+  shareModalButtonContainer: {
+    flexDirection: 'row',
+    gap: SPACING.s,
+    width: '100%',
+  },
+  shareModalButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.m,
+    borderRadius: 12,
+    gap: SPACING.xs,
+  },
+  shareModalButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });

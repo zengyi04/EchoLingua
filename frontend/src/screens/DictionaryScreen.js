@@ -8,8 +8,11 @@ import {
   TextInput,
   FlatList,
   Alert,
+  ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
@@ -117,6 +120,8 @@ const DICTIONARY_DATA = [...BORNEO_LANGUAGE_ENTRIES, ...GENERATED_WORLD_LANGUAGE
 
 const COMMUNITY_ENTRIES_KEY = 'dictionaryCommunityEntries';
 const USER_STORAGE_KEY = '@echolingua_current_user';
+const DICTIONARY_LANGUAGE_IDS_KEY = 'dictionaryTrackedLanguageIds';
+const MY_SUBMITTED_API_IDS_KEY = 'dictionaryMySubmittedApiIds';
 
 const sortWordsAtoZ = (items) =>
   [...items].sort((a, b) => a.word.localeCompare(b.word, undefined, { sensitivity: 'base' }));
@@ -151,6 +156,18 @@ const normalizeLanguageId = (value) => {
   return String(value).trim().toLowerCase().replace(/\s+/g, '-');
 };
 
+const dedupeById = (entries = []) => {
+  const seen = new Set();
+  const result = [];
+  entries.forEach((item) => {
+    const id = item?.id;
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    result.push(item);
+  });
+  return result;
+};
+
 const mapApiEntryToWord = (entry) => {
   const languageId = normalizeLanguageId(entry?.language_id || 'kadazan-demo');
   const languageLabel = getLanguageLabelById(languageId);
@@ -178,13 +195,25 @@ const mapApiEntryToWord = (entry) => {
     verificationStatus: entry?.status === 'verified' ? 'Verified by language expert' : 'Pending expert review',
     statusRaw: entry?.status || 'pending_verification',
     source: 'api',
-    createdAt: new Date().toISOString(),
+    createdAt: entry?.created_at || new Date().toISOString(),
+    createdByUserId: entry?.created_by_user_id || null,
+    createdByName: entry?.created_by_name || null,
+    verifiedByUserId: entry?.verified_by_user_id || null,
+    verifiedByName: entry?.verified_by_name || null,
+    verifiedByRole: entry?.verified_by_role || null,
+    verifiedAt: entry?.verified_at || null,
   };
 };
 
 export default function DictionaryScreen({ navigation }) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [viewMode, setViewMode] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [languageMenuQuery, setLanguageMenuQuery] = useState('');
+  const [showSearchPage, setShowSearchPage] = useState(false);
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedWord, setSelectedWord] = useState(null);
@@ -194,15 +223,21 @@ export default function DictionaryScreen({ navigation }) {
   const [dictionaryApiEntries, setDictionaryApiEntries] = useState([]);
   const [showDocumentationProject, setShowDocumentationProject] = useState(false);
   const [isDictionarySyncing, setIsDictionarySyncing] = useState(false);
+  const [dictionaryLanguageIds, setDictionaryLanguageIds] = useState(['kadazan-demo']);
   const [newWord, setNewWord] = useState('');
   const [newLanguage, setNewLanguage] = useState('');
   const [newMeaningUsage, setNewMeaningUsage] = useState('');
   const [newPronunciation, setNewPronunciation] = useState('');
   const [newCulturalContext, setNewCulturalContext] = useState('');
   const [uploadedPronunciation, setUploadedPronunciation] = useState(null);
+  const [isSubmittingEntry, setIsSubmittingEntry] = useState(false);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [sourceLanguageId, setSourceLanguageId] = useState('english');
   const [targetLanguageId, setTargetLanguageId] = useState('malay');
   const [currentUserRole, setCurrentUserRole] = useState('learner');
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUserName, setCurrentUserName] = useState('');
+  const [mySubmittedApiIds, setMySubmittedApiIds] = useState([]);
   const [activePronunciationWordId, setActivePronunciationWordId] = useState(null);
   const [isPronunciationPlaying, setIsPronunciationPlaying] = useState(false);
   const [pronunciationRecording, setPronunciationRecording] = useState(null);
@@ -219,7 +254,27 @@ export default function DictionaryScreen({ navigation }) {
     loadRecentSearches();
     loadCommunityEntries();
     loadCurrentUserRole();
-    loadDictionaryApiEntries();
+
+    const initializeTrackedLanguages = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(DICTIONARY_LANGUAGE_IDS_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const normalizedIds = Array.from(new Set(parsed.map((id) => normalizeLanguageId(id))));
+            setDictionaryLanguageIds(normalizedIds);
+            await loadDictionaryApiEntries(normalizedIds);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Load tracked dictionary languages error:', error);
+      }
+
+      await loadDictionaryApiEntries(['kadazan-demo']);
+    };
+
+    initializeTrackedLanguages();
   }, []);
 
   useEffect(() => {
@@ -232,6 +287,33 @@ export default function DictionaryScreen({ navigation }) {
       }
     };
   }, [pronunciationRecording]);
+
+  useEffect(() => {
+    const loadMySubmittedApiIds = async () => {
+      if (!currentUserId) {
+        setMySubmittedApiIds([]);
+        return;
+      }
+
+      try {
+        const storageKey = `${MY_SUBMITTED_API_IDS_KEY}:${currentUserId}`;
+        const stored = await AsyncStorage.getItem(storageKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setMySubmittedApiIds(parsed);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Load submitted API IDs error:', error);
+      }
+
+      setMySubmittedApiIds([]);
+    };
+
+    loadMySubmittedApiIds();
+  }, [currentUserId]);
 
   const loadFavorites = async () => {
     try {
@@ -284,29 +366,77 @@ export default function DictionaryScreen({ navigation }) {
       const rawUser = await AsyncStorage.getItem(USER_STORAGE_KEY);
       if (!rawUser) {
         setCurrentUserRole('learner');
+        setCurrentUserId(null);
+        setCurrentUserName('');
         return;
       }
 
       const parsed = JSON.parse(rawUser);
       setCurrentUserRole(parsed?.role || 'learner');
+      setCurrentUserId(String(parsed?.id || parsed?._id || '').trim() || null);
+      setCurrentUserName(parsed?.name || parsed?.fullName || '');
     } catch (error) {
       console.error('Load current user role error:', error);
       setCurrentUserRole('learner');
+      setCurrentUserId(null);
+      setCurrentUserName('');
     }
   };
 
-  const loadDictionaryApiEntries = async () => {
+  const loadDictionaryApiEntries = async (languageIds = dictionaryLanguageIds) => {
     try {
       setIsDictionarySyncing(true);
-      const entries = await dictionaryApiService.getEntries();
-      if (Array.isArray(entries)) {
-        setDictionaryApiEntries(entries.map(mapApiEntryToWord));
-      }
+      const normalizedIds = Array.from(
+        new Set((languageIds || ['kadazan-demo']).map((id) => normalizeLanguageId(id)))
+      );
+
+      const results = await Promise.all(
+        normalizedIds.map((languageId) => dictionaryApiService.getEntries({ languageId }))
+      );
+
+      const mergedRaw = results.flatMap((list) => (Array.isArray(list) ? list : []));
+      const mapped = dedupeById(mergedRaw.map(mapApiEntryToWord));
+      setDictionaryApiEntries(sortWordsAtoZ(mapped));
     } catch (error) {
       console.error('Load dictionary API entries error:', error);
     } finally {
       setIsDictionarySyncing(false);
     }
+  };
+
+  const persistTrackedLanguageIds = async (languageIds) => {
+    try {
+      const normalizedIds = Array.from(
+        new Set((languageIds || ['kadazan-demo']).map((id) => normalizeLanguageId(id)))
+      );
+      await AsyncStorage.setItem(DICTIONARY_LANGUAGE_IDS_KEY, JSON.stringify(normalizedIds));
+    } catch (error) {
+      console.error('Persist tracked dictionary languages error:', error);
+    }
+  };
+
+  const persistMySubmittedApiIds = async (ids) => {
+    if (!currentUserId) return;
+
+    try {
+      const storageKey = `${MY_SUBMITTED_API_IDS_KEY}:${currentUserId}`;
+      await AsyncStorage.setItem(storageKey, JSON.stringify(ids));
+    } catch (error) {
+      console.error('Persist submitted API IDs error:', error);
+    }
+  };
+
+  const findEntryAcrossLanguages = async (entryId, languageIds = dictionaryLanguageIds) => {
+    const normalizedIds = Array.from(
+      new Set((languageIds || ['kadazan-demo']).map((id) => normalizeLanguageId(id)))
+    );
+
+    const results = await Promise.all(
+      normalizedIds.map((languageId) => dictionaryApiService.getEntries({ languageId }))
+    );
+
+    const mergedRaw = results.flatMap((list) => (Array.isArray(list) ? list : []));
+    return mergedRaw.find((item) => item?.id === entryId) || null;
   };
 
   const userCanVerifyEntries =
@@ -327,11 +457,10 @@ export default function DictionaryScreen({ navigation }) {
         await dictionaryApiService.verifyEntry(entry.apiEntryId);
         await loadDictionaryApiEntries();
         if (selectedWord?.id === entry.id) {
-          setSelectedWord({
-            ...entry,
-            verificationStatus: 'Verified by language expert',
-            statusRaw: 'verified',
-          });
+          const updated = await findEntryAcrossLanguages(entry.apiEntryId);
+          if (updated) {
+            setSelectedWord(mapApiEntryToWord(updated));
+          }
         }
         Alert.alert('Verified', 'Entry verified successfully in backend dictionary.');
       } catch (error) {
@@ -382,6 +511,26 @@ export default function DictionaryScreen({ navigation }) {
     } catch (error) {
       console.error('Delete API dictionary entry error:', error);
       Alert.alert('Delete Failed', error?.message || 'Could not delete this entry.');
+    }
+  };
+
+  const refreshWordStatus = async () => {
+    if (!selectedWord?.apiEntryId) return;
+    try {
+      setIsRefreshingStatus(true);
+      const fresh = await findEntryAcrossLanguages(selectedWord.apiEntryId);
+      if (fresh?.id) {
+        const mapped = mapApiEntryToWord(fresh);
+        setSelectedWord(mapped);
+        setDictionaryApiEntries((prev) =>
+          prev.map((item) => (item.id === mapped.id ? mapped : item))
+        );
+      }
+    } catch (error) {
+      console.error('Refresh word status error:', error);
+      Alert.alert('Refresh Failed', 'Could not check latest status. Please try again.');
+    } finally {
+      setIsRefreshingStatus(false);
     }
   };
 
@@ -555,6 +704,8 @@ export default function DictionaryScreen({ navigation }) {
     }
 
     try {
+      setIsSubmittingEntry(true);
+      const submittedLanguageId = normalizeLanguageId(newLanguage.trim());
       const response = uploadedPronunciation?.uri
         ? await dictionaryApiService.elicitFromAudio({
             fileUri: uploadedPronunciation.uri,
@@ -564,7 +715,7 @@ export default function DictionaryScreen({ navigation }) {
         : await dictionaryApiService.elicitFromText({
             anchorText: newMeaningUsage.trim(),
             indigenousResponse: newWord.trim(),
-            languageId: normalizeLanguageId(newLanguage.trim()),
+            languageId: submittedLanguageId,
           });
 
       const draftEntry = response?.draft_dictionary_entry;
@@ -578,11 +729,30 @@ export default function DictionaryScreen({ navigation }) {
         return sortWordsAtoZ([mapped, ...withoutDup]);
       });
 
+      if (mapped?.id) {
+        setMySubmittedApiIds((prev) => {
+          const next = Array.from(new Set([mapped.id, ...prev]));
+          persistMySubmittedApiIds(next);
+          return next;
+        });
+      }
+
+      const responseLanguageId = normalizeLanguageId(draftEntry?.language_id || submittedLanguageId || 'kadazan-demo');
+      const syncIds = [responseLanguageId, submittedLanguageId || 'kadazan-demo'];
+      const nextLanguageIds = Array.from(new Set([...dictionaryLanguageIds, ...syncIds]));
+      setDictionaryLanguageIds(nextLanguageIds);
+      await persistTrackedLanguageIds(nextLanguageIds);
+      await loadDictionaryApiEntries(nextLanguageIds);
+
       resetContributionForm();
-      Alert.alert('Contribution Submitted', 'Your word was sent to API and is pending language expert verification.');
+      setShowDocumentationProject(false);
+      // Navigate directly to word detail so the user can see the verification progress
+      setSelectedWord(mapped);
     } catch (error) {
       console.error('Create dictionary entry via API error:', error);
       Alert.alert('Submission Failed', error?.message || 'Could not submit to API. Please try again.');
+    } finally {
+      setIsSubmittingEntry(false);
     }
   };
 
@@ -590,17 +760,37 @@ export default function DictionaryScreen({ navigation }) {
     navigation.navigate('ScanImage');
   };
 
+  const mineWords = dictionaryWords.filter((word) => {
+    if (!currentUserId) return false;
+    const createdByMatches = String(word?.createdByUserId || '').trim() === currentUserId;
+    const isTrackedSubmitted = mySubmittedApiIds.includes(word?.id);
+    return createdByMatches || isTrackedSubmitted;
+  });
+
+  const mineVerifiedCount = mineWords.filter((word) => word?.statusRaw === 'verified').length;
+  const minePendingCount = mineWords.length - mineVerifiedCount;
+
   const filteredWords = dictionaryWords.filter((word) => {
-    const matchesSearch =
-      word.word.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      word.translation.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesLanguage = selectedLanguage === 'all' || word.language === selectedLanguage;
     const matchesCategory = selectedCategory === 'all' || word.category === selectedCategory;
+    const createdByMatches = String(word?.createdByUserId || '').trim() === currentUserId;
+    const isTrackedSubmitted = mySubmittedApiIds.includes(word?.id);
+    const matchesOwnership = viewMode === 'all' || createdByMatches || isTrackedSubmitted;
 
-    return matchesSearch && matchesLanguage && matchesCategory;
+    return matchesLanguage && matchesCategory && matchesOwnership;
   });
 
   const sortedFilteredWords = sortWordsAtoZ(filteredWords);
+  const sortedSearchResults = sortWordsAtoZ(
+    filteredWords.filter((word) => {
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return false;
+      return (
+        word.word.toLowerCase().includes(query) ||
+        word.translation.toLowerCase().includes(query)
+      );
+    })
+  );
 
   const renderWordCard = ({ item }) => (
     <TouchableOpacity style={[styles.wordCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => handleWordPress(item)} activeOpacity={0.8}>
@@ -626,6 +816,16 @@ export default function DictionaryScreen({ navigation }) {
 
   const renderWordDetail = () => {
     if (!selectedWord) return null;
+
+    const isVerified =
+      selectedWord.statusRaw === 'verified' ||
+      selectedWord.verificationStatus === 'Verified by language expert';
+
+    const verificationStages = [
+      { key: 'submitted', label: 'Submitted', done: true },
+      { key: 'review', label: 'Under Review', done: isVerified, active: !isVerified },
+      { key: 'verified', label: 'Verified', done: isVerified },
+    ];
 
     return (
       <View style={[styles.detailContainer, { backgroundColor: theme.background }]}>
@@ -664,6 +864,161 @@ export default function DictionaryScreen({ navigation }) {
               </View>
             </View>
           </View>
+
+          {/* Verification Progress Banner — shown right away for API entries */}
+          {selectedWord.source === 'api' ? (
+            <View style={[
+              styles.verificationBanner,
+              {
+                backgroundColor: isVerified ? (theme.successLight || '#D1FAE5') : (theme.warningLight || '#FEF3C7'),
+                borderColor: isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B'),
+              },
+            ]}>
+              <View style={styles.verificationBannerHeader}>
+                <Ionicons
+                  name={isVerified ? 'checkmark-circle' : 'time-outline'}
+                  size={22}
+                  color={isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B')}
+                />
+                <Text style={[
+                  styles.verificationBannerTitle,
+                  { color: isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B') },
+                ]}>
+                  {isVerified ? 'Verified by Language Expert' : 'Pending Verification'}
+                </Text>
+              </View>
+
+              {/* 3-step progress track */}
+              <View style={styles.verificationTrack}>
+                {verificationStages.map((stage, idx) => (
+                  <React.Fragment key={stage.key}>
+                    <View style={styles.verificationTrackStep}>
+                      <View style={[
+                        styles.verificationTrackDot,
+                        {
+                          backgroundColor: stage.done
+                            ? (theme.success || '#10B981')
+                            : stage.active
+                            ? (theme.warning || '#F59E0B')
+                            : (theme.border || '#E5E7EB'),
+                        },
+                      ]}>
+                        {stage.done ? (
+                          <Ionicons name="checkmark" size={10} color="#fff" />
+                        ) : stage.active ? (
+                          <Ionicons name="time" size={10} color="#fff" />
+                        ) : null}
+                      </View>
+                      <Text style={[
+                        styles.verificationTrackLabel,
+                        {
+                          color: stage.done
+                            ? (theme.success || '#10B981')
+                            : stage.active
+                            ? (theme.warning || '#F59E0B')
+                            : theme.textSecondary,
+                          fontWeight: stage.done || stage.active ? '700' : '400',
+                        },
+                      ]}>
+                        {stage.label}
+                      </Text>
+                    </View>
+                    {idx < verificationStages.length - 1 ? (
+                      <View style={[
+                        styles.verificationTrackLine,
+                        {
+                          backgroundColor: verificationStages[idx + 1].done || stage.done
+                            ? (theme.success || '#10B981')
+                            : (theme.border || '#E5E7EB'),
+                        },
+                      ]} />
+                    ) : null}
+                  </React.Fragment>
+                ))}
+              </View>
+
+              {!isVerified ? (
+                <Text style={[styles.verificationBannerHint, { color: theme.textSecondary }]}>
+                  A language expert will review your entry. Estimated wait: 24 – 72 hours.
+                </Text>
+              ) : (
+                <Text style={[styles.verificationBannerHint, { color: theme.success || '#10B981' }]}>
+                  This word has been approved and is now part of the Living Dictionary.
+                </Text>
+              )}
+
+              <View style={[styles.verifierMetaCard, { borderColor: theme.border }]}> 
+                <Text style={[styles.verifierMetaText, { color: theme.textSecondary }]}>Submitted by: {selectedWord.createdByName || 'Community contributor'}</Text>
+                {isVerified ? (
+                  <Text style={[styles.verifierMetaText, { color: theme.textSecondary }]}>Verified by: {selectedWord.verifiedByName || 'Language expert'}{selectedWord.verifiedByRole ? ` (${selectedWord.verifiedByRole})` : ''}</Text>
+                ) : (
+                  <Text style={[styles.verifierMetaText, { color: theme.textSecondary }]}>Review team: language expert / moderator / admin</Text>
+                )}
+                {selectedWord.verifiedAt ? (
+                  <Text style={[styles.verifierMetaText, { color: theme.textSecondary }]}>Verified at: {new Date(selectedWord.verifiedAt).toLocaleString()}</Text>
+                ) : null}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.refreshStatusBtn, { borderColor: isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B') }]}
+                onPress={refreshWordStatus}
+                disabled={isRefreshingStatus}
+              >
+                {isRefreshingStatus ? (
+                  <ActivityIndicator size="small" color={isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B')} />
+                ) : (
+                  <Ionicons name="refresh" size={16} color={isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B')} />
+                )}
+                <Text style={[styles.refreshStatusText, { color: isVerified ? (theme.success || '#10B981') : (theme.warning || '#F59E0B') }]}>
+                  {isRefreshingStatus ? 'Checking...' : 'Refresh Status'}
+                </Text>
+              </TouchableOpacity>
+
+              {(selectedWord.source === 'community' || selectedWord.source === 'api') && selectedWord.verificationStatus !== 'Verified by language expert' ? (
+                <TouchableOpacity
+                  style={[styles.secondaryActionBtn, { borderColor: theme.border, marginTop: SPACING.s }]}
+                  onPress={() => verifyCommunityEntry(selectedWord)}
+                  disabled={!userCanVerifyEntries}
+                >
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={18}
+                    color={userCanVerifyEntries ? theme.primary : theme.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.secondaryActionText,
+                      { color: userCanVerifyEntries ? theme.text : theme.textSecondary },
+                    ]}
+                  >
+                    Expert Verify
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {selectedWord.source === 'api' && selectedWord.verificationStatus !== 'Verified by language expert' ? (
+                <TouchableOpacity
+                  style={[styles.secondaryActionBtn, { borderColor: theme.border, marginTop: SPACING.s }]}
+                  onPress={() => rejectApiEntry(selectedWord)}
+                  disabled={!userCanVerifyEntries}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={userCanVerifyEntries ? (theme.error || '#EF4444') : theme.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.secondaryActionText,
+                      { color: userCanVerifyEntries ? (theme.error || '#EF4444') : theme.textSecondary },
+                    ]}
+                  >
+                    Reject Entry
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* Pronunciation */}
           <View style={styles.section}>
@@ -716,57 +1071,6 @@ export default function DictionaryScreen({ navigation }) {
             </View>
           ) : null}
 
-          {selectedWord.verificationStatus ? (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Moderation</Text>
-              <View style={[styles.pronunciationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-                <Text style={[styles.exampleText, { color: theme.text }]}>Status: {selectedWord.verificationStatus}</Text>
-              </View>
-              {(selectedWord.source === 'community' || selectedWord.source === 'api') && selectedWord.verificationStatus !== 'Verified by language expert' ? (
-                <TouchableOpacity
-                  style={[styles.secondaryActionBtn, { borderColor: theme.border, marginTop: SPACING.s }]}
-                  onPress={() => verifyCommunityEntry(selectedWord)}
-                  disabled={!userCanVerifyEntries}
-                >
-                  <Ionicons
-                    name="shield-checkmark"
-                    size={18}
-                    color={userCanVerifyEntries ? theme.primary : theme.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.secondaryActionText,
-                      { color: userCanVerifyEntries ? theme.text : theme.textSecondary },
-                    ]}
-                  >
-                    Expert Verify
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              {selectedWord.source === 'api' && selectedWord.verificationStatus !== 'Verified by language expert' ? (
-                <TouchableOpacity
-                  style={[styles.secondaryActionBtn, { borderColor: theme.border, marginTop: SPACING.s }]}
-                  onPress={() => rejectApiEntry(selectedWord)}
-                  disabled={!userCanVerifyEntries}
-                >
-                  <Ionicons
-                    name="trash-outline"
-                    size={18}
-                    color={userCanVerifyEntries ? (theme.error || '#EF4444') : theme.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.secondaryActionText,
-                      { color: userCanVerifyEntries ? (theme.error || '#EF4444') : theme.textSecondary },
-                    ]}
-                  >
-                    Reject Entry
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
-
           {selectedWord.pronunciationAudioName ? (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Uploaded Pronunciation</Text>
@@ -812,6 +1116,12 @@ export default function DictionaryScreen({ navigation }) {
 
   const categories = ['all', ...new Set(dictionaryWords.map((w) => w.category))];
   const languages = ['all', ...new Set(dictionaryWords.map((w) => w.language))];
+  const filteredLanguageOptions = languages.filter((lang) => {
+    if (lang === 'all') return true;
+    const q = languageMenuQuery.trim().toLowerCase();
+    if (!q) return true;
+    return lang.toLowerCase().includes(q);
+  });
   const localVerifiedCount = communityEntries.filter((entry) => entry.verificationStatus === 'Verified by language expert').length;
   const apiVerifiedCount = dictionaryApiEntries.filter((entry) => entry.statusRaw === 'verified').length;
   const apiPendingCount = dictionaryApiEntries.filter((entry) => entry.statusRaw !== 'verified').length;
@@ -821,152 +1131,266 @@ export default function DictionaryScreen({ navigation }) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity
-          onPress={() => {
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.navigate('MainTabs', { screen: 'HomeTab' });
-            }
-          }}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Dictionary</Text>
-        <TouchableOpacity onPress={() => Alert.alert('Info', `${dictionaryWords.length} words available`)}>
-          <Ionicons name="information-circle" size={24} color={theme.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <Ionicons name="search" size={20} color={theme.textSecondary} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search words..."
-          placeholderTextColor={theme.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={{ marginRight: 8 }}>
-            <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
+      {!showSearchPage ? (
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('MainTabs', { screen: 'HomeTab' });
+              }
+            }}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-        )}
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Dictionary</Text>
+          <TouchableOpacity onPress={() => Alert.alert('Info', `${dictionaryWords.length} words available`)}>
+            <Ionicons name="information-circle" size={24} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {showSearchPage ? (
+        <View style={[styles.searchPageContainer, { backgroundColor: theme.background }]}> 
+          <View style={[styles.searchPageHeader, { borderBottomColor: theme.border }]}> 
+            <TouchableOpacity onPress={() => setShowSearchPage(false)} style={{ padding: 4 }}>
+              <Ionicons name="arrow-back" size={22} color={theme.text} />
+            </TouchableOpacity>
+            <View style={[styles.searchPageInputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+              <Ionicons name="search" size={18} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.searchPageInput, { color: theme.text }]}
+                placeholder="Type word or meaning..."
+                placeholderTextColor={theme.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+                returnKeyType="search"
+                onSubmitEditing={() => {
+                  if (searchQuery.trim()) {
+                    saveRecentSearch(searchQuery.trim());
+                  }
+                }}
+              />
+              {searchQuery.length > 0 ? (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity onPress={openScanOptions} style={{ marginLeft: 2 }}>
+                <Ionicons name="camera" size={18} color={theme.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {recentSearches.length > 0 ? (
+            <View style={styles.recentContainer}>
+              <Text style={[styles.recentTitle, { color: theme.textSecondary }]}>Recent Searches</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {recentSearches.map((word, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[styles.recentChip, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    onPress={() => {
+                      setSearchQuery(word);
+                    }}
+                  >
+                    <Text style={[styles.recentChipText, { color: theme.text }]}>{word}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          <View style={[styles.resultsBanner, { backgroundColor: theme.surfaceVariant }]}> 
+            <Text style={[styles.resultsText, { color: theme.textSecondary }]}> 
+              {searchQuery.trim().length > 0
+                ? `${sortedSearchResults.length} result${sortedSearchResults.length !== 1 ? 's' : ''} found`
+                : 'Start typing to search'}
+            </Text>
+          </View>
+
+          <FlatList
+            data={sortedSearchResults}
+            renderItem={renderWordCard}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <FontAwesome5 name="search" size={42} color={theme.textSecondary} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No search result yet</Text>
+                <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>Try another keyword</Text>
+              </View>
+            }
+          />
+        </View>
+      ) : null}
+
+      {!showSearchPage ? (
+        <>
+
+      <View style={styles.modeSwitchWrap}>
         <TouchableOpacity
-          onPress={openScanOptions}
-          style={{ padding: 4 }}
+          style={[
+            styles.modeSwitchBtn,
+            {
+              borderBottomColor: viewMode === 'all' ? theme.primary : 'transparent',
+            },
+          ]}
+          onPress={() => setViewMode('all')}
         >
-          <Ionicons name="camera" size={22} color={theme.primary} />
+          <Text style={[styles.modeSwitchText, { color: viewMode === 'all' ? theme.primary : theme.textSecondary }]}>All Words</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.modeSwitchBtn,
+            {
+              borderBottomColor: viewMode === 'mine' ? theme.primary : 'transparent',
+            },
+          ]}
+          onPress={() => setViewMode('mine')}
+        >
+          <Text style={[styles.modeSwitchText, { color: viewMode === 'mine' ? theme.primary : theme.textSecondary }]}>My Contributions</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.searchModeBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => setShowSearchPage(true)}
+        >
+          <Ionicons name="search" size={20} color={theme.primary} />
         </TouchableOpacity>
       </View>
 
-      {/* Recent Searches */}
-      {searchQuery.length === 0 && recentSearches.length > 0 && (
-        <View style={styles.recentContainer}>
-          <Text style={[styles.recentTitle, { color: theme.textSecondary }]}>Recent Searches</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {recentSearches.map((word, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[styles.recentChip, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                onPress={() => setSearchQuery(word)}
-              >
-                <Text style={[styles.recentChipText, { color: theme.text }]}>{word}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      {viewMode === 'mine' ? (
+        <View style={[styles.myContributionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+          <Text style={[styles.myContributionTitle, { color: theme.text }]}>My Words</Text>
+          <View style={styles.myContributionStatsRow}>
+            <View style={[styles.myContributionStatBox, { borderColor: theme.border }]}> 
+              <Text style={[styles.myContributionStatNumber, { color: theme.primary }]}>{mineWords.length}</Text>
+              <Text style={[styles.myContributionStatLabel, { color: theme.textSecondary }]}>Total</Text>
+            </View>
+            <View style={[styles.myContributionStatBox, { borderColor: theme.border }]}> 
+              <Text style={[styles.myContributionStatNumber, { color: theme.warning || '#F59E0B' }]}>{minePendingCount}</Text>
+              <Text style={[styles.myContributionStatLabel, { color: theme.textSecondary }]}>Pending</Text>
+            </View>
+            <View style={[styles.myContributionStatBox, { borderColor: theme.border }]}> 
+              <Text style={[styles.myContributionStatNumber, { color: theme.success || '#10B981' }]}>{mineVerifiedCount}</Text>
+              <Text style={[styles.myContributionStatLabel, { color: theme.textSecondary }]}>Verified</Text>
+            </View>
+          </View>
         </View>
-      )}
+      ) : null}
 
       {/* Language Filter */}
       <View style={{ paddingHorizontal: SPACING.l, marginBottom: SPACING.s }}>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text, marginBottom: 8 }}>Languages</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingRight: SPACING.l, gap: 10 }}
+        <TouchableOpacity
+          style={[styles.filterToggleBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => setShowLanguageMenu(true)}
         >
-          {languages.map((lang) => (
-            <TouchableOpacity
-              key={lang}
-              activeOpacity={0.7}
-              style={[
-                styles.filterBtn, 
-                { 
-                  backgroundColor: selectedLanguage === lang ? theme.primary : theme.surface,
-                  borderColor: selectedLanguage === lang ? theme.primary : theme.border,
-                  borderWidth: 1,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  elevation: selectedLanguage === lang ? 4 : 1,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 2,
-                }
-              ]}
-              onPress={() => setSelectedLanguage(lang)}
-            >
-              <Text style={[
-                styles.filterText, 
-                { 
-                  color: selectedLanguage === lang ? '#FFFFFF' : theme.text,
-                  fontWeight: selectedLanguage === lang ? '700' : '500', 
-                  fontSize: 14,
-                }
-              ]}>
-                {lang === 'all' ? 'All' : lang}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+          <Text style={[styles.filterToggleText, { color: theme.text }]}>Language: {selectedLanguage === 'all' ? 'All' : selectedLanguage}</Text>
+          <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
+        </TouchableOpacity>
       </View>
 
       {/* Category Filter */}
       <View style={{ paddingHorizontal: SPACING.l, marginBottom: SPACING.m }}>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text, marginBottom: 8 }}>Categories</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingRight: SPACING.l, gap: 10 }}
+        <TouchableOpacity
+          style={[styles.filterToggleBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => setShowCategoryMenu(true)}
         >
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              activeOpacity={0.7}
-              style={[
-                styles.categoryBtn,
-                { 
-                  backgroundColor: selectedCategory === cat ? theme.primary : theme.surface,
-                  borderColor: selectedCategory === cat ? theme.primary : theme.border,
-                  borderWidth: 1,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  elevation: selectedCategory === cat ? 4 : 1,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 2,
-                }
-              ]}
-              onPress={() => setSelectedCategory(cat)}
-            >
-              <Text style={[
-                styles.categoryText,
-                { 
-                  color: selectedCategory === cat ? '#FFFFFF' : theme.text,
-                  fontWeight: selectedCategory === cat ? '700' : '500', 
-                  fontSize: 14,
-                }
-              ]}>
-                {cat === 'all' ? 'All' : cat}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+          <Text style={[styles.filterToggleText, { color: theme.text }]}>Category: {selectedCategory === 'all' ? 'All' : selectedCategory}</Text>
+          <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showLanguageMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowLanguageMenu(false);
+          setLanguageMenuQuery('');
+        }}
+      >
+        <Pressable
+          style={styles.menuBackdrop}
+          onPress={() => {
+            setShowLanguageMenu(false);
+            setLanguageMenuQuery('');
+          }}
+        >
+          <Pressable style={[styles.menuCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.menuTitle, { color: theme.text }]}>Select Language</Text>
+            <View style={[styles.menuSearchWrap, { borderColor: theme.border, backgroundColor: theme.background }]}> 
+              <Ionicons name="search" size={16} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.menuSearchInput, { color: theme.text }]}
+                placeholder="Search language..."
+                placeholderTextColor={theme.textSecondary}
+                value={languageMenuQuery}
+                onChangeText={setLanguageMenuQuery}
+                autoFocus
+              />
+              {languageMenuQuery ? (
+                <TouchableOpacity onPress={() => setLanguageMenuQuery('')}>
+                  <Ionicons name="close-circle" size={16} color={theme.textSecondary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <ScrollView style={styles.menuList}>
+              {filteredLanguageOptions.map((lang) => {
+                const active = selectedLanguage === lang;
+                return (
+                  <TouchableOpacity
+                    key={lang}
+                    style={[styles.menuItem, active ? { backgroundColor: theme.surfaceVariant } : null]}
+                    onPress={() => {
+                      setSelectedLanguage(lang);
+                      setShowLanguageMenu(false);
+                      setLanguageMenuQuery('');
+                    }}
+                  >
+                    <Text style={[styles.menuItemText, { color: theme.text }]}>{lang === 'all' ? 'All Languages' : lang}</Text>
+                    {active ? <Ionicons name="checkmark" size={18} color={theme.primary} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={showCategoryMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCategoryMenu(false)}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={() => setShowCategoryMenu(false)}>
+          <Pressable style={[styles.menuCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.menuTitle, { color: theme.text }]}>Select Category</Text>
+            <ScrollView style={styles.menuList}>
+              {categories.map((cat) => {
+                const active = selectedCategory === cat;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.menuItem, active ? { backgroundColor: theme.surfaceVariant } : null]}
+                    onPress={() => {
+                      setSelectedCategory(cat);
+                      setShowCategoryMenu(false);
+                    }}
+                  >
+                    <Text style={[styles.menuItemText, { color: theme.text }]}>{cat === 'all' ? 'All Categories' : cat}</Text>
+                    {active ? <Ionicons name="checkmark" size={18} color={theme.primary} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Results Count */}
       <View style={[styles.resultsBanner, { backgroundColor: theme.surfaceVariant }]}>
@@ -993,9 +1417,11 @@ export default function DictionaryScreen({ navigation }) {
           </View>
         }
       />
+      </>
+      ) : null}
 
       {showDocumentationProject ? (
-        <View style={styles.floatingFormWrap}>
+        <View style={[styles.floatingFormWrap, { top: insets.top + SPACING.xs }]}> 
           <View style={[styles.bottomFormCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
             <View style={styles.bottomFormHeader}>
               <View style={{ flex: 1 }}>
@@ -1009,6 +1435,12 @@ export default function DictionaryScreen({ navigation }) {
                 <Ionicons name="close" size={18} color={theme.text} />
               </TouchableOpacity>
             </View>
+
+            <ScrollView
+              style={styles.bottomFormScroll}
+              contentContainerStyle={styles.bottomFormScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
 
             <View style={[styles.formSectionCard, { borderColor: theme.border, backgroundColor: theme.background }]}> 
               <Text style={[styles.formSectionTitle, { color: theme.text }]}>Word Information</Text>
@@ -1106,14 +1538,32 @@ export default function DictionaryScreen({ navigation }) {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.primaryActionBtn, { backgroundColor: theme.primary }]}
+              style={[
+                styles.primaryActionBtn,
+                { backgroundColor: theme.primary, opacity: isSubmittingEntry ? 0.8 : 1 },
+              ]}
               onPress={addCommunityEntry}
+              disabled={isSubmittingEntry}
             >
-              <Ionicons name="add-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.primaryActionText}>Add to Living Dictionary</Text>
+              {isSubmittingEntry ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.primaryActionText}>Submitting...</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                  <Text style={styles.primaryActionText}>Add to Living Dictionary</Text>
+                </>
+              )}
             </TouchableOpacity>
 
-            <Text style={[styles.moderationHint, { color: theme.textSecondary }]}>Moderation: language experts verify entries. Verified: {verifiedCount}. Pending: {pendingCount}.</Text>
+            {isSubmittingEntry ? (
+              <Text style={[styles.moderationHint, { color: theme.textSecondary }]}>Uploading and drafting your entry. Please wait...</Text>
+            ) : null}
+
+            <Text style={[styles.moderationHint, { color: theme.textSecondary }]}>Verification Review: language experts or moderators check entries. Verified: {verifiedCount}. Pending: {pendingCount}.</Text>
+            </ScrollView>
           </View>
         </View>
       ) : null}
@@ -1163,6 +1613,108 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
+    gap: SPACING.s,
+  },
+  searchTriggerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchTriggerText: {
+    fontSize: 15,
+  },
+  searchPageContainer: {
+    flex: 1,
+  },
+  searchPageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.s,
+    borderBottomWidth: 1,
+  },
+  searchPageInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 8,
+  },
+  searchPageInput: {
+    flex: 1,
+    fontSize: 15,
+  },
+  modeSwitchWrap: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: SPACING.l,
+    marginTop: SPACING.m,
+    marginBottom: SPACING.m,
+    alignItems: 'stretch',
+  },
+  modeSwitchBtn: {
+    flex: 1,
+    borderBottomWidth: 2,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeSwitchText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  searchModeBtn: {
+    width: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  searchModeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  myContributionCard: {
+    marginHorizontal: SPACING.l,
+    marginBottom: SPACING.s,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: SPACING.m,
+  },
+  myContributionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  myContributionSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  myContributionStatsRow: {
+    marginTop: SPACING.s,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  myContributionStatBox: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  myContributionStatNumber: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  myContributionStatLabel: {
+    fontSize: 11,
+    marginTop: 2,
   },
   topPanels: {
     maxHeight: 56,
@@ -1190,17 +1742,25 @@ const styles = StyleSheet.create({
   },
   floatingFormWrap: {
     position: 'absolute',
-    left: SPACING.l,
-    right: SPACING.l,
-    bottom: SPACING.l,
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     zIndex: 20,
   },
   bottomFormCard: {
-    borderRadius: 14,
+    flex: 1,
+    borderRadius: 0,
     borderWidth: 1,
     padding: SPACING.m,
     gap: SPACING.s,
-    maxHeight: 520,
+  },
+  bottomFormScroll: {
+    flex: 1,
+  },
+  bottomFormScrollContent: {
+    gap: SPACING.s,
+    paddingBottom: SPACING.m,
   },
   bottomFormHeader: {
     flexDirection: 'row',
@@ -1314,6 +1874,27 @@ const styles = StyleSheet.create({
   },
   moderationHint: {
     fontSize: 12,
+    lineHeight: 18,
+  },
+  verifierMetaCard: {
+    marginTop: SPACING.s,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: SPACING.s,
+    gap: 2,
+  },
+  verifierMetaText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  verificationTimeline: {
+    marginTop: SPACING.s,
+    gap: 8,
+  },
+  verificationStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   uploadedFileText: {
     fontSize: 12,
@@ -1367,6 +1948,71 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  verificationBanner: {
+    marginHorizontal: SPACING.l,
+    marginTop: SPACING.m,
+    marginBottom: SPACING.m,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    padding: SPACING.m,
+  },
+  verificationBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.s,
+  },
+  verificationBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  verificationTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.s,
+  },
+  verificationTrackStep: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  verificationTrackDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verificationTrackLabel: {
+    fontSize: 10,
+    textAlign: 'center',
+    maxWidth: 60,
+  },
+  verificationTrackLine: {
+    flex: 1,
+    height: 2,
+    marginBottom: 14,
+    marginHorizontal: 2,
+  },
+  verificationBannerHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: SPACING.s,
+  },
+  refreshStatusBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: SPACING.m,
+    marginTop: 2,
+  },
+  refreshStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   searchInput: {
     flex: 1,
     marginLeft: SPACING.s,
@@ -1398,6 +2044,69 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.s,
     gap: SPACING.s,
+  },
+  filterToggleBtn: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  filterToggleText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.l,
+  },
+  menuCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    maxHeight: '70%',
+    paddingVertical: SPACING.s,
+  },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    paddingHorizontal: SPACING.m,
+    marginBottom: SPACING.xs,
+  },
+  menuSearchWrap: {
+    marginHorizontal: SPACING.s,
+    marginBottom: SPACING.s,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  menuSearchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
+  menuList: {
+    paddingHorizontal: SPACING.xs,
+  },
+  menuItem: {
+    minHeight: 44,
+    borderRadius: 10,
+    paddingHorizontal: SPACING.s,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  menuItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: SPACING.s,
   },
   filterBtn: {
     paddingHorizontal: SPACING.m,

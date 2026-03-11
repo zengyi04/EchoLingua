@@ -147,9 +147,12 @@ export default function CommunityStoryScreen({ navigation }) {
   
   const markStoriesAsSeen = async () => {
     try {
-      const stored = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+      const primary = await AsyncStorage.getItem(COMMUNITY_STORIES_STORAGE_KEY);
+      const legacy = await AsyncStorage.getItem(LEGACY_COMMUNITY_STORIES_KEY);
+      const stored = primary || legacy;
+
       if (stored) {
-        const allStories = JSON.parse(stored);
+        const allStories = JSON.parse(stored) || [];
         const storyIds = allStories.map(s => s.id);
         
         // Get existing seen stories

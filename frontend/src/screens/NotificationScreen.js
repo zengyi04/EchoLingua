@@ -157,11 +157,12 @@ export default function NotificationScreen() {
     <TouchableOpacity
       style={[
         styles.notificationCard,
-        { backgroundColor: item.read ? theme.surface : theme.primary + '15', borderColor: theme.border }
+        { backgroundColor: theme.cardBackground || theme.surface || theme.background }
       ]}
       onPress={() => handleNotificationPress(item)}
       activeOpacity={0.7}
     >
+      {!item.read && <View style={[styles.unreadAccent, { backgroundColor: theme.primary }]} />}
       <View style={[styles.iconContainer, { backgroundColor: theme.primary + '20' }]}>
         <Ionicons name={getNotificationIcon(item.type)} size={24} color={theme.primary} />
       </View>
@@ -265,15 +266,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.m,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: SPACING.m,
-    borderWidth: 1,
+    borderWidth: 0,
     ...SHADOWS.small,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  unreadAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.m,

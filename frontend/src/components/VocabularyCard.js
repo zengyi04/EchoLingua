@@ -27,6 +27,12 @@ export default function VocabularyCard({
   toLanguage 
 }) {
   const { theme, isDark } = useTheme();
+  const normalizedWord = {
+    id: word?.id,
+    original: word?.original || word?.word || '',
+    translated: word?.translated || word?.translation || '',
+    pronunciation: word?.pronunciation || '',
+  };
 
   const ACCURACY_LEVELS = {
     excellent: { emoji: '⭐', color: theme.success, label: 'Excellent', minScore: 85 },
@@ -44,9 +50,9 @@ export default function VocabularyCard({
   const [recordingUri, setRecordingUri] = useState(null);
   const [playingTranslation, setPlayingTranslation] = useState(false);
   const [displayWord, setDisplayWord] = useState({
-    original: word.original,
-    translated: word.translated,
-    pronunciation: word.pronunciation,
+    original: normalizedWord.original,
+    translated: normalizedWord.translated,
+    pronunciation: normalizedWord.pronunciation,
   });
   const [isTranslatingWord, setIsTranslatingWord] = useState(false);
   
@@ -88,7 +94,7 @@ export default function VocabularyCard({
     const buildDisplayWord = async () => {
       const sourceId = fromLanguage?.id || 'malay';
       const targetId = toLanguage?.id || 'english';
-      const cacheKey = `${word.id}:${sourceId}:${targetId}`;
+      const cacheKey = `${normalizedWord.id || normalizedWord.original}:${sourceId}:${targetId}`;
 
       if (wordTranslationCache.has(cacheKey)) {
         if (mounted) {
@@ -99,13 +105,13 @@ export default function VocabularyCard({
 
       setIsTranslatingWord(true);
       try {
-        const translatedOriginal = await translateTextBetween(word.original, 'malay', sourceId);
-        const translatedMeaning = await translateTextBetween(word.translated, 'english', targetId);
+        const translatedOriginal = await translateTextBetween(normalizedWord.original, 'malay', sourceId);
+        const translatedMeaning = await translateTextBetween(normalizedWord.translated, 'english', targetId);
 
         const transformed = {
-          original: translatedOriginal || word.original,
-          translated: translatedMeaning || word.translated,
-          pronunciation: word.pronunciation,
+          original: translatedOriginal || normalizedWord.original,
+          translated: translatedMeaning || normalizedWord.translated,
+          pronunciation: normalizedWord.pronunciation,
         };
         wordTranslationCache.set(cacheKey, transformed);
         if (mounted) {
@@ -114,9 +120,9 @@ export default function VocabularyCard({
       } catch (error) {
         if (mounted) {
           setDisplayWord({
-            original: word.original,
-            translated: word.translated,
-            pronunciation: word.pronunciation,
+            original: normalizedWord.original,
+            translated: normalizedWord.translated,
+            pronunciation: normalizedWord.pronunciation,
           });
         }
       } finally {
@@ -131,7 +137,7 @@ export default function VocabularyCard({
     return () => {
       mounted = false;
     };
-  }, [word.id, word.original, word.translated, word.pronunciation, fromLanguage?.id, toLanguage?.id]);
+  }, [normalizedWord.id, normalizedWord.original, normalizedWord.translated, normalizedWord.pronunciation, fromLanguage?.id, toLanguage?.id]);
 
   // Play pronunciation sound - speaks the word out loud using TTS
   const playPronunciation = async (isTranslation = false) => {
@@ -425,7 +431,9 @@ export default function VocabularyCard({
       <View style={styles.content}>
         <View style={styles.textGroup}>
           <Text style={[styles.originalWord, { color: theme.text }]}>{displayWord.original}</Text>
-          <Text style={[styles.phonetic, { color: theme.textSecondary }]}>/{displayWord.pronunciation}/</Text>
+          {!!displayWord.pronunciation && (
+            <Text style={[styles.phonetic, { color: theme.textSecondary }]}>/{displayWord.pronunciation}/</Text>
+          )}
           <Text style={[styles.translation, { color: theme.textSecondary }]}>{displayWord.translated}</Text>
           {isTranslatingWord && <Text style={[styles.translatingHint, { color: theme.textSecondary }]}>Updating word for selected languages...</Text>}
         </View>

@@ -197,14 +197,13 @@ export default function CulturalKnowledgeScreen({ navigation }) {
 
   const renderCategoryCard = ({ item }) => (
     <TouchableOpacity
-      style={[styles.categoryCard, { borderColor: item.color, backgroundColor: theme.surface }]}
+      style={[styles.categoryCard, { backgroundColor: theme.surface }]}
       onPress={() => setSelectedCategory(item)}
       activeOpacity={0.8}
     >
       <Text style={styles.categoryIcon}>{item.icon}</Text>
       <Text style={[styles.categoryTitle, { color: theme.text }]}>{item.title}</Text>
       <Text style={[styles.categoryCount, { color: theme.textSecondary }]}>{item.articles.length} articles</Text>
-      <View style={[styles.categoryAccent, { backgroundColor: item.color }]} />
     </TouchableOpacity>
   );
 
@@ -255,7 +254,7 @@ export default function CulturalKnowledgeScreen({ navigation }) {
           {filteredArticles.map((article) => (
             <TouchableOpacity
               key={article.id}
-              style={[styles.articleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              style={[styles.articleCard, { backgroundColor: theme.surface }]}
               onPress={() => setSelectedArticle(article)}
             >
               <Text style={[styles.articleTitle, { color: theme.text }]}>{article.title}</Text>
@@ -419,9 +418,8 @@ const styles = StyleSheet.create({
     padding: SPACING.m,
     margin: SPACING.s,
     minHeight: 140,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    ...SHADOWS.small,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   categoryIcon: {
     fontSize: 36,
@@ -502,9 +500,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: SPACING.m,
     marginBottom: SPACING.m,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    ...SHADOWS.small,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   articleTitle: {
     fontSize: 16,

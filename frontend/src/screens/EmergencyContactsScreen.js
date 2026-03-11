@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { authFetch } from '../services/api';
 
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const USERS_DATABASE_KEY = '@echolingua_users_database';
@@ -67,28 +68,35 @@ export default function EmergencyContactsScreen({ navigation }) {
     }
 
     try {
-      const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
-      const users = usersData ? JSON.parse(usersData) : [];
+      // Build query params for backend search
+      const params = new URLSearchParams();
+      if (contactEmail.trim()) params.append('email', contactEmail.trim());
+      if (contactUsername.trim()) params.append('username', contactUsername.trim());
+      if (contactPhone.trim()) params.append('phone', contactPhone.trim());
 
-      const normalizedUsername = contactUsername.trim().toLowerCase();
-      const normalizedEmail = contactEmail.trim().toLowerCase();
-      const normalizedPhone = contactPhone.trim();
-
-      const linkedUser = users.find((appUser) => {
-        return (
-          (normalizedEmail && appUser.email?.toLowerCase() === normalizedEmail) ||
-          (normalizedPhone && appUser.phone === normalizedPhone) ||
-          (normalizedUsername && (
-            appUser.username?.toLowerCase() === normalizedUsername ||
-            appUser.fullName?.toLowerCase() === normalizedUsername
-          ))
+      let linkedUser = null;
+      try {
+        linkedUser = await authFetch(`/users/search?${params.toString()}`);
+      } catch (backendErr) {
+        // If backend is unreachable, fall back to local AsyncStorage database
+        console.warn('Backend search failed, falling back to local DB:', backendErr.message);
+        const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
+        const users = usersData ? JSON.parse(usersData) : [];
+        const normEmail = contactEmail.trim().toLowerCase();
+        const normPhone = contactPhone.trim();
+        const normUser = contactUsername.trim().toLowerCase();
+        const found = users.find(u =>
+          (normEmail && u.email?.toLowerCase() === normEmail) ||
+          (normPhone && u.phone === normPhone) ||
+          (normUser && (u.username?.toLowerCase() === normUser || u.fullName?.toLowerCase() === normUser))
         );
-      });
+        if (found) linkedUser = { id: found.id, name: found.fullName || found.name, email: found.email };
+      }
 
       if (!linkedUser) {
         Alert.alert(
-          'App Account Required',
-          'Contact must have an existing app account. Please enter matching username, email, or phone.'
+          'Account Not Found',
+          'No EchoLingua account matches that email, username, or phone. Ask them to register first.'
         );
         return;
       }
@@ -96,12 +104,12 @@ export default function EmergencyContactsScreen({ navigation }) {
       const newContact = {
         id: editingContactId || Date.now().toString(),
         name: contactName.trim(),
-        username: contactUsername.trim() || linkedUser.username || null,
+        username: contactUsername.trim() || null,
         email: contactEmail.trim() || linkedUser.email || null,
-        phone: contactPhone.trim() || linkedUser.phone || null,
+        phone: contactPhone.trim() || null,
         relation: contactRelation.trim() || 'Other',
         linkedUserId: linkedUser.id,
-        linkedUserName: linkedUser.fullName,
+        linkedUserName: linkedUser.name,
         hasAppAccount: true,
         addedAt: new Date().toISOString(),
       };
@@ -110,15 +118,17 @@ export default function EmergencyContactsScreen({ navigation }) {
         ? emergencyContacts.map((contact) => (contact.id === editingContactId ? newContact : contact))
         : [...emergencyContacts, newContact];
 
-      // Update current user
+      // Persist to current user in AsyncStorage
       const currentUserData = await AsyncStorage.getItem(USER_STORAGE_KEY);
       if (currentUserData) {
         const user = JSON.parse(currentUserData);
         user.emergencyContacts = updatedContacts;
         await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
 
-        // Update users database
+        // Also update the local users database if it exists
+        const usersData = await AsyncStorage.getItem(USERS_DATABASE_KEY);
         if (usersData) {
+          const users = JSON.parse(usersData);
           const userIndex = users.findIndex(u => u.id === user.id);
           if (userIndex !== -1) {
             users[userIndex].emergencyContacts = updatedContacts;

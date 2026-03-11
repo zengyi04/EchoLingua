@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert, Animated, Modal, ScrollView, ImageBackground } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert, Animated, Modal, ScrollView, ImageBackground, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -16,6 +16,7 @@ import { aiApiService } from '../services/aiApiService';
 const CHAT_HISTORY_KEY = '@echolingua_ai_chat_history';
 const USER_STORAGE_KEY = '@echolingua_current_user';
 const ELDER_VOICES_STORAGE_KEY = '@echolingua_elder_voices'; // From AIStoryGenerator
+const AI_CHAT_AUTO_READ_KEY = '@echolingua_ai_chat_auto_read';
 
 const VOICE_PROFILES = [
   { id: 'default', name: 'EchoLingua (Standard)', gender: 'neutral', pitch: 1.0, rate: 0.95 },
@@ -119,6 +120,8 @@ export default function AIChatScreen({ navigation, route }) {
   const [isCallMode, setIsCallMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [callStatus, setCallStatus] = useState('Connected');
+  const [autoReadResponses, setAutoReadResponses] = useState(true);
+  const [showChatAudioSettings, setShowChatAudioSettings] = useState(false);
   
   // Voice Features
   const [selectedVoice, setSelectedVoice] = useState(VOICE_PROFILES[0]);
@@ -186,6 +189,21 @@ export default function AIChatScreen({ navigation, route }) {
       recording.stopAndUnloadAsync().catch(() => {});
       setRecording(null);
       setIsRecording(false);
+    }
+  };
+
+  const stopSpeaking = () => {
+    Speech.stop();
+    setIsSpeaking(false);
+    setCallStatus(isCallMode ? 'Listening' : 'Connected');
+  };
+
+  const handleToggleAutoRead = async (value) => {
+    setAutoReadResponses(value);
+    try {
+      await AsyncStorage.setItem(AI_CHAT_AUTO_READ_KEY, String(value));
+    } catch (error) {
+      console.error('Failed to save AI chat auto-read setting:', error);
     }
   };
 
@@ -275,6 +293,21 @@ export default function AIChatScreen({ navigation, route }) {
     };
 
     loadPreferredLanguage();
+  }, []);
+
+  useEffect(() => {
+    const loadAutoReadSetting = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(AI_CHAT_AUTO_READ_KEY);
+        if (raw !== null) {
+          setAutoReadResponses(raw === 'true');
+        }
+      } catch (error) {
+        console.error('Failed to load AI chat auto-read setting:', error);
+      }
+    };
+
+    loadAutoReadSetting();
   }, []);
 
   useEffect(() => {
@@ -376,7 +409,9 @@ export default function AIChatScreen({ navigation, route }) {
       const answer = await requestAiReply(prompt);
       const botMessage = { id: `${Date.now()}-a`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
-      speakResponse(answer);
+      if (autoReadResponses) {
+        speakResponse(answer);
+      }
     } catch (error) {
       Alert.alert('AI Error', 'Unable to get answer right now. Please try again.');
       console.error('AI chat request failed:', error);
@@ -479,8 +514,10 @@ export default function AIChatScreen({ navigation, route }) {
         const answer = await requestAiReply(finalInput);
         const botMessage = { id: `${Date.now()}-voice-a`, role: 'assistant', text: answer };
         setMessages((prev) => [...prev, botMessage]);
-        
-        speakResponse(answer);
+
+        if (autoReadResponses) {
+          speakResponse(answer);
+        }
       } catch (geminiError) {
         console.error('AI chat request failed after voice:', geminiError);
         Alert.alert('AI Error', 'I heard you, but could not reply. Please try again.');
@@ -514,7 +551,9 @@ export default function AIChatScreen({ navigation, route }) {
       const answer = await requestAiReply(messageText);
       const botMessage = { id: `${Date.now()}-assistant`, role: 'assistant', text: answer };
       setMessages((prev) => [...prev, botMessage]);
-      speakResponse(answer);
+      if (autoReadResponses) {
+        speakResponse(answer);
+      }
     } catch (error) {
       console.error('AI chat request failed:', error);
       Alert.alert('AI Error', 'Could not get response. Please try again.');
@@ -664,20 +703,24 @@ export default function AIChatScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
         >
-          <Ionicons name="chevron-back" size={24} color={theme.primary} />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
+        <View style={styles.headerTitleWrap}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>AI Chat</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Speak - translate - review - send</Text>
         </View>
-        <TouchableOpacity onPress={startCall} style={{ padding: 8 }}>
-           <Ionicons name="call-outline" size={24} color={theme.primary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => setShowChatAudioSettings(true)} style={styles.headerIconButton}>
+            <Ionicons name={autoReadResponses ? 'volume-high-outline' : 'volume-mute-outline'} size={22} color={theme.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={startCall} style={styles.headerIconButton}>
+             <Ionicons name="call-outline" size={24} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -719,6 +762,15 @@ export default function AIChatScreen({ navigation, route }) {
           placeholderTextColor={theme.textSecondary}
           editable={!loading}
         />
+        {isSpeaking && (
+          <TouchableOpacity
+            style={[styles.stopSpeakButton, { backgroundColor: theme.error }]}
+            onPress={stopSpeaking}
+          >
+            <Ionicons name="stop" size={16} color={theme.surface} />
+            <Text style={styles.stopSpeakText}>Stop</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity 
           style={[
             styles.sendButton, 
@@ -731,6 +783,42 @@ export default function AIChatScreen({ navigation, route }) {
           <Ionicons name="send" size={18} color={theme.surface} />
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showChatAudioSettings}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowChatAudioSettings(false)}
+      >
+        <TouchableOpacity
+          style={styles.audioSettingsOverlay}
+          activeOpacity={1}
+          onPress={() => setShowChatAudioSettings(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[styles.audioSettingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <View style={styles.audioSettingsHeader}>
+              <Text style={[styles.audioSettingsTitle, { color: theme.text }]}>Chat Audio</Text>
+              <TouchableOpacity onPress={() => setShowChatAudioSettings(false)}>
+                <Ionicons name="close" size={22} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.audioSettingsRow, { backgroundColor: theme.background }] }>
+              <View style={styles.audioSettingsTextWrap}>
+                <Text style={[styles.audioSettingsLabel, { color: theme.text }]}>Read replies aloud</Text>
+              </View>
+              <Switch
+                value={autoReadResponses}
+                onValueChange={handleToggleAutoRead}
+                trackColor={{ false: '#767577', true: theme.primary }}
+                thumbColor="#ffffff"
+              />
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -740,16 +828,28 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.l,
     paddingVertical: SPACING.m,
-    backgroundColor: COLORS.glassMedium,
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardBorder,
-    ...SHADOWS.small,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
-  backButton: { padding: SPACING.xs, marginRight: SPACING.m },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: COLORS.text, letterSpacing: -0.3 },
-  headerSubtitle: { fontSize: 13, color: COLORS.textSecondary, marginTop: 2 },
+  backButton: { padding: SPACING.xs },
+  headerTitleWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  headerIconButton: {
+    padding: 4,
+  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.text },
   chatContent: { padding: SPACING.l, gap: SPACING.m, paddingBottom: SPACING.xxl },
   messageBubble: { 
     maxWidth: '82%', 
@@ -816,6 +916,61 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...SHADOWS.small,
+  },
+  stopSpeakButton: {
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: SPACING.s,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  stopSpeakText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  audioSettingsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.l,
+  },
+  audioSettingsCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 18,
+    padding: SPACING.l,
+    borderWidth: 1,
+    ...SHADOWS.small,
+  },
+  audioSettingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.m,
+  },
+  audioSettingsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  audioSettingsRow: {
+    borderRadius: 14,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.m,
+  },
+  audioSettingsTextWrap: {
+    flex: 1,
+  },
+  audioSettingsLabel: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   sendDisabled: { opacity: 0.4 },
   callContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 40 },

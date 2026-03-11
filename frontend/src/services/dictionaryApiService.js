@@ -39,7 +39,6 @@ export const dictionaryApiService = {
       name: fileName || `elicitation.${extension}`,
       type: mimeType || `audio/${extension}`,
     });
-
     const response = await fetch(`${API_URL}/ai/elicit/audio`, {
       method: 'POST',
       headers: {

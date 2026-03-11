@@ -550,7 +550,7 @@ export default function HomeScreen({ navigation }) {
             onPress={() => setShowNotificationModal(false)}
           >
             <TouchableOpacity 
-              style={[styles.notificationModalContent, { backgroundColor: theme.cardBackground }]} 
+              style={[styles.notificationModalContent, { backgroundColor: theme.surface }]} 
               activeOpacity={1}
             >
               {/* Notification Header */}
@@ -585,14 +585,12 @@ export default function HomeScreen({ navigation }) {
                     <TouchableOpacity
                       style={[
                         styles.notificationItem,
-                        { 
-                          backgroundColor: item.read ? theme.surface : theme.primary + '15', 
-                          borderColor: theme.border 
-                        }
+                        { backgroundColor: theme.background }
                       ]}
                       onPress={() => handleNotificationPress(item)}
                       activeOpacity={0.7}
                     >
+                      {!item.read && <View style={[styles.notificationUnreadAccent, { backgroundColor: theme.primary }]} />}
                       <View style={[styles.notificationIconContainer, { backgroundColor: theme.primary + '20' }]}>
                         <Ionicons name={getNotificationIcon(item.type)} size={24} color={theme.primary} />
                       </View>
@@ -825,23 +823,7 @@ export default function HomeScreen({ navigation }) {
             title="Community" 
             icon={<FontAwesome5 name="users" size={20} />}
             color="#3498DB" 
-            onPress={() => {
-              Alert.alert(
-                'Community Action',
-                'Choose what you want to do:',
-                [
-                  { text: 'Open Community', onPress: () => navigation.navigate('CommunityStory') },
-                  {
-                    text: 'Share My Progress',
-                    onPress: () => {
-                      loadTodaysVocabulary();
-                      setShowShareVocabularyModal(true);
-                    },
-                  },
-                  { text: 'Cancel', style: 'cancel' },
-                ]
-              );
-            }}
+            onPress={() => navigation.navigate('CommunityStory')}
           />
           <QuickAction 
             title="Progress" 
@@ -1276,15 +1258,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.m,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: SPACING.m,
-    borderWidth: 1,
+    borderWidth: 0,
     ...SHADOWS.small,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  notificationUnreadAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
   },
   notificationIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.m,

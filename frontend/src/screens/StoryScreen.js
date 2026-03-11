@@ -1,21 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Image, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { MaterialIcons, Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { stories } from '../data/mockData';
 import { COLORS, SPACING, SHADOWS, FONTS, GLASS_EFFECTS } from '../constants/theme';
 import { playSound } from '../services/soundService';
 import { useTheme } from '../context/ThemeContext';
 import { WORLD_LANGUAGES } from '../constants/languages';
-import { aiApiService } from '../services/aiApiService';
 import { storyService } from '../services/api';
 
 const ELDER_VOICES_STORAGE_KEY = '@echolingua_elder_voices';
 const STORIES_STORAGE_KEY = '@echolingua_stories';
+const SHARED_STORIES_KEY = '@echolingua_shared_stories';
+const COMMUNITY_STORIES_KEY = '@echolingua_community_stories';
+const NOTIFICATIONS_KEY = '@echolingua_notifications';
 
 export default function StoryScreen() {
   const { theme } = useTheme();
@@ -24,7 +26,6 @@ export default function StoryScreen() {
   const [showTranslation, setShowTranslation] = useState(false);
   const [isElderMode, setIsElderMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioSound, setAudioSound] = useState(null);
   const [audioSource, setAudioSource] = useState(null); // 'recorded' or 'tts'
 
   // Voice Selection State
@@ -32,15 +33,201 @@ export default function StoryScreen() {
   const [selectedVoice, setSelectedVoice] = useState(null); // null = default TTS
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
-  const [showShareOptionsModal, setShowShareOptionsModal] = useState(false); // Three-option share modal
+  const [showContactShareModal, setShowContactShareModal] = useState(false);
+  const [selectedContactRecipients, setSelectedContactRecipients] = useState([]);
   const [playbackStatus, setPlaybackStatus] = useState({ position: 0, duration: 1 });
+  const [playbackTimingMode, setPlaybackTimingMode] = useState('exact');
   const [progressBarWidth, setProgressBarWidth] = useState(0);
-  const ttsInterval = React.useRef(null);
+  const audioSoundRef = useRef(null);
+  const playbackSessionRef = useRef(0);
+  const ttsInterval = useRef(null);
 
   useEffect(() => {
     loadVoices();
     return () => clearInterval(ttsInterval.current);
   }, []);
+
+  const clearTtsProgressTimer = () => {
+    if (ttsInterval.current) {
+      clearInterval(ttsInterval.current);
+      ttsInterval.current = null;
+    }
+  };
+
+  const resetPlaybackState = () => {
+    setIsPlaying(false);
+    setAudioSource(null);
+    setPlaybackTimingMode('exact');
+    setPlaybackStatus({ position: 0, duration: 1 });
+  };
+
+  const teardownPlayback = async ({ unloadSound = true, resetProgress = true } = {}) => {
+    playbackSessionRef.current += 1;
+    Speech.stop();
+    clearTtsProgressTimer();
+
+    const activeSound = audioSoundRef.current;
+    if (activeSound) {
+      try {
+        activeSound.setOnPlaybackStatusUpdate(null);
+      } catch (error) {
+        console.log('Unable to clear audio callback:', error);
+      }
+
+      try {
+        const status = await activeSound.getStatusAsync();
+        if (status?.isLoaded) {
+          await activeSound.stopAsync();
+          if (unloadSound) {
+            await activeSound.unloadAsync();
+          }
+        }
+      } catch (error) {
+        console.log('Unable to tear down story audio:', error);
+      }
+
+      if (unloadSound) {
+        audioSoundRef.current = null;
+      }
+    }
+
+    setIsPlaying(false);
+    if (unloadSound) {
+      setAudioSource(null);
+    }
+    if (resetProgress) {
+      setPlaybackStatus({ position: 0, duration: 1 });
+    }
+  };
+
+  const beginFreshPlayback = async () => {
+    await teardownPlayback({ unloadSound: true, resetProgress: true });
+    const sessionId = playbackSessionRef.current + 1;
+    playbackSessionRef.current = sessionId;
+    return sessionId;
+  };
+
+  const finishPlaybackSession = async (sessionId, soundToRelease = null) => {
+    if (playbackSessionRef.current !== sessionId) {
+      return;
+    }
+
+    clearTtsProgressTimer();
+
+    if (soundToRelease && audioSoundRef.current === soundToRelease) {
+      try {
+        soundToRelease.setOnPlaybackStatusUpdate(null);
+        await soundToRelease.unloadAsync();
+      } catch (error) {
+        console.log('Unable to release completed story audio:', error);
+      }
+      audioSoundRef.current = null;
+    }
+
+    resetPlaybackState();
+    playSound('complete');
+  };
+
+  const startLocalTtsPlayback = async (text) => {
+    const trimmedText = text?.trim();
+    if (!trimmedText) {
+      Alert.alert('Audio Unavailable', 'No readable story content found.');
+      return;
+    }
+
+    const sessionId = await beginFreshPlayback();
+    const textForSpeech = trimmedText.slice(0, 2000);
+    const wordCount = textForSpeech.split(/\s+/).filter(Boolean).length;
+    const estimatedDurationMs = Math.max(1500, (wordCount / 150) * 60 * 1000);
+
+    setIsPlaying(true);
+    setAudioSource('tts');
+    setPlaybackTimingMode('estimated');
+    setPlaybackStatus({ position: 0, duration: estimatedDurationMs });
+    playSound('play');
+
+    const startTime = Date.now();
+    ttsInterval.current = setInterval(() => {
+      if (playbackSessionRef.current !== sessionId) {
+        clearTtsProgressTimer();
+        return;
+      }
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed < estimatedDurationMs) {
+        setPlaybackStatus((prev) => ({ ...prev, position: elapsed }));
+      } else {
+        setPlaybackStatus({ position: estimatedDurationMs, duration: estimatedDurationMs });
+        clearTtsProgressTimer();
+      }
+    }, 200);
+
+    Speech.speak(textForSpeech, {
+      language: getSpeechLanguageCode(),
+      rate: 0.95,
+      pitch: 1.0,
+      onDone: () => {
+        finishPlaybackSession(sessionId);
+      },
+      onStopped: () => {
+        if (playbackSessionRef.current !== sessionId) {
+          return;
+        }
+        clearTtsProgressTimer();
+        resetPlaybackState();
+      },
+      onError: () => {
+        if (playbackSessionRef.current !== sessionId) {
+          return;
+        }
+        clearTtsProgressTimer();
+        resetPlaybackState();
+        Alert.alert('Audio Error', 'Text-to-speech failed for this story.');
+      },
+    });
+  };
+
+  const startAudioUriPlayback = async (uri) => {
+    const sessionId = await beginFreshPlayback();
+
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: true, volume: 1.0, progressUpdateIntervalMillis: 250 }
+      );
+
+      if (playbackSessionRef.current !== sessionId) {
+        await sound.unloadAsync();
+        return;
+      }
+
+      audioSoundRef.current = sound;
+      setAudioSource('recorded');
+      setPlaybackTimingMode('exact');
+      setIsPlaying(true);
+      playSound('play');
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (playbackSessionRef.current !== sessionId) {
+          return;
+        }
+
+        if (status?.isLoaded) {
+          setPlaybackStatus({
+            position: status.positionMillis || 0,
+            duration: status.durationMillis || 1,
+          });
+        }
+
+        if (status?.didJustFinish) {
+          finishPlaybackSession(sessionId, sound);
+        }
+      });
+    } catch (error) {
+      console.log('Could not play story audio URI, falling back to speech:', error);
+      await startLocalTtsPlayback(buildReadableStoryText());
+    }
+  };
 
   const loadVoices = async () => {
     try {
@@ -59,16 +246,27 @@ export default function StoryScreen() {
   const [storyState, setStoryState] = useState(passedStory || stories.find(s => s.id === storyId) || stories[0]);
   const story = storyState;
 
+  const formatMillis = (millis) => {
+    const safeMillis = Number.isFinite(millis) ? Math.max(0, millis) : 0;
+    const totalSeconds = Math.floor(safeMillis / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
   useEffect(() => {
     const loadLatestStory = async () => {
       if (!storyId) return;
+      // Only call backend for real MongoDB ObjectIds (24-char hex).
+      // Local stories use Date.now() numeric strings – querying them returns 404.
+      const isMongoId = /^[a-f0-9]{24}$/i.test(String(storyId));
+      if (!isMongoId) return;
       try {
         const backendStory = await storyService.getById(storyId);
         if (backendStory) {
           setStoryState((prev) => ({
             ...prev,
             ...backendStory,
-            // Keep local pages if backend returned none (manual-create stories don't store pages)
             pages: (backendStory.pages?.length > 0) ? backendStory.pages : prev.pages,
           }));
         }
@@ -192,19 +390,39 @@ export default function StoryScreen() {
   };
 
   const handleShareToCommunity = async () => {
-    // Navigate to CommunityStory with params to open upload modal
-    navigation.navigate('CommunityStory', {
-       audioUri: story.audioUri,
-       fileName: story.fileName || (story.title ? `${story.title}.m4a` : 'story.m4a'),
-       transcript: story.transcript || story.description,
-       description: story.transcript || story.description,
-       duration: story.duration
-    });
+    try {
+      const raw = await AsyncStorage.getItem(COMMUNITY_STORIES_KEY);
+      const existing = raw ? JSON.parse(raw) : [];
+      const alreadyShared = existing.some((s) => String(s.id) === String(story.id));
+      if (!alreadyShared) {
+        await AsyncStorage.setItem(
+          COMMUNITY_STORIES_KEY,
+          JSON.stringify([{ ...story, sharedToCommunityAt: new Date().toISOString() }, ...existing])
+        );
+      }
+
+      const notifRaw = await AsyncStorage.getItem(NOTIFICATIONS_KEY);
+      const notifs = notifRaw ? JSON.parse(notifRaw) : [];
+      notifs.unshift({
+        id: `notif-${Date.now()}`,
+        type: 'community_story',
+        storyId: story.id,
+        storyTitle: story.title,
+        authorName: currentUser?.fullName || currentUser?.name || 'A user',
+        createdAt: new Date().toISOString(),
+        read: false,
+      });
+      await AsyncStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(notifs));
+
+      Alert.alert('Shared! 🎉', `"${story.title}" shared to Community.`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share to Community.');
+    }
   };
 
   // New handler: Share to Emergency Contact
   const handleShareToEmergencyContact = async () => {
-    setShowShareOptionsModal(false);
+    setShowOptionsModal(false);
     
     // Load current user
     try {
@@ -220,69 +438,58 @@ export default function StoryScreen() {
         return;
       }
 
-      // Navigate to AIStoryGenerator with story data to share
-      navigation.navigate('AIStoryGenerator', {
-        storyToShare: {
-          id: story.id,
-          title: story.title,
-          description: story.description || story.summary,
-          text: story.transcript || buildReadableStoryText(),
-          language: story.language || 'English',
-          shareMode: 'emergency_contact'
-        }
-      });
+      setSelectedContactRecipients([]);
+      setShowContactShareModal(true);
     } catch (error) {
       Alert.alert('Error', 'Failed to load contacts: ' + error.message);
     }
   };
 
-  // New handler: Save to My Creation 
-  const handleSaveToMyCreation = async () => {
-    setShowShareOptionsModal(false);
-    
-    try {
-      const storyToSave = {
-        id: story.id || Date.now().toString(),
-        title: story.title,
-        description: story.description || story.summary,
-        summary: story.description || story.summary,
-        text: story.transcript || buildReadableStoryText(),
-        language: story.language || 'English',
-        author: currentUser?.fullName || 'Guest',
-        authorEmail: currentUser?.email,
-        category: 'Saved',
-        savedAt: new Date().toISOString()
-      };
+  const [currentUser, setCurrentUser] = useState(null);
 
-      // Load existing stories
-      const storiesJson = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
-      const existingStories = storiesJson ? JSON.parse(storiesJson) : [];
-
-      // Check if story already exists
-      const existingIndex = existingStories.findIndex(s => s.id === storyToSave.id);
-      if (existingIndex >= 0) {
-        Alert.alert('Already Saved', 'This story is already in your collection.');
-        return;
-      }
-
-      // Add new story
-      existingStories.push(storyToSave);
-      await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify(existingStories));
-
-      Alert.alert(
-        'Saved Successfully',
-        'Story saved to My Creations!',
-        [
-          { text: 'Go to Library', onPress: () => navigation.navigate('StoryLibrary') },
-          { text: 'OK', style: 'cancel' }
-        ]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save story: ' + error.message);
-    }
+  const toggleContactRecipient = (contactKey) => {
+    setSelectedContactRecipients((prev) =>
+      prev.includes(contactKey)
+        ? prev.filter((key) => key !== contactKey)
+        : [...prev, contactKey]
+    );
   };
 
-  const [currentUser, setCurrentUser] = useState(null);
+  const confirmShareToContacts = async () => {
+    if (selectedContactRecipients.length === 0) {
+      Alert.alert('Select Contact', 'Choose at least one emergency contact.');
+      return;
+    }
+
+    try {
+      const userJson = await AsyncStorage.getItem('@echolingua_current_user');
+      const user = userJson ? JSON.parse(userJson) : null;
+      const contacts = Array.isArray(user?.emergencyContacts) ? user.emergencyContacts : [];
+
+      const selectedContacts = contacts.filter((c, idx) => {
+        const key = `ec-${c.id || c.email || idx}`;
+        return selectedContactRecipients.includes(key);
+      });
+
+      const sharedRaw = await AsyncStorage.getItem(SHARED_STORIES_KEY);
+      const allShared = sharedRaw ? JSON.parse(sharedRaw) : [];
+      allShared.push({
+        ...story,
+        sharedId: `${story.id}-${Date.now()}`,
+        sharedBy: user?.fullName || user?.name || 'A user',
+        sharedAt: new Date().toISOString(),
+        sharedWithEmails: selectedContacts.map((c) => c.email).filter(Boolean),
+        sharedWithUserIds: selectedContacts.map((c) => c.linkedUserId).filter(Boolean),
+      });
+      await AsyncStorage.setItem(SHARED_STORIES_KEY, JSON.stringify(allShared));
+
+      setShowContactShareModal(false);
+      setSelectedContactRecipients([]);
+      Alert.alert('Shared! 🎉', `"${story.title}" shared with ${selectedContacts.length} contact(s).`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share with selected contacts.');
+    }
+  };
 
   // Load current user
   useEffect(() => {
@@ -310,6 +517,14 @@ export default function StoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              if (story?.id) {
+                try {
+                  await storyService.delete(story.id);
+                } catch (deleteApiError) {
+                  // Keep local delete as fallback.
+                }
+              }
+
               const stored = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
               if (stored) {
                 const stories = JSON.parse(stored);
@@ -329,104 +544,18 @@ export default function StoryScreen() {
   };
 
   const speakStoryFallback = async () => {
-    const text = buildReadableStoryText();
-    if (!text || text.trim().length === 0) {
-      Alert.alert('Audio Unavailable', 'No readable story content found.');
-      return;
-    }
-
-    // Try backend TTS first for higher-fidelity pronunciation.
-    try {
-      const tts = await aiApiService.tts({
-        indigenousText: text.slice(0, 500),
-        languageId: story.languageId || 'kadazan-demo',
-      });
-      if (tts?.audio_url) {
-        if (audioSound) {
-          await audioSound.unloadAsync();
-        }
-        const { sound } = await Audio.Sound.createAsync({ uri: tts.audio_url }, { shouldPlay: true });
-        setAudioSound(sound);
-        setIsPlaying(true);
-        setAudioSource('recorded');
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status?.isLoaded) {
-            setPlaybackStatus({ position: status.positionMillis || 0, duration: status.durationMillis || 1 });
-          }
-          if (status?.didJustFinish) {
-            setIsPlaying(false);
-          }
-        });
-        return;
-      }
-    } catch (ttsError) {
-      console.warn('Backend TTS unavailable, using local speech fallback:', ttsError?.message || ttsError);
-    }
-
-    if (selectedVoice) {
-      // In a real app, we would send 'selectedVoice.id' to our backend TTS service
-      // to generate the unique voice. For this demo, we acknowledge the selection.
-      Alert.alert('Voice Activated', `Now narrating with the voice of ${selectedVoice.name} (Simulation)`);
-    }
-
-    // Estimate duration: assume ~150 words per minute * rate
-    const wordCount = text.split(/\s+/).length;
-    const rate = 0.9;
-    const estimatedDurationMs = (wordCount / (150 * rate)) * 60 * 1000;
-    
-    setPlaybackStatus({ position: 0, duration: estimatedDurationMs });
-    
-    // Clear any existing interval
-    if (ttsInterval.current) clearInterval(ttsInterval.current);
-    
-    const startTime = Date.now();
-    
-    ttsInterval.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed < estimatedDurationMs) {
-         setPlaybackStatus(prev => ({ ...prev, position: elapsed }));
-      } else {
-         setPlaybackStatus({ position: estimatedDurationMs, duration: estimatedDurationMs });
-         clearInterval(ttsInterval.current);
-      }
-    }, 100);
-
-    setIsPlaying(true);
-    setAudioSource('tts'); // Mark as TTS
-    playSound('play');
-
-    Speech.stop();
-    Speech.speak(text, {
-      language: getSpeechLanguageCode(),
-      rate: rate,
-      pitch: selectedVoice ? 0.8 : 1.0, // Slight pitch change for effect if custom voice
-      onDone: () => {
-        setIsPlaying(false);
-        playSound('complete');
-        clearInterval(ttsInterval.current);
-        setPlaybackStatus({ position: 0, duration: 1 });
-      },
-      onStopped: () => {
-        setIsPlaying(false);
-        clearInterval(ttsInterval.current);
-      },
-      onError: () => {
-        setIsPlaying(false);
-        clearInterval(ttsInterval.current);
-        Alert.alert('Audio Error', 'Text-to-speech failed for this story.');
-      },
-    });
+    await startLocalTtsPlayback(buildReadableStoryText());
   };
 
   const handleSeek = async (event) => {
-    if (audioSource !== 'recorded' || !audioSound || progressBarWidth <= 0) return;
+    if (audioSource !== 'recorded' || !audioSoundRef.current || progressBarWidth <= 0) return;
     
     try {
       const { locationX } = event.nativeEvent;
       const percentage = Math.max(0, Math.min(1, locationX / progressBarWidth));
       const newPosition = Math.floor(percentage * playbackStatus.duration);
       
-      await audioSound.setPositionAsync(newPosition);
+      await audioSoundRef.current.setPositionAsync(newPosition);
       setPlaybackStatus(prevStatus => ({ 
         ...prevStatus, 
         position: newPosition 
@@ -439,23 +568,20 @@ export default function StoryScreen() {
   const toggleAudio = async () => {
     try {
       // If playing, pause
-      if (isPlaying && audioSound) {
+      if (isPlaying && audioSoundRef.current) {
         console.log('⏸️ Pausing story audio');
-        await audioSound.pauseAsync();
+        await audioSoundRef.current.pauseAsync();
         playSound('pause');
         setIsPlaying(false);
       }
-      // If paused, resume
-      else if (isPlaying && !audioSound && audioSource === 'tts') {
-        // TTS is being paused via Speech API
-        Speech.stop();
-        if (ttsInterval.current) clearInterval(ttsInterval.current);
-        setIsPlaying(false);
+      // TTS cannot resume accurately, so stop and reset it.
+      else if (isPlaying && !audioSoundRef.current && audioSource === 'tts') {
+        await teardownPlayback({ unloadSound: true, resetProgress: true });
       }
       // If already has sound but not playing, resume
-      else if (audioSound && !isPlaying) {
+      else if (audioSoundRef.current && !isPlaying) {
         console.log('▶️ Resuming story audio');
-        await audioSound.playAsync();
+        await audioSoundRef.current.playAsync();
         playSound('play');
         setIsPlaying(true);
       }
@@ -463,52 +589,17 @@ export default function StoryScreen() {
       else {
         console.log('▶️ Loading and playing story audio');
 
-        // Stop any TTS that might be playing
-        if (audioSource === 'tts') {
-          Speech.stop();
-          if (ttsInterval.current) clearInterval(ttsInterval.current);
-        }
-
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
           staysActiveInBackground: false,
           shouldDuckAndroid: false,
         });
-        
-        // Check if story has audio URI
-        if (story.audioUri) {
-          // Load and play actual audio file
-          try {
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: story.audioUri },
-              { shouldPlay: true, volume: 1.0 },
-              (status) => {
-                if (status.isLoaded) {
-                  setPlaybackStatus({
-                    position: status.positionMillis,
-                    duration: status.durationMillis || 1,
-                  });
-                }
-                if (status.didJustFinish) {
-                  console.log('✅ Story audio completed');
-                  setIsPlaying(false);
-                  setPlaybackStatus({ position: 0, duration: 1 });
-                  playSound('complete');
-                }
-              }
-            );
-            setAudioSound(sound);
-            setAudioSource('recorded'); // Mark as recorded audio
-            setIsPlaying(true);
-            playSound('play');
-          } catch (audioError) {
-            console.log('⚠️ Could not play recorded audio, falling back to TTS');
-            await speakStoryFallback();
-          }
+
+        if (!story.isAiGenerated && story.audioUri) {
+          await startAudioUriPlayback(story.audioUri);
         } else {
-          // Fallback for stories without recorded audio: read the story via TTS.
-          console.log('ℹ️ No story audio file - using TTS fallback');
+          console.log('ℹ️ Using generated story text narration');
           await speakStoryFallback();
         }
       }
@@ -524,17 +615,24 @@ export default function StoryScreen() {
     }
   };
 
-  // Cleanup audio on unmount
+  useEffect(() => {
+    teardownPlayback({ unloadSound: true, resetProgress: true }).catch(() => {});
+  }, [story?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        Speech.stop();
+        teardownPlayback({ unloadSound: true, resetProgress: true }).catch(() => {});
+      };
+    }, [story?.id])
+  );
+
   useEffect(() => {
     return () => {
-      if (audioSound) {
-        console.log('🧹 Cleaning up audio sound');
-        audioSound.unloadAsync();
-      }
-      Speech.stop();
-      if (ttsInterval.current) clearInterval(ttsInterval.current);
+      teardownPlayback({ unloadSound: true, resetProgress: true }).catch(() => {});
     };
-  }, [audioSound]);
+  }, []);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -649,7 +747,7 @@ export default function StoryScreen() {
              )}
              {audioSource && isPlaying && (
                <Text style={[styles.audioSourceLabel, { color: isCommunityStory ? theme.text : (theme.onPrimary || '#FFFFFF') }]}>
-                 🔊 {audioSource === 'recorded' ? '🎙️ Recorded Audio' : '🗣️ Voice Reading (TTS)'}
+                 🔊 {audioSource === 'recorded' ? '🎙️ Audio Playback' : '🗣️ Live Voice Reading'}
                </Text>
              )}
              
@@ -660,7 +758,7 @@ export default function StoryScreen() {
                    style={{ flex: 1, height: 30, justifyContent: 'center', marginRight: 8 }}
                    onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
                    onResponderRelease={handleSeek}
-                   onStartShouldSetResponder={() => isCommunityStory && audioSource === 'recorded'}
+                   onStartShouldSetResponder={() => isCommunityStory && audioSource === 'recorded' && playbackTimingMode === 'exact'}
                  >
                    {/* Track Background */}
                    <View style={{ height: 4, backgroundColor: theme.textSecondary + '40', borderRadius: 2, width: '100%', position: 'absolute' }} />
@@ -676,7 +774,7 @@ export default function StoryScreen() {
                    />
 
                    {/* Seek Thumb (Only for Recorded Audio) */}
-                   {isCommunityStory && audioSource === 'recorded' && (
+                   {isCommunityStory && audioSource === 'recorded' && playbackTimingMode === 'exact' && (
                      <View 
                        style={{
                          position: 'absolute',
@@ -697,8 +795,9 @@ export default function StoryScreen() {
                  </View>
 
                  <Text style={{ fontSize: 10, color: isCommunityStory ? theme.textSecondary : 'rgba(255,255,255,0.8)' }}>
-                   {Math.floor(playbackStatus.position / 60000)}:{String(Math.floor((playbackStatus.position % 60000) / 1000)).padStart(2, '0')} / 
-                   {Math.floor(playbackStatus.duration / 60000)}:{String(Math.floor((playbackStatus.duration % 60000) / 1000)).padStart(2, '0')}
+                   {playbackTimingMode === 'exact'
+                     ? `${formatMillis(playbackStatus.position)} / ${formatMillis(playbackStatus.duration)}`
+                     : `${formatMillis(playbackStatus.position)} / Live voice`}
                  </Text>
                </View>
              )}
@@ -742,32 +841,6 @@ export default function StoryScreen() {
             // Default story: Show pages
             story.pages?.map((page, index) => (
               <View key={index} style={styles.pageContainer}>
-                 {getPageImageUri(page, index) ? (
-                   <View>
-                     <Image
-                       source={{ uri: getPageImageUri(page, index) }}
-                       style={[styles.illustrationPlaceholder, { resizeMode: 'cover' }]}
-                       onError={() => {
-                         const pageKey = `${story?.id || 'story'}-${index}`;
-                         setFailedPageImages((prev) => ({ ...prev, [pageKey]: true }));
-                       }}
-                     />
-                     <Text style={[styles.imageSourceLabel, { color: theme.textSecondary }]}>
-                       {getPageImageSourceLabel(page, index)}
-                     </Text>
-                   </View>
-                 ) : null}
-
-                 {/* AI Illustration Placeholder */}
-                 {!getPageImageUri(page, index) && (page.imagePrompt || page.image_generation_prompt || page.text || page.indigenous_text) && (
-                   <View style={[styles.illustrationPlaceholder, { backgroundColor: theme.surfaceVariant }]}>
-                      <MaterialIcons name="image" size={40} color={theme.textSecondary} />
-                      <Text style={[styles.illustrationText, { color: theme.textSecondary }]}>
-                        [AI Illustration would appear here based on: "{page.imagePrompt || page.image_generation_prompt}"]
-                      </Text>
-                   </View>
-                 )}
-
                  <Text style={[
                    styles.storyText, 
                    { color: theme.text },
@@ -924,19 +997,82 @@ export default function StoryScreen() {
                   <Text style={{ color: theme.text, fontSize: 14 }}>Share to Community</Text>
                </TouchableOpacity>
 
-               {/* Save to My Creation */}
+              {/* Delete story */}
                <TouchableOpacity 
                   style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}
                   onPress={() => {
                      setShowOptionsModal(false);
-                     handleSaveToMyCreation();
+                  handleDeleteStory();
                   }}
                >
-                  <Ionicons name="bookmark" size={20} color={theme.secondary} style={{ marginRight: 12 }} />
-                  <Text style={{ color: theme.text, fontSize: 14 }}>Save to My Creations</Text>
+                <Ionicons name="trash-outline" size={20} color={theme.error || '#E53935'} style={{ marginRight: 12 }} />
+                <Text style={{ color: theme.error || '#E53935', fontSize: 14 }}>Delete Story</Text>
                </TouchableOpacity>
             </View>
          </TouchableOpacity>
+      </Modal>
+
+      {/* Emergency Contact Selection Modal */}
+      <Modal
+        visible={showContactShareModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowContactShareModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: theme.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 14, paddingBottom: 20, maxHeight: '70%' }}>
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: theme.border, alignSelf: 'center', marginBottom: 14 }} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 8 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>Share to Emergency Contacts</Text>
+              <TouchableOpacity onPress={() => setShowContactShareModal(false)}>
+                <Ionicons name="close" size={22} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}>
+              {(currentUser?.emergencyContacts || []).map((contact, idx) => {
+                const key = `ec-${contact.id || contact.email || idx}`;
+                const chosen = selectedContactRecipients.includes(key);
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    onPress={() => toggleContactRecipient(key)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      borderRadius: 14,
+                      borderWidth: chosen ? 2 : 1,
+                      borderColor: chosen ? theme.accent : theme.border,
+                      backgroundColor: chosen ? theme.accent + '0C' : theme.background,
+                      padding: 14,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.accent + '22', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                      <Text style={{ color: theme.accent, fontWeight: '700', fontSize: 16 }}>{contact.name?.[0]?.toUpperCase() || '?'}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.text, fontWeight: '700', fontSize: 15 }}>{contact.name || 'Contact'}</Text>
+                      <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{contact.relation || contact.email || 'Emergency contact'}</Text>
+                    </View>
+                    <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: chosen ? theme.accent : theme.border, backgroundColor: chosen ? theme.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                      {chosen && <Ionicons name="checkmark" size={13} color="#FFF" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={{ paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 12 }}>
+              <TouchableOpacity
+                onPress={confirmShareToContacts}
+                style={{ backgroundColor: theme.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>Share Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
     </SafeAreaView>

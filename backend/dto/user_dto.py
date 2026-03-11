@@ -12,6 +12,12 @@ class UserMeResponse(BaseModel):
     points: int = 0
     badges: List[str] = []
 
+class UserSearchResult(BaseModel):
+    # Minimal public info returned by /users/search
+    id: str
+    name: str
+    email: str
+
 class UserDTO(BaseModel):
     name: str
     email: EmailStr

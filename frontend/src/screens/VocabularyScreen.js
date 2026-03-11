@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import VocabularyCard from '../components/VocabularyCard';
-import { lessonService } from '../services/api';
 import { COLORS, SPACING, SHADOWS, GLASS_EFFECTS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { UNIFIED_LANGUAGE_OPTIONS } from '../constants/translationLanguages';
@@ -40,41 +39,41 @@ const LANGUAGE_OPTIONS = UNIFIED_LANGUAGE_OPTIONS.map((language) => ({
   speechCode: SPEECH_CODES[language.id] || 'en-US',
 }));
 
+const STARTER_VOCABULARY = [
+  { id: 'starter-1', original: 'Kopivosian', translated: 'Hello', pronunciation: 'ko-pi-vo-sian', difficulty: 'easy', category: 'Greeting' },
+  { id: 'starter-2', original: 'Oou', translated: 'Yes', pronunciation: 'o-oh', difficulty: 'easy', category: 'Daily Life' },
+  { id: 'starter-3', original: 'Aiso', translated: 'No', pronunciation: 'ai-so', difficulty: 'easy', category: 'Daily Life' },
+  { id: 'starter-4', original: 'Waig', translated: 'Water', pronunciation: 'wa-ig', difficulty: 'easy', category: 'Daily Life' },
+  { id: 'starter-5', original: 'Tuhun', translated: 'Please', pronunciation: 'too-hun', difficulty: 'easy', category: 'Conversation' },
+  { id: 'starter-6', original: 'Kotohuadan', translated: 'Thank you', pronunciation: 'ko-to-hua-dan', difficulty: 'easy', category: 'Conversation' },
+  { id: 'starter-7', original: 'Om', translated: 'Come', pronunciation: 'ohm', difficulty: 'easy', category: 'Action' },
+  { id: 'starter-8', original: 'Mangan', translated: 'Eat', pronunciation: 'ma-ngan', difficulty: 'easy', category: 'Action' },
+  { id: 'starter-9', original: 'Minum', translated: 'Drink', pronunciation: 'mi-num', difficulty: 'easy', category: 'Action' },
+  { id: 'starter-10', original: 'Usang', translated: 'Rain', pronunciation: 'u-sang', difficulty: 'easy', category: 'Nature' },
+  { id: 'starter-11', original: 'Huminodun', translated: 'Huminodun', pronunciation: 'hu-mi-no-dun', difficulty: 'medium', category: 'Culture' },
+  { id: 'starter-12', original: 'Kaamatan', translated: 'Harvest festival', pronunciation: 'kaa-maa-tan', difficulty: 'medium', category: 'Culture' },
+  { id: 'starter-13', original: 'Sumazau', translated: 'Traditional dance', pronunciation: 'su-ma-zau', difficulty: 'medium', category: 'Culture' },
+  { id: 'starter-14', original: 'Tadau', translated: 'Sun / day', pronunciation: 'ta-dau', difficulty: 'medium', category: 'Nature' },
+  { id: 'starter-15', original: 'Vangkad', translated: 'Walk', pronunciation: 'vang-kad', difficulty: 'medium', category: 'Action' },
+  { id: 'starter-16', original: 'Walai', translated: 'House', pronunciation: 'wa-lai', difficulty: 'medium', category: 'Place' },
+  { id: 'starter-17', original: 'Tama', translated: 'Father', pronunciation: 'ta-ma', difficulty: 'medium', category: 'Family' },
+  { id: 'starter-18', original: 'Indu', translated: 'Mother', pronunciation: 'in-du', difficulty: 'medium', category: 'Family' },
+  { id: 'starter-19', original: 'Tobpinaai', translated: 'Friend', pronunciation: 'tob-pi-na-ai', difficulty: 'medium', category: 'People' },
+  { id: 'starter-20', original: 'Parai', translated: 'Rice plant', pronunciation: 'pa-rai', difficulty: 'medium', category: 'Food' },
+  { id: 'starter-21', original: 'Kinorohingan', translated: 'Creator deity', pronunciation: 'ki-no-ro-hi-ngan', difficulty: 'hard', category: 'Belief' },
+  { id: 'starter-22', original: 'Bobohizan', translated: 'Ritual priestess', pronunciation: 'bo-bo-hi-zan', difficulty: 'hard', category: 'Culture' },
+  { id: 'starter-23', original: 'Nunuk Ragang', translated: 'Ancestral settlement', pronunciation: 'nu-nuk ra-gang', difficulty: 'hard', category: 'History' },
+  { id: 'starter-24', original: 'Tagazo', translated: 'Buffalo', pronunciation: 'ta-ga-zo', difficulty: 'hard', category: 'Nature' },
+  { id: 'starter-25', original: 'Koubasanan', translated: 'Forest', pronunciation: 'kou-ba-sa-nan', difficulty: 'hard', category: 'Nature' },
+  { id: 'starter-26', original: 'Pogun', translated: 'Village land', pronunciation: 'po-gun', difficulty: 'hard', category: 'Place' },
+  { id: 'starter-27', original: 'Tinongilan', translated: 'Story / legend', pronunciation: 'ti-no-ngi-lan', difficulty: 'hard', category: 'Culture' },
+  { id: 'starter-28', original: 'Gayo Ngaran', translated: 'Great name / honor', pronunciation: 'ga-yo nga-ran', difficulty: 'hard', category: 'Values' },
+];
+
 export default function VocabularyScreen() {
   const { theme } = useTheme();
-  // State for fetched vocabulary
-  const [vocabularyList, setVocabularyList] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Load vocabulary on mount
-  React.useEffect(() => {
-    loadVocabulary();
-  }, []);
-
-  const loadVocabulary = async () => {
-    try {
-      const lessons = await lessonService.getAll(null, null, 'Vocabulary');
-      // Assume backend returns lessons which contain vocabulary arrays
-      // We might need to flatten or restructure depending on exact backend response
-      // Based on docs: Lesson has "vocabulary" array
-      if (Array.isArray(lessons)) {
-        if (lessons[0]?.id) {
-          await lessonService.getById(lessons[0].id).catch(() => null);
-        }
-        const allVocab = lessons.flatMap(l => l.vocabulary?.map(v => ({
-             ...v, 
-             difficulty: l.difficulty || 'medium', // Fallback
-             category: l.category || 'General'
-        })) || []);
-        setVocabularyList(allVocab);
-      }
-    } catch (error) {
-      console.error('Failed to load vocabulary:', error);
-      // Fallback or empty state handled by empty array
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Vocabulary is fully local mock data (no backend dependency).
+  const [vocabularyList] = useState(STARTER_VOCABULARY);
 
   const VOCABULARY_BY_DIFFICULTY = useMemo(() => ({
     easy: vocabularyList.filter((word) => word.difficulty === 'easy'),
@@ -121,33 +120,6 @@ export default function VocabularyScreen() {
 
   const isWordSaved = (word, level) => savedWords[level].some((w) => w.id === word.id);
 
-  const createStarterLesson = async () => {
-    try {
-      await lessonService.create({
-        title: 'Starter Vocabulary Pack',
-        category: 'Vocabulary',
-        difficulty: 'beginner',
-        language: fromLanguage.label,
-        vocabulary: [
-          { word: 'Kopivosian', translation: 'Hello' },
-          { word: 'Waig', translation: 'Water' },
-        ],
-        quiz: [
-          {
-            question: "What is 'Hello'?",
-            options: ['Kopivosian', 'Waig'],
-            answer: 'Kopivosian',
-          },
-        ],
-      });
-      await loadVocabulary();
-      Alert.alert('Lesson Created', 'Starter lesson saved to backend lessons API.');
-    } catch (error) {
-      console.error('Create starter lesson failed:', error);
-      Alert.alert('Create Failed', error?.message || 'Could not create starter lesson.');
-    }
-  };
-
   const selectLanguage = (lang) => {
     if (selectingLanguageType === 'from') {
       setFromLanguage(lang);
@@ -159,8 +131,9 @@ export default function VocabularyScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
+          style={styles.headerSideAction}
           onPress={() => {
             if (navigation.canGoBack()) {
               navigation.goBack();
@@ -168,15 +141,13 @@ export default function VocabularyScreen() {
               navigation.navigate('MainTabs', { screen: 'HomeTab' });
             }
           }}
-          style={styles.backButton}
         >
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Learn Vocabulary</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Practice pronunciation and test yourself</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Vocabulary</Text>
         </View>
-        <TouchableOpacity style={styles.testButton} onPress={() => setTestingMode(!testingMode)} onLongPress={createStarterLesson}>
+        <TouchableOpacity style={styles.headerSideAction} onPress={() => setTestingMode(!testingMode)}>
           <MaterialCommunityIcons
             name="clipboard-check"
             size={24}
@@ -259,10 +230,10 @@ export default function VocabularyScreen() {
       )}
 
       <View style={styles.counterRow}>
-        <MaterialCommunityIcons name="bookmark" size={16} color={theme.success} />
+        <MaterialCommunityIcons name="book-multiple" size={16} color={theme.success} />
         <Text style={[styles.counterText, { color: theme.textSecondary }]}>
           {activeView === 'vocabulary'
-            ? `${savedWords[selectedLevel].length} saved in ${selectedLevel}`
+            ? `${VOCABULARY_BY_DIFFICULTY[selectedLevel].length} words • ${savedWords[selectedLevel].length} saved`
             : `${collectedVocabulary.length} words in your collection`}
         </Text>
       </View>
@@ -270,7 +241,7 @@ export default function VocabularyScreen() {
       {activeView === 'vocabulary' ? (
         <FlatList
           data={currentVocabulary}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item, index) => String(item.id || `${selectedLevel}-${index}`)}
           renderItem={({ item }) => (
             <VocabularyCard
               word={item}
@@ -282,13 +253,20 @@ export default function VocabularyScreen() {
               toLanguage={toLanguage}
             />
           )}
+          ListEmptyComponent={
+            <View style={styles.emptyCollectionContainer}>
+              <MaterialCommunityIcons name="book-open-page-variant-outline" size={42} color={theme.textSecondary} />
+              <Text style={[styles.emptyCollectionTitle, { color: theme.text }]}>No words in this level yet</Text>
+              <Text style={[styles.emptyCollectionText, { color: theme.textSecondary }]}>Try another level.</Text>
+            </View>
+          }
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
       ) : (
         <FlatList
           data={collectedVocabulary}
-          keyExtractor={(item) => `${item.savedLevel}-${item.id}`}
+          keyExtractor={(item, index) => `${item.savedLevel}-${item.id || index}`}
           renderItem={({ item }) => (
             <VocabularyCard
               word={item}
@@ -347,19 +325,24 @@ export default function VocabularyScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
-    padding: SPACING.l,
-    backgroundColor: COLORS.glassLight,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
     flexDirection: 'row',
     alignItems: 'center',
-    ...SHADOWS.small,
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.l,
+    paddingVertical: SPACING.m,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
-  backButton: { paddingRight: SPACING.m },
-  headerContent: { flex: 1 },
-  headerTitle: { fontSize: 24, fontWeight: '700', color: COLORS.primary },
+  backButton: { padding: SPACING.xs },
+  headerContent: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.text },
   headerSubtitle: { fontSize: 13, color: COLORS.textSecondary },
-  testButton: { padding: SPACING.s },
+  headerSideAction: {
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   languageSelectionContainer: {
     flexDirection: 'row',
     alignItems: 'center',

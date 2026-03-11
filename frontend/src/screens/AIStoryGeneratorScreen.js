@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity,  ScrollView, TextInput, Alert, ActivityIndicator, Image, FlatList, Switch, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Image, FlatList, Switch, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, Octicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -67,6 +67,15 @@ export default function AIStoryGeneratorScreen() {
   const [storyDescription, setStoryDescription] = useState('');
   const [isSavingStory, setIsSavingStory] = useState(false);
   
+  // Quick Share (single-page) State
+  const [showQuickShareModal, setShowQuickShareModal] = useState(false);
+  const [saveShortcut, setSaveShortcut] = useState(null); // 'my_stories' | 'community' | 'contacts'
+
+  // Story generation language selection
+  const [storyLanguage, setStoryLanguage] = useState(null);
+  const [showStoryLanguageModal, setShowStoryLanguageModal] = useState(false);
+  const [storyLangSearchQuery, setStoryLangSearchQuery] = useState('');
+
   // Recipient Selection State
   const [showRecipientModal, setShowRecipientModal] = useState(false);
   const [selectedRecipients, setSelectedRecipients] = useState([]); // 'my_stories', 'community', or emergency contact IDs
@@ -77,6 +86,10 @@ export default function AIStoryGeneratorScreen() {
   // Translation State
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState(null);
+  const [langSearchQuery, setLangSearchQuery] = useState('');
+  const [quickShareSourceText, setQuickShareSourceText] = useState('');
+  const [quickShareTranslatedText, setQuickShareTranslatedText] = useState('');
+  const [isQuickSharePreviewLoading, setIsQuickSharePreviewLoading] = useState(false);
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [showTranslationPreview, setShowTranslationPreview] = useState(false);
@@ -163,13 +176,20 @@ export default function AIStoryGeneratorScreen() {
         const user = JSON.parse(userJson);
         setCurrentUser(user);
 
-        // Load emergency contacts from user profile
-        const userContacts = user.emergencyContacts || [];
-        setEmergencyContacts(userContacts);
-
-        // Load users database to match contacts with app users
+        // Load users database and fallback to the canonical user record when needed
         const usersJson = await AsyncStorage.getItem('@echolingua_users_database');
         const allUsers = usersJson ? JSON.parse(usersJson) : [];
+        const canonicalUser = allUsers.find((u) =>
+          (user.id && u.id === user.id) ||
+          (user.email && u.email && u.email.toLowerCase() === String(user.email).toLowerCase())
+        );
+
+        // Load emergency contacts from user profile, with DB fallback
+        const userContacts = Array.isArray(user.emergencyContacts) && user.emergencyContacts.length > 0
+          ? user.emergencyContacts
+          : (Array.isArray(canonicalUser?.emergencyContacts) ? canonicalUser.emergencyContacts : []);
+
+        setEmergencyContacts(userContacts);
 
         // Match emergency contacts with app users using multiple identifiers
         const contactsWithApp = userContacts.map((contact) => {
@@ -240,6 +260,79 @@ export default function AIStoryGeneratorScreen() {
     loadUserAndContacts();
   }, []);
 
+  useEffect(() => {
+    if (!storyLanguage) {
+      const preferredLabel = getPreferredLearningLanguage();
+      const preferred = WORLD_LANGUAGES.find(
+        (lang) => lang.label.toLowerCase() === String(preferredLabel).toLowerCase()
+      );
+      if (preferred) {
+        setStoryLanguage(preferred);
+      }
+    }
+  }, [currentUser]);
+
+  const getSelectedStoryLanguage = () => {
+    if (storyLanguage) return storyLanguage;
+    const preferredLabel = getPreferredLearningLanguage();
+    return (
+      WORLD_LANGUAGES.find((lang) => lang.label.toLowerCase() === String(preferredLabel).toLowerCase()) ||
+      WORLD_LANGUAGES.find((lang) => lang.label.toLowerCase() === 'kadazan') ||
+      WORLD_LANGUAGES[0]
+    );
+  };
+
+  // Same-page translation preview for quick share flow
+  useEffect(() => {
+    let cancelled = false;
+
+    const buildQuickSharePreview = async () => {
+      if (!showQuickShareModal) {
+        setQuickShareSourceText('');
+        setQuickShareTranslatedText('');
+        setIsQuickSharePreviewLoading(false);
+        return;
+      }
+
+      if (!targetLanguage) {
+        setQuickShareTranslatedText('');
+        setIsQuickSharePreviewLoading(false);
+        return;
+      }
+
+      setIsQuickSharePreviewLoading(true);
+
+      let source = selectedRecording?.transcript || '';
+      if (!source.trim() && selectedRecording?.uri) {
+        source = await transcribeAudio(selectedRecording.uri);
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      setQuickShareSourceText(source || '');
+
+      if (!source?.trim()) {
+        setQuickShareTranslatedText('');
+        setIsQuickSharePreviewLoading(false);
+        return;
+      }
+
+      const translated = await translateText(source, targetLanguage.id);
+      if (!cancelled) {
+        setQuickShareTranslatedText(translated || source);
+        setIsQuickSharePreviewLoading(false);
+      }
+    };
+
+    buildQuickSharePreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showQuickShareModal, targetLanguage, selectedRecording]);
+
   // Force reload when share modal opens
   useEffect(() => {
     if (mode === 'share') {
@@ -307,7 +400,7 @@ export default function AIStoryGeneratorScreen() {
           const upload = await backendRecordingService.upload(
             uri,
             currentUser.id,
-            getPreferredLearningLanguage(),
+            getSelectedStoryLanguage()?.label || getPreferredLearningLanguage(),
             true,
             'private',
             ''
@@ -565,11 +658,10 @@ export default function AIStoryGeneratorScreen() {
       Alert.alert('Empty Input', 'Please type a story fragment first.');
       return;
     }
-    
-    // Show language selection modal first
-    setTranslationAction('generate');
-    setSelectedRecording(null);
-    setShowLanguageModal(true);
+
+    setMode('processing');
+    setLoadingMessage('Dreaming up the story...');
+    await generateStoryFromText(inputText);
   };
 
   // New function: Translate only for preview (no story generation)
@@ -585,7 +677,7 @@ export default function AIStoryGeneratorScreen() {
     setTranslationContext(context);
 
     try {
-      const translated = await translateText(sourceText, targetLanguage.code);
+      const translated = await translateText(sourceText, targetLanguage.id);
       setTranslatedText(translated);
       setShowTranslationPreview(true);
     } catch (error) {
@@ -613,7 +705,7 @@ export default function AIStoryGeneratorScreen() {
     setIsTranslating(true);
     
     try {
-      const translated = await translateText(inputText, targetLanguage.code);
+      const translated = await translateText(inputText, targetLanguage.id);
       setTranslatedText(translated);
       setIsTranslating(false);
       
@@ -641,14 +733,29 @@ export default function AIStoryGeneratorScreen() {
       setLoadingMessage('Contacting AI service to create your story...');
       
       console.log('📖 Starting story generation from seed text:', seedText);
-      const preferredLanguage = getPreferredLearningLanguage();
+      const selectedLanguage = getSelectedStoryLanguage();
+      const preferredLanguage = selectedLanguage?.label || getPreferredLearningLanguage();
+      let generationSeedText = seedText;
+
+      // Ensure output language follows user selection (e.g., Thai) by translating input first.
+      if (selectedLanguage?.id && selectedLanguage.id !== 'english' && seedText?.trim()) {
+        setLoadingMessage(`Translating to ${selectedLanguage.label}...`);
+        try {
+          const translatedSeed = await translateText(seedText, selectedLanguage.id);
+          if (translatedSeed && translatedSeed.trim()) {
+            generationSeedText = translatedSeed;
+          }
+        } catch (translationError) {
+          console.warn('Pre-generation translation failed, using original seed:', translationError?.message || translationError);
+        }
+      }
 
       // Prepare data for backend AI story endpoint according to API docs
       // The backend expects: annotated_text, grammar_rules, language
       const annotatedText = [
         {
-          indigenous_text: seedText,
-          malay_translation: seedText // Placeholder: ideally this would be translated
+          indigenous_text: generationSeedText,
+          malay_translation: seedText // Keep source text as reference
         }
       ];
       
@@ -669,7 +776,7 @@ export default function AIStoryGeneratorScreen() {
       
       // The backend response includes the story with title, pages, etc.
       // and has already persisted it to the database
-      finishGeneration(storyResponse, seedText, sourceAudioUri);
+      finishGeneration(storyResponse, generationSeedText, sourceAudioUri);
 
     } catch (error) {
       console.error('❌ Story generation error:', error);
@@ -701,12 +808,14 @@ export default function AIStoryGeneratorScreen() {
         id: storyObj.id || Date.now().toString(), // Backend may provide ID
         title: storyObj.title || 'Untitled Story',
         summary: storyObj.summary || storyObj.title || '',
-        language: storyObj.language || 'Kadazan',
+        language: getSelectedStoryLanguage()?.label || storyObj.language || 'Kadazan',
+        languageId: getSelectedStoryLanguage()?.id || null,
         pages: normalizedPages,
         createdBy: storyObj.createdBy,
         createdAt: storyObj.createdAt || new Date().toISOString(),
         isAiGenerated: true,
-        audioUri: sourceAudioUri || null,
+        audioUri: null,
+        sourceRecordingUri: sourceAudioUri || null,
         transcript: sourceText || inputText.trim(),
         sourceText: sourceText || inputText.trim(),
         // Map pages to the expected format for display
@@ -715,18 +824,19 @@ export default function AIStoryGeneratorScreen() {
       
       console.log('✅ Story object prepared:', newStory);
       setGeneratedStory(newStory);
-      setMode('input');
       setLoadingMessage('');
-      
-      // Use AI-generated title and description directly (no user input modal)
-      setStoryTitle(newStory.title);
-      setStoryDescription(newStory.summary);
-      
-      // Skip the title/description modal and go straight to recipient selection
-      // Default to saving to "My Creations" automatically
-      setSelectedRecipients(['my_stories']);
       setShowCreateStoryModal(false);
-      setShowRecipientModal(true);
+      setShowRecipientModal(false);
+
+      // Save to local My Creations silently so the new story is visible in library offline too.
+      const existingRaw = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
+      const existingStories = existingRaw ? JSON.parse(existingRaw) : [];
+      const alreadySaved = existingStories.some((s) => String(s.id) === String(newStory.id));
+      if (!alreadySaved) {
+        await AsyncStorage.setItem(STORIES_STORAGE_KEY, JSON.stringify([newStory, ...existingStories]));
+      }
+
+      navigation.replace('Story', { story: newStory, storyId: newStory.id });
   };
 
   // Helper function to get unique key for contact
@@ -752,6 +862,75 @@ export default function AIStoryGeneratorScreen() {
 
     setShowCreateStoryModal(false);
     setShowRecipientModal(true);
+  };
+
+  // Open the single-page quick share sheet from a recording
+  const openQuickShare = (rec) => {
+    setSelectedRecording(rec);
+    setStoryTitle(rec?.fileName || `Recording ${new Date(rec?.timestamp || Date.now()).toLocaleDateString()}`);
+    setSelectedRecipients(['community']);
+    setTargetLanguage(null);
+    setLangSearchQuery('');
+    setQuickShareSourceText(rec?.transcript || '');
+    setQuickShareTranslatedText('');
+    setIsQuickSharePreviewLoading(false);
+    setShowQuickShareModal(true);
+  };
+
+  // Handle share from the quick share bottom sheet
+  const handleQuickShareNow = async () => {
+    if (!storyTitle.trim()) {
+      Alert.alert('Title Required', 'Please enter a title.');
+      return;
+    }
+
+    if (selectedRecipients.length === 0) {
+      Alert.alert('Recipient Required', 'Please select at least one destination.');
+      return;
+    }
+
+    setShowQuickShareModal(false);
+    setIsSavingStory(true);
+
+    try {
+      let finalText = selectedRecording?.transcript || '';
+
+      // Transcribe if missing
+      if (!finalText.trim() && selectedRecording?.uri) {
+        try { finalText = await transcribeAudio(selectedRecording.uri) || ''; } catch (e) { /* skip */ }
+      }
+
+      // Translate if a target language was picked
+      if (targetLanguage && finalText.trim()) {
+        if (quickShareTranslatedText.trim()) {
+          finalText = quickShareTranslatedText;
+        } else {
+          try { finalText = await translateText(finalText, targetLanguage.id); } catch (e) { /* fallback */ }
+        }
+      }
+
+      const quickStory = {
+        id: Date.now().toString(),
+        title: storyTitle.trim(),
+        summary: finalText.substring(0, 200),
+        text: finalText,
+        sourceText: selectedRecording?.transcript || finalText,
+        language: targetLanguage?.label || getPreferredLearningLanguage(),
+        createdAt: new Date().toISOString(),
+        isAiGenerated: false,
+        pages: [],
+        ...(selectedRecording && {
+          audioUri: selectedRecording.uri,
+          duration: selectedRecording.duration,
+          transcript: finalText,
+        }),
+      };
+
+      await performSave(quickStory, storyTitle.trim(), finalText.substring(0, 200), selectedRecipients);
+    } catch (e) {
+      setIsSavingStory(false);
+      Alert.alert('Error', 'Failed to share. Please try again.');
+    }
   };
 
   // Save shared stories to emergency contacts
@@ -893,21 +1072,33 @@ export default function AIStoryGeneratorScreen() {
     setIsSavingStory(true);
     setShowRecipientModal(false);
 
-    try {
-      const myStoriesSelected = selectedRecipients.includes('my_stories');
-      const communitySelected = selectedRecipients.includes('community');
-      const emergencyContactIds = selectedRecipients.filter(r => r !== 'my_stories' && r !== 'community');
+    const fullStoryText =
+      generatedStory?.pages?.map((page, idx) => `Page ${idx + 1}: ${page.text || page.indigenous_text || ''}`).join('\n\n') || '';
+    const resolvedText = (
+      fullStoryText || translatedText || generatedStory?.sourceText || generatedStory?.summary || ''
+    ).trim();
 
-      const normalizedTitle = storyTitle.trim();
-      const normalizedDescription = storyDescription.trim() || generatedStory?.summary || '';
-      const fullStoryText =
-        generatedStory?.pages?.map((page, idx) => `Page ${idx + 1}: ${page.text || page.indigenous_text || ''}`).join('\n\n') || '';
-      const normalizedText = (
-        fullStoryText ||
-        translatedText ||
-        generatedStory?.sourceText ||
-        generatedStory?.summary ||
-        ''
+    await performSave(
+      generatedStory,
+      storyTitle.trim(),
+      storyDescription.trim() || generatedStory?.summary || '',
+      selectedRecipients,
+      resolvedText
+    );
+  };
+
+  // Core save logic — used by both saveStoryToLibrary and handleQuickShareNow
+  const performSave = async (story, title, description, recipients, textOverride = null) => {
+    try {
+      const myStoriesSelected = recipients.includes('my_stories');
+      const communitySelected = recipients.includes('community');
+      const emergencyContactIds = recipients.filter(r => r !== 'my_stories' && r !== 'community');
+
+      const normalizedTitle = title;
+      const normalizedDescription = description;
+      const normalizedText = textOverride ?? (
+        story?.pages?.map((page, idx) => `Page ${idx + 1}: ${page.text || page.indigenous_text || ''}`).join('\n\n') ||
+        story?.text || story?.sourceText || story?.summary || ''
       ).trim();
 
       // Always store typed text locally first (draft history)
@@ -924,48 +1115,51 @@ export default function AIStoryGeneratorScreen() {
       };
       await AsyncStorage.setItem(AI_TEXT_DRAFTS_KEY, JSON.stringify([localDraft, ...existingDrafts]));
 
-      // Build clean payload (no demo pages) for all share destinations
+      // Build clean payload for all share destinations
       const updatedStory = {
-        id: generatedStory?.id || Date.now().toString(),
-        createdAt: generatedStory?.createdAt || new Date().toISOString(),
-        isAiGenerated: generatedStory?.isAiGenerated !== undefined ? generatedStory.isAiGenerated : true,
+        id: story?.id || Date.now().toString(),
+        createdAt: story?.createdAt || new Date().toISOString(),
+        isAiGenerated: story?.isAiGenerated !== undefined ? story.isAiGenerated : true,
         title: normalizedTitle,
         description: normalizedDescription,
         summary: normalizedDescription,
         text: normalizedText,
         sourceText: normalizedText,
-        language: generatedStory?.language || getPreferredLearningLanguage(),
+        language: story?.language || getPreferredLearningLanguage(),
         languageId: WORLD_LANGUAGES.find(
-          (lang) => lang.label.toLowerCase() === String(generatedStory?.language || getPreferredLearningLanguage()).toLowerCase()
+          (lang) => lang.label.toLowerCase() === String(story?.language || getPreferredLearningLanguage()).toLowerCase()
         )?.id || null,
         author: currentUser?.fullName || 'AI Generator',
         authorEmail: currentUser?.email || null,
         authorId: currentUser?.id || null,
         authorRole: currentUser?.role || 'learner',
         category: 'AI Generated',
-        recipients: selectedRecipients,
-        pages: generatedStory?.pages || [],
-        // Include audio recording data if present
-        ...(generatedStory?.audioUri && {
-          audioUri: generatedStory.audioUri,
-          duration: generatedStory.duration,
-          transcript: generatedStory.transcript || generatedStory.sourceText || normalizedText,
+        recipients,
+        pages: story?.pages || [],
+        ...(story?.audioUri && {
+          audioUri: story.audioUri,
+          duration: story.duration,
+          transcript: story.transcript || story.sourceText || normalizedText,
         }),
       };
 
       // Save to My Creations (My Creation in Story Library)
       if (myStoriesSelected) {
         try {
-          try {
-            await storyService.create({
-              title: normalizedTitle,
-              language: updatedStory.language,
-              text: normalizedText,
-              tags: ['ai-generated'],
-              pages: updatedStory.pages || [],
-            });
-          } catch (createError) {
-            console.warn('Manual /stories create endpoint failed, using local save only:', createError?.message || createError);
+          // Only POST to backend if the story was NOT already saved there during AI generation.
+          // AI-generated stories have `createdBy` set by the backend; creating again would duplicate them.
+          if (!story?.createdBy) {
+            try {
+              await storyService.create({
+                title: normalizedTitle,
+                language: updatedStory.language,
+                text: normalizedText,
+                tags: ['ai-generated'],
+                pages: updatedStory.pages || [],
+              });
+            } catch (createError) {
+              console.warn('Manual /stories create endpoint failed, using local save only:', createError?.message || createError);
+            }
           }
 
           const existingRaw = await AsyncStorage.getItem(STORIES_STORAGE_KEY);
@@ -1012,29 +1206,24 @@ export default function AIStoryGeneratorScreen() {
       }
       
       setIsSavingStory(false);
-      
-      const destinations = [];
-      if (myStoriesSelected) destinations.push('My Creations');
-      if (communitySelected) destinations.push('Community Story');
-      if (emergencyContactIds.length > 0) destinations.push(`${emergencyContactIds.length} Emergency Contact(s) - Other Creation`);
 
       // Navigate based on selection
       if (communitySelected) {
         Alert.alert(
-          'Story Saved! 🎉', 
-          `"${storyTitle}" has been saved to Community Story.`,
+          'Story Saved! 🎉',
+          `"${normalizedTitle}" has been saved to Community Story.`,
           [
             {
               text: 'View Community',
-              onPress: () => navigation.navigate('MainTabs', { screen: 'StoriesTab', params: { initialTab: 'library' } })
+              onPress: () => navigation.navigate('CommunityStory')
             },
             { text: 'OK' }
           ]
         );
       } else if (myStoriesSelected) {
         Alert.alert(
-          'Story Saved! 🎉', 
-          `"${storyTitle}" has been saved to My Creations.`,
+          'Story Saved! 🎉',
+          `"${normalizedTitle}" has been saved to My Creations.`,
           [
             {
               text: 'View My Stories',
@@ -1045,10 +1234,10 @@ export default function AIStoryGeneratorScreen() {
         );
       } else if (emergencyContactIds.length > 0) {
         Alert.alert(
-          'Story Saved! 🎉', 
-          `"${storyTitle}" has been shared with ${emergencyContactIds.length} emergency contact(s).`,
+          'Story Saved! 🎉',
+          `"${normalizedTitle}" has been shared with ${emergencyContactIds.length} contact(s).`,
           [
-            { 
+            {
               text: 'View Shared',
               onPress: () => navigation.navigate('MainTabs', { screen: 'StoriesTab', params: { initialTab: 'shared' } })
             },
@@ -1056,11 +1245,7 @@ export default function AIStoryGeneratorScreen() {
           ]
         );
       } else {
-        Alert.alert(
-          'Story Saved! 🎉', 
-          `"${storyTitle}" has been saved.`,
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Story Saved! 🎉', `"${normalizedTitle}" has been saved.`, [{ text: 'OK' }]);
       }
 
       // Reset form
@@ -1114,6 +1299,27 @@ export default function AIStoryGeneratorScreen() {
     }
   };
 
+    // Wire preview-screen shortcut buttons: My Creations and Community go directly to performSave
+    useEffect(() => {
+      if (!saveShortcut || saveShortcut === 'contacts') return;
+      if (!generatedStory) return;
+      const doSave = async () => {
+        setIsSavingStory(true);
+        const fullStoryText =
+          generatedStory?.pages?.map((page, idx) => `Page ${idx + 1}: ${page.text || page.indigenous_text || ''}`).join('\n\n') || '';
+        const resolvedText = (fullStoryText || translatedText || generatedStory?.sourceText || generatedStory?.summary || '').trim();
+        await performSave(
+          generatedStory,
+          storyTitle.trim() || generatedStory.title || 'Untitled Story',
+          storyDescription.trim() || generatedStory?.summary || '',
+          [saveShortcut],
+          resolvedText
+        );
+        setSaveShortcut(null);
+      };
+      doSave();
+    }, [saveShortcut]);
+
   const loadRecordingsFromStorage = async () => {
       try {
         const raw = await AsyncStorage.getItem(RECORDINGS_STORAGE_KEY);
@@ -1139,44 +1345,128 @@ export default function AIStoryGeneratorScreen() {
   if (mode === 'preview' && generatedStory) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={[styles.previewTitle, { color: theme.primary }]}>✨ Story Revived!</Text>
-          
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity onPress={() => setMode('input')} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Your Story is Ready ✨</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 180 }]}>
+          {/* Story card */}
           <View style={[styles.card, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.storyTitle, { color: theme.text }]}>{generatedStory.title}</Text>
-            <Text style={[styles.storySummary, { color: theme.textSecondary }]}>{generatedStory.summary}</Text>
-            
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.s }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: theme.primary + '20', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+                <MaterialCommunityIcons name="auto-fix" size={20} color={theme.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.storyTitle, { color: theme.text, marginBottom: 0 }]}>{generatedStory.title}</Text>
+                {generatedStory.language && (
+                  <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '600', marginTop: 2 }}>{generatedStory.language}</Text>
+                )}
+              </View>
+            </View>
+            {!!generatedStory.summary && (
+              <Text style={[styles.storySummary, { color: theme.textSecondary }]}>{generatedStory.summary}</Text>
+            )}
+
             <View style={styles.divider} />
-            
+
             {generatedStory.pages.map((page, index) => (
               <View key={index} style={styles.pagePreview}>
-                 <View style={[styles.imagePlaceholder, { backgroundColor: theme.secondary + '20' }]}>
-                    <MaterialCommunityIcons name="image-outline" size={30} color={theme.secondary} />
-                    <Text style={[styles.promptText, { color: theme.textSecondary }]}>Image: {page.imagePrompt}</Text>
-                 </View>
-                 <Text style={[styles.pageText, { color: theme.text }]}>{page.text}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.primary + '20', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: theme.primary }}>{index + 1}</Text>
+                  </View>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, letterSpacing: 0.5 }}>PAGE {index + 1}</Text>
+                </View>
+                <Text style={[styles.pageText, { color: theme.text }]}>{page.text || page.indigenous_text}</Text>
+                {!!page.translation && (
+                  <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 4, fontStyle: 'italic' }}>{page.translation}</Text>
+                )}
               </View>
             ))}
           </View>
-          
-          <View style={styles.actionRow}>
-            <TouchableOpacity 
-              style={[styles.button, styles.secondaryBtn, { borderColor: theme.border }]} 
-              onPress={() => setMode('input')}
-            >
-              <Text style={[styles.btnText, { color: theme.text }]}>Discard</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.button, styles.primaryBtn, { backgroundColor: theme.primary }]} 
-              onPress={saveStory}
-            >
-               <Ionicons name="save-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
-              <Text style={[styles.btnText, { color: '#FFF' }]}>Save to Library</Text>
-            </TouchableOpacity>
-          </View>
-
         </ScrollView>
+
+        {/* Pinned action buttons */}
+        <View style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          backgroundColor: theme.surface,
+          paddingHorizontal: SPACING.l,
+          paddingTop: SPACING.m,
+          paddingBottom: SPACING.xl,
+          borderTopWidth: 1,
+          borderTopColor: theme.border,
+          gap: SPACING.s,
+        }}>
+          <Text style={{ fontSize: 12, color: theme.textSecondary, textAlign: 'center', marginBottom: 2 }}>Where do you want to save this story?</Text>
+
+          {/* My Creations */}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.secondary + '15', borderRadius: 14, paddingVertical: 13, paddingHorizontal: SPACING.l, borderWidth: 1.5, borderColor: theme.secondary, opacity: isSavingStory ? 0.5 : 1 }}
+            disabled={isSavingStory}
+            onPress={() => {
+              setSelectedRecipients(['my_stories']);
+              setShowRecipientModal(false);
+              setSaveShortcut('my_stories');
+            }}
+          >
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: theme.secondary + '25', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+              <Ionicons name="bookmarks" size={16} color={theme.secondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.secondary, fontWeight: '700', fontSize: 15 }}>Save to My Creations</Text>
+              <Text style={{ color: theme.secondary + 'AA', fontSize: 12 }}>Private — only visible to you</Text>
+            </View>
+            {isSavingStory && saveShortcut === 'my_stories' ? <ActivityIndicator size="small" color={theme.secondary} /> : <Ionicons name="chevron-forward" size={18} color={theme.secondary} />}
+          </TouchableOpacity>
+
+          {/* Share to Community */}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.primary + '15', borderRadius: 14, paddingVertical: 13, paddingHorizontal: SPACING.l, borderWidth: 1.5, borderColor: theme.primary, opacity: isSavingStory ? 0.5 : 1 }}
+            disabled={isSavingStory}
+            onPress={() => {
+              setSelectedRecipients(['community']);
+              setShowRecipientModal(false);
+              setSaveShortcut('community');
+            }}
+          >
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: theme.primary + '25', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+              <Ionicons name="globe" size={16} color={theme.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Share to Community</Text>
+              <Text style={{ color: theme.primary + 'AA', fontSize: 12 }}>Visible to all EchoLingua users</Text>
+            </View>
+            {isSavingStory && saveShortcut === 'community' ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="chevron-forward" size={18} color={theme.primary} />}
+          </TouchableOpacity>
+
+          {/* Share to Emergency Contact */}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.accent + '15', borderRadius: 14, paddingVertical: 13, paddingHorizontal: SPACING.l, borderWidth: 1.5, borderColor: theme.accent, opacity: isSavingStory ? 0.5 : 1 }}
+            disabled={isSavingStory}
+            onPress={() => {
+              setSelectedRecipients([]);
+              setSaveShortcut('contacts');
+              setShowRecipientModal(true);
+            }}
+          >
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: theme.accent + '25', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+              <Ionicons name="people" size={16} color={theme.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.accent, fontWeight: '700', fontSize: 15 }}>Share to Emergency Contact</Text>
+              <Text style={{ color: theme.accent + 'AA', fontSize: 12 }}>Send directly to your contacts</Text>
+            </View>
+            {isSavingStory && saveShortcut === 'contacts' ? <ActivityIndicator size="small" color={theme.accent} /> : <Ionicons name="chevron-forward" size={18} color={theme.accent} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setMode('input')} style={{ alignItems: 'center', paddingVertical: 8 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 14 }}>Discard</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -1225,9 +1515,36 @@ export default function AIStoryGeneratorScreen() {
              </TouchableOpacity>
           </View>
 
+          <View style={{ marginBottom: SPACING.m }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>
+              STORY LANGUAGE
+            </Text>
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: SPACING.m,
+                paddingVertical: 12,
+                backgroundColor: theme.surface,
+              }}
+              onPress={() => setShowStoryLanguageModal(true)}
+            >
+              <Ionicons name="language-outline" size={18} color={theme.textSecondary} style={{ marginRight: SPACING.s }} />
+              <Text style={{ flex: 1, color: theme.text, fontSize: 15 }}>
+                {getSelectedStoryLanguage()?.flag}  {getSelectedStoryLanguage()?.label}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+            <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 6 }}>
+              Story generation and narration will use this language.
+            </Text>
+          </View>
+
           {inputType === 'voice' && (
              <View style={styles.voiceContainer}>
-                
                 {/* Voice Training Prompts */}
                 {/* Removed logic based prompts, kept simple instructions if needed, or remove completely */}
                  <Text style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'center', marginBottom: 20 }}>
@@ -1417,8 +1734,7 @@ export default function AIStoryGeneratorScreen() {
                       onPress={async () => {
                          setShowActionModal(false);
                          if (selectedRecording) {
-                           // Share goes through transcript + language selection first
-                           await handleTranslateOrShareRecording(selectedRecording);
+                           openQuickShare(selectedRecording);
                          }
                       }}
                    >
@@ -1633,184 +1949,434 @@ export default function AIStoryGeneratorScreen() {
          </View>
        </Modal>
 
-       {/* Recipient Selection Modal */}
+       {/* ── Save & Share Story Modal ── */}
        <Modal
           visible={showRecipientModal}
           transparent={true}
           animationType="slide"
           onRequestClose={() => setShowRecipientModal(false)}
        >
-         <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-           <View style={[styles.modalContent, { backgroundColor: theme.surface, width: '90%', maxHeight: '80%' }]}>
-             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.m }}>
-               <Text style={[styles.modalTitle, { color: theme.text }]}>Share Story</Text>
-               <TouchableOpacity onPress={() => setShowRecipientModal(false)}>
-                 <Ionicons name="close-circle" size={28} color={theme.textSecondary} />
+         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' }}>
+           <View style={{ backgroundColor: theme.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: SPACING.m, paddingBottom: SPACING.l, maxHeight: '88%' }}>
+
+             {/* Drag handle */}
+             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: theme.border, alignSelf: 'center', marginBottom: SPACING.m }} />
+
+             {/* Header */}
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: SPACING.l, marginBottom: SPACING.m }}>
+               <View>
+                 <Text style={{ fontSize: 20, fontWeight: '800', color: theme.text }}>Your Story is Ready! ✨</Text>
+                 <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>Choose where to save or share it</Text>
+               </View>
+               <TouchableOpacity
+                 onPress={() => setShowRecipientModal(false)}
+                 style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}
+               >
+                 <Ionicons name="close" size={18} color={theme.textSecondary} />
                </TouchableOpacity>
              </View>
 
-             <ScrollView showsVerticalScrollIndicator={false}>
-               {/* My Creations Option */}
+             <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: SPACING.l, paddingBottom: SPACING.s }}>
+
+               {/* Story preview card */}
+               {generatedStory && (
+                 <View style={{ borderRadius: 14, backgroundColor: theme.primary + '10', borderWidth: 1, borderColor: theme.primary + '30', padding: SPACING.m, marginBottom: SPACING.l, flexDirection: 'row', alignItems: 'flex-start' }}>
+                   <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: theme.primary + '25', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+                     <MaterialCommunityIcons name="auto-fix" size={22} color={theme.primary} />
+                   </View>
+                   <View style={{ flex: 1 }}>
+                     <Text style={{ fontWeight: '700', fontSize: 15, color: theme.text }} numberOfLines={1}>{storyTitle || generatedStory.title || 'Untitled Story'}</Text>
+                     <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
+                       {generatedStory.summary || storyDescription || 'AI-generated story'}
+                     </Text>
+                     {generatedStory.pages?.length > 0 && (
+                       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                         <Ionicons name="layers-outline" size={12} color={theme.primary} />
+                         <Text style={{ fontSize: 11, color: theme.primary, marginLeft: 4, fontWeight: '600' }}>
+                           {generatedStory.pages.length} page{generatedStory.pages.length !== 1 ? 's' : ''}
+                         </Text>
+                       </View>
+                     )}
+                   </View>
+                 </View>
+               )}
+
+               {/* Section: Save */}
+               <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, letterSpacing: 0.8, marginBottom: SPACING.s }}>SAVE</Text>
+
                <TouchableOpacity
-                 style={[
-                   styles.destinationOption,
-                   { 
-                     backgroundColor: theme.glassMedium, 
-                     borderColor: selectedRecipients.includes('my_stories') ? theme.primary : theme.border,
-                     borderWidth: 2,
-                     marginBottom: 8
-                   }
-                 ]}
+                 style={{
+                   flexDirection: 'row', alignItems: 'center', borderRadius: 14,
+                   borderWidth: selectedRecipients.includes('my_stories') ? 2 : 1,
+                   borderColor: selectedRecipients.includes('my_stories') ? theme.secondary : theme.border,
+                   backgroundColor: selectedRecipients.includes('my_stories') ? theme.secondary + '0C' : theme.background,
+                   padding: SPACING.m, marginBottom: SPACING.s,
+                 }}
                  onPress={() => toggleRecipient('my_stories')}
                >
-                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                   <View style={[styles.destinationIcon, { backgroundColor: theme.secondary + '20' }]}>
-                     <Ionicons name="book" size={20} color={theme.secondary} />
-                   </View>
-                   <View style={{ flex: 1 }}>
-                     <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>My Creations</Text>
-                     <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Save to Story Library (My Creation)</Text>
-                   </View>
+                 <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: theme.secondary + '22', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+                   <Ionicons name="bookmarks" size={20} color={theme.secondary} />
                  </View>
-                 <Ionicons
-                   name={selectedRecipients.includes('my_stories') ? 'checkbox' : 'square-outline'}
-                   size={28}
-                   color={selectedRecipients.includes('my_stories') ? theme.primary : theme.textSecondary}
-                 />
+                 <View style={{ flex: 1 }}>
+                   <Text style={{ color: theme.text, fontWeight: '700', fontSize: 15 }}>My Creations</Text>
+                   <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>Private — only visible to you</Text>
+                 </View>
+                 <View style={{ width: 26, height: 26, borderRadius: 6, borderWidth: 2, borderColor: selectedRecipients.includes('my_stories') ? theme.secondary : theme.border, backgroundColor: selectedRecipients.includes('my_stories') ? theme.secondary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                   {selectedRecipients.includes('my_stories') && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                 </View>
                </TouchableOpacity>
 
-               {/* Community Story Option */}
+               {/* Section: Share */}
+               <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, letterSpacing: 0.8, marginTop: SPACING.s, marginBottom: SPACING.s }}>SHARE</Text>
+
                <TouchableOpacity
-                 style={[
-                   styles.destinationOption,
-                   { 
-                     backgroundColor: theme.glassMedium, 
-                     borderColor: selectedRecipients.includes('community') ? theme.primary : theme.border,
-                     borderWidth: 2,
-                     marginBottom: 8
-                   }
-                 ]}
+                 style={{
+                   flexDirection: 'row', alignItems: 'center', borderRadius: 14,
+                   borderWidth: selectedRecipients.includes('community') ? 2 : 1,
+                   borderColor: selectedRecipients.includes('community') ? theme.primary : theme.border,
+                   backgroundColor: selectedRecipients.includes('community') ? theme.primary + '0C' : theme.background,
+                   padding: SPACING.m, marginBottom: SPACING.s,
+                 }}
                  onPress={() => toggleRecipient('community')}
                >
-                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                   <View style={[styles.destinationIcon, { backgroundColor: theme.primary + '20' }]}>
-                     <Ionicons name="globe" size={20} color={theme.primary} />
-                   </View>
-                   <View style={{ flex: 1 }}>
-                     <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>Community Story</Text>
-                     <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Share with the community</Text>
-                   </View>
+                 <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: theme.primary + '22', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+                   <Ionicons name="globe" size={20} color={theme.primary} />
                  </View>
-                 <Ionicons
-                   name={selectedRecipients.includes('community') ? 'checkbox' : 'square-outline'}
-                   size={28}
-                   color={selectedRecipients.includes('community') ? theme.primary : theme.textSecondary}
-                 />
+                 <View style={{ flex: 1 }}>
+                   <Text style={{ color: theme.text, fontWeight: '700', fontSize: 15 }}>Community</Text>
+                   <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>Visible to all EchoLingua users</Text>
+                 </View>
+                 <View style={{ width: 26, height: 26, borderRadius: 6, borderWidth: 2, borderColor: selectedRecipients.includes('community') ? theme.primary : theme.border, backgroundColor: selectedRecipients.includes('community') ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                   {selectedRecipients.includes('community') && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                 </View>
                </TouchableOpacity>
 
-               {/* Emergency Contacts Section */}
-               {emergencyContactsWithApp.length > 0 && (
-                 <>
-                   <View style={{ marginVertical: SPACING.m, flexDirection: 'row', alignItems: 'center' }}>
-                     <View style={{ flex: 1, height: 1, backgroundColor: theme.border }} />
-                     <Text style={{ marginHorizontal: SPACING.m, color: theme.textSecondary, fontSize: 12, fontWeight: '600' }}>
-                       Emergency Contacts (Other Creation)
-                     </Text>
-                     <View style={{ flex: 1, height: 1, backgroundColor: theme.border }} />
+               {/* Emergency Contacts */}
+               <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, letterSpacing: 0.8, marginTop: SPACING.s, marginBottom: SPACING.s }}>EMERGENCY CONTACTS</Text>
+
+               {emergencyContactsWithApp.length === 0 ? (
+                 <TouchableOpacity
+                   onPress={() => { setShowRecipientModal(false); navigation.navigate('EmergencyContacts'); }}
+                   style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.border, padding: SPACING.m, backgroundColor: theme.background }}
+                 >
+                   <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: theme.accent + '15', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+                     <Ionicons name="person-add-outline" size={20} color={theme.accent} />
                    </View>
-
-                   {emergencyContactsWithApp.map((contact, index) => {
-                     const recipientKey = getContactRecipientKey(contact);
-                     return (
-                       <TouchableOpacity
-                         key={`contact-${recipientKey}-${index}`}
-                         style={[
-                           styles.destinationOption,
-                           { 
-                             backgroundColor: theme.glassMedium, 
-                             borderColor: selectedRecipients.includes(recipientKey) ? theme.primary : theme.border,
-                             borderWidth: 2,
-                             marginBottom: 8
-                           }
-                         ]}
-                         onPress={() => toggleRecipient(recipientKey)}
-                       >
-                         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                           <View style={[styles.destinationIcon, { backgroundColor: theme.accent + '20' }]}>
-                             <Ionicons name="person-circle" size={20} color={theme.accent} />
-                           </View>
-                           <View style={{ flex: 1 }}>
-                             <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>{contact.name}</Text>
-                             <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                               {contact.relation} • {contact.appUser?.fullName || contact.linkedUserName || contact.email || contact.phone || 'Profile Contact'}
-                             </Text>
-                           </View>
-                         </View>
-                         <Ionicons
-                           name={selectedRecipients.includes(recipientKey) ? 'checkbox' : 'square-outline'}
-                           size={28}
-                           color={selectedRecipients.includes(recipientKey) ? theme.primary : theme.textSecondary}
-                         />
-                       </TouchableOpacity>
-                     );
-                   })}
-                 </>
-               )}
-
-               {emergencyContactsWithApp.length === 0 && (
-                 <View style={{ 
-                   padding: SPACING.m, 
-                   backgroundColor: theme.background, 
-                   borderRadius: 8, 
-                   alignItems: 'center',
-                   marginTop: SPACING.m 
-                 }}>
-                   <Ionicons name="people-outline" size={32} color={theme.textSecondary} />
-                   <Text style={{ color: theme.textSecondary, marginTop: SPACING.s, textAlign: 'center' }}>
-                     No emergency contacts found in your profile. Add contacts in Profile Emergency Contacts.
-                   </Text>
-                 </View>
-               )}
-
-               {currentUser && (
-                 <View style={{ 
-                   flexDirection: 'row', 
-                   alignItems: 'center', 
-                   backgroundColor: theme.primary + '20', 
-                   padding: SPACING.m, 
-                   borderRadius: 8,
-                   marginTop: SPACING.m 
-                 }}>
-                   <Ionicons name="information-circle" size={20} color={theme.primary} style={{ marginRight: 8 }} />
-                   <Text style={{ color: theme.text, fontSize: 12, flex: 1 }}>
-                     Story will be labeled as sent by {currentUser.fullName} ({currentUser.role || 'learner'})
-                   </Text>
-                 </View>
+                   <View style={{ flex: 1 }}>
+                     <Text style={{ color: theme.text, fontWeight: '600', fontSize: 14 }}>No contacts added yet</Text>
+                     <Text style={{ color: theme.primary, fontSize: 12, marginTop: 2 }}>Tap to add emergency contacts →</Text>
+                   </View>
+                 </TouchableOpacity>
+               ) : (
+                 emergencyContactsWithApp.map((contact, index) => {
+                   const recipientKey = getContactRecipientKey(contact);
+                   const isChosen = selectedRecipients.includes(recipientKey);
+                   return (
+                     <TouchableOpacity
+                       key={`contact-${recipientKey}-${index}`}
+                       style={{
+                         flexDirection: 'row', alignItems: 'center', borderRadius: 14,
+                         borderWidth: isChosen ? 2 : 1,
+                         borderColor: isChosen ? theme.accent : theme.border,
+                         backgroundColor: isChosen ? theme.accent + '0C' : theme.background,
+                         padding: SPACING.m, marginBottom: SPACING.s,
+                       }}
+                       onPress={() => toggleRecipient(recipientKey)}
+                     >
+                       <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: theme.accent + '22', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.m }}>
+                         <Text style={{ fontSize: 18 }}>
+                           {contact.name?.[0]?.toUpperCase() || '?'}
+                         </Text>
+                       </View>
+                       <View style={{ flex: 1 }}>
+                         <Text style={{ color: theme.text, fontWeight: '700', fontSize: 15 }}>{contact.name}</Text>
+                         <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>{contact.relation || 'Contact'}</Text>
+                       </View>
+                       <View style={{ width: 26, height: 26, borderRadius: 6, borderWidth: 2, borderColor: isChosen ? theme.accent : theme.border, backgroundColor: isChosen ? theme.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                         {isChosen && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                       </View>
+                     </TouchableOpacity>
+                   );
+                 })
                )}
              </ScrollView>
 
-             {/* Save Button */}
-             <View style={styles.modalActions}>
-               <TouchableOpacity 
-                 onPress={() => setShowRecipientModal(false)} 
-                 style={[styles.modalBtn, { borderWidth: 1, borderColor: theme.border }]}
-               >
-                 <Text style={{ color: theme.text }}>Back</Text>
-               </TouchableOpacity>
-               <TouchableOpacity 
-                 onPress={saveStoryToLibrary} 
-                 style={[styles.modalBtn, { backgroundColor: theme.primary }]}
+             {/* Pinned action buttons */}
+             <View style={{ paddingHorizontal: SPACING.l, paddingTop: SPACING.m, gap: SPACING.s, borderTopWidth: 1, borderTopColor: theme.border + '60', marginTop: SPACING.s }}>
+               {selectedRecipients.length > 0 && (
+                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                   {selectedRecipients.includes('my_stories') && (
+                     <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.secondary + '20', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                       <Ionicons name="bookmarks" size={11} color={theme.secondary} />
+                       <Text style={{ fontSize: 11, color: theme.secondary, fontWeight: '700', marginLeft: 4 }}>My Creations</Text>
+                     </View>
+                   )}
+                   {selectedRecipients.includes('community') && (
+                     <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.primary + '20', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                       <Ionicons name="globe" size={11} color={theme.primary} />
+                       <Text style={{ fontSize: 11, color: theme.primary, fontWeight: '700', marginLeft: 4 }}>Community</Text>
+                     </View>
+                   )}
+                   {selectedRecipients.filter(r => r !== 'my_stories' && r !== 'community').map(r => {
+                     const c = emergencyContactsWithApp.find(ct => getContactRecipientKey(ct) === r);
+                     return c ? (
+                       <View key={r} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.accent + '20', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                         <Ionicons name="person" size={11} color={theme.accent} />
+                         <Text style={{ fontSize: 11, color: theme.accent, fontWeight: '700', marginLeft: 4 }}>{c.name}</Text>
+                       </View>
+                     ) : null;
+                   })}
+                 </View>
+               )}
+
+               <TouchableOpacity
+                 style={{ backgroundColor: theme.primary, borderRadius: 14, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, opacity: selectedRecipients.length === 0 || isSavingStory ? 0.45 : 1 }}
+                 onPress={saveStoryToLibrary}
                  disabled={selectedRecipients.length === 0 || isSavingStory}
                >
                  {isSavingStory ? (
                    <ActivityIndicator size="small" color="#FFF" />
                  ) : (
-                   <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share Now ({selectedRecipients.length})</Text>
+                   <>
+                     <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+                     <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>
+                       {selectedRecipients.length === 0 ? 'Select a destination' : `Save & Share`}
+                     </Text>
+                   </>
                  )}
+               </TouchableOpacity>
+               <TouchableOpacity
+                 style={{ borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}
+                 onPress={() => setShowRecipientModal(false)}
+               >
+                 <Text style={{ color: theme.textSecondary, fontWeight: '600', fontSize: 15 }}>Cancel</Text>
                </TouchableOpacity>
              </View>
            </View>
          </View>
+       </Modal>
+
+       {/* ── Quick Share Modal (single page) ── */}
+       <Modal
+         visible={showQuickShareModal}
+         transparent={true}
+         animationType="slide"
+         onRequestClose={() => setShowQuickShareModal(false)}
+       >
+         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' }}>
+           <View style={{ backgroundColor: theme.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: SPACING.m, paddingBottom: SPACING.l }}>
+             {/* Header */}
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: SPACING.l, marginBottom: SPACING.m }}>
+               <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>Share Recording</Text>
+               <TouchableOpacity onPress={() => setShowQuickShareModal(false)}>
+                 <Ionicons name="close" size={24} color={theme.textSecondary} />
+               </TouchableOpacity>
+             </View>
+
+             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }} contentContainerStyle={{ paddingHorizontal: SPACING.l, paddingBottom: SPACING.s }}>
+               {/* Title */}
+               <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>TITLE</Text>
+               <TextInput
+                 style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 10, paddingHorizontal: SPACING.m, paddingVertical: 10, color: theme.text, backgroundColor: theme.background, fontSize: 15, marginBottom: SPACING.m }}
+                 value={storyTitle}
+                 onChangeText={setStoryTitle}
+                 placeholder="Story title..."
+                 placeholderTextColor={theme.textSecondary}
+                 maxLength={100}
+               />
+
+               {/* Translation language picker */}
+               <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>TRANSLATE TO (OPTIONAL)</Text>
+               <TouchableOpacity
+                 style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.border, borderRadius: 10, paddingHorizontal: SPACING.m, paddingVertical: 12, backgroundColor: theme.background, marginBottom: SPACING.m }}
+                 onPress={() => {
+                   setTranslationAction('share');
+                   setShowLanguageModal(true);
+                 }}
+               >
+                 <Ionicons name="language-outline" size={18} color={theme.textSecondary} style={{ marginRight: SPACING.s }} />
+                 <Text style={{ flex: 1, color: targetLanguage ? theme.text : theme.textSecondary, fontSize: 15 }}>
+                   {targetLanguage ? `${targetLanguage.flag}  ${targetLanguage.label}` : 'No translation (tap to choose)'}
+                 </Text>
+                 {targetLanguage ? (
+                   <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => setTargetLanguage(null)}>
+                     <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+                   </TouchableOpacity>
+                 ) : (
+                   <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                 )}
+               </TouchableOpacity>
+
+               {/* Transcript + Translation preview — always visible */}
+               <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>AUDIO TRANSCRIPT</Text>
+               <View style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 10, backgroundColor: theme.background, padding: SPACING.m, marginBottom: SPACING.m }}>
+                 <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20 }}>
+                   {quickShareSourceText || 'No transcript available for this recording.'}
+                 </Text>
+               </View>
+
+               {targetLanguage && (
+                 <View style={{ marginBottom: SPACING.m }}>
+                   <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>
+                     TRANSLATION — {targetLanguage.flag}  {targetLanguage.label.toUpperCase()}
+                   </Text>
+                   <View style={[
+                     { borderRadius: 10, padding: SPACING.m, overflow: 'hidden' },
+                     isQuickSharePreviewLoading
+                       ? { borderWidth: 1.5, borderColor: theme.primary, backgroundColor: theme.primary + '08' }
+                       : { borderWidth: 1, borderColor: theme.border, backgroundColor: theme.background },
+                   ]}>
+                     {isQuickSharePreviewLoading ? (
+                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.m, gap: 10 }}>
+                         <ActivityIndicator size="large" color={theme.primary} />
+                         <Text style={{ color: theme.primary, fontSize: 14, fontWeight: '600' }}>Translating...</Text>
+                       </View>
+                     ) : (
+                       <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20 }}>
+                         {quickShareTranslatedText || 'Translation not available yet.'}
+                       </Text>
+                     )}
+                   </View>
+                 </View>
+               )}
+
+               {/* Share destination selection */}
+               <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>SHARE TO</Text>
+
+               <TouchableOpacity
+                 onPress={() => toggleRecipient('community')}
+                 style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: selectedRecipients.includes('community') ? 2 : 1, borderColor: selectedRecipients.includes('community') ? theme.primary : theme.border, backgroundColor: selectedRecipients.includes('community') ? theme.primary + '0C' : theme.background, padding: SPACING.m, marginBottom: SPACING.s }}
+               >
+                 <Ionicons name="globe" size={18} color={theme.primary} style={{ marginRight: 10 }} />
+                 <Text style={{ flex: 1, color: theme.text, fontWeight: '600' }}>Community</Text>
+                 <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectedRecipients.includes('community') ? theme.primary : theme.border, backgroundColor: selectedRecipients.includes('community') ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                   {selectedRecipients.includes('community') && <Ionicons name="checkmark" size={13} color="#FFF" />}
+                 </View>
+               </TouchableOpacity>
+
+               <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginTop: 2, marginBottom: 6 }}>EMERGENCY CONTACTS</Text>
+               {emergencyContactsWithApp.length === 0 ? (
+                 <TouchableOpacity
+                   onPress={() => { setShowQuickShareModal(false); navigation.navigate('EmergencyContacts'); }}
+                   style={{ borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.border, backgroundColor: theme.background, padding: SPACING.m, marginBottom: SPACING.s }}
+                 >
+                   <Text style={{ color: theme.textSecondary, fontSize: 13 }}>No emergency contacts yet. Tap to add contacts.</Text>
+                 </TouchableOpacity>
+               ) : (
+                 emergencyContactsWithApp.map((contact, index) => {
+                   const recipientKey = getContactRecipientKey(contact);
+                   const selected = selectedRecipients.includes(recipientKey);
+                   return (
+                     <TouchableOpacity
+                       key={`quick-contact-${recipientKey}-${index}`}
+                       onPress={() => toggleRecipient(recipientKey)}
+                       style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: selected ? 2 : 1, borderColor: selected ? theme.accent : theme.border, backgroundColor: selected ? theme.accent + '0C' : theme.background, padding: SPACING.m, marginBottom: SPACING.s }}
+                     >
+                       <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.accent + '20', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                         <Text style={{ color: theme.accent, fontWeight: '700' }}>{contact.name?.[0]?.toUpperCase() || '?'}</Text>
+                       </View>
+                       <View style={{ flex: 1 }}>
+                         <Text style={{ color: theme.text, fontWeight: '600' }}>{contact.name || 'Contact'}</Text>
+                         <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{contact.relation || 'Emergency contact'}</Text>
+                       </View>
+                       <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selected ? theme.accent : theme.border, backgroundColor: selected ? theme.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                         {selected && <Ionicons name="checkmark" size={13} color="#FFF" />}
+                       </View>
+                     </TouchableOpacity>
+                   );
+                 })
+               )}
+             </ScrollView>
+
+             {/* Buttons */}
+             <View style={{ paddingHorizontal: SPACING.l, paddingTop: SPACING.m, gap: SPACING.s }}>
+               <TouchableOpacity
+                 style={{ backgroundColor: theme.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', opacity: isSavingStory ? 0.45 : 1 }}
+                 onPress={handleQuickShareNow}
+                 disabled={isSavingStory}
+               >
+                 {isSavingStory ? (
+                   <ActivityIndicator size="small" color="#FFF" />
+                 ) : (
+                   <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 16 }}>Share Now</Text>
+                 )}
+               </TouchableOpacity>
+               <TouchableOpacity
+                 style={{ borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}
+                 onPress={() => setShowQuickShareModal(false)}
+               >
+                 <Text style={{ color: theme.textSecondary, fontWeight: '600', fontSize: 15 }}>Cancel</Text>
+               </TouchableOpacity>
+             </View>
+           </View>
+         </View>
+       </Modal>
+
+       {/* Story Language Selection Modal */}
+       <Modal
+          visible={showStoryLanguageModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => { setShowStoryLanguageModal(false); setStoryLangSearchQuery(''); }}
+       >
+          <Pressable
+             style={styles.langMenuBackdrop}
+             onPress={() => { setShowStoryLanguageModal(false); setStoryLangSearchQuery(''); }}
+          >
+             <Pressable style={[styles.langMenuCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.m, paddingTop: SPACING.m, paddingBottom: SPACING.s }}>
+                 <Text style={[styles.langMenuTitle, { color: theme.text }]}>Story Language</Text>
+                 <TouchableOpacity onPress={() => { setShowStoryLanguageModal(false); setStoryLangSearchQuery(''); }}>
+                   <Ionicons name="close" size={22} color={theme.textSecondary} />
+                 </TouchableOpacity>
+               </View>
+
+               <View style={[styles.langMenuSearchWrap, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                 <Ionicons name="search" size={16} color={theme.textSecondary} />
+                 <TextInput
+                   style={[styles.langMenuSearchInput, { color: theme.text }]}
+                   placeholder="Search language..."
+                   placeholderTextColor={theme.textSecondary}
+                   value={storyLangSearchQuery}
+                   onChangeText={setStoryLangSearchQuery}
+                 />
+                 {storyLangSearchQuery ? (
+                   <TouchableOpacity onPress={() => setStoryLangSearchQuery('')}>
+                     <Ionicons name="close-circle" size={16} color={theme.textSecondary} />
+                   </TouchableOpacity>
+                 ) : null}
+               </View>
+
+               <ScrollView style={styles.langMenuList} keyboardShouldPersistTaps="handled">
+                 {WORLD_LANGUAGES.filter(lang =>
+                   !storyLangSearchQuery.trim() ||
+                   lang.label.toLowerCase().includes(storyLangSearchQuery.trim().toLowerCase())
+                 ).map((lang) => {
+                   const active = getSelectedStoryLanguage()?.id === lang.id;
+                   return (
+                     <TouchableOpacity
+                       key={lang.id}
+                       style={[styles.langMenuItem, active ? { backgroundColor: theme.primary + '18' } : null]}
+                       onPress={() => {
+                         setStoryLanguage(lang);
+                         setShowStoryLanguageModal(false);
+                         setStoryLangSearchQuery('');
+                       }}
+                     >
+                       <Text style={{ fontSize: 16, marginRight: SPACING.s }}>{lang.flag}</Text>
+                       <View style={{ flex: 1 }}>
+                         <Text style={[styles.langMenuItemText, { color: theme.text }]}>{lang.label}</Text>
+                         {lang.indigenous && (
+                           <Text style={{ fontSize: 11, color: theme.primary, fontWeight: '600' }}>Indigenous Borneo</Text>
+                         )}
+                       </View>
+                       {active && <Ionicons name="checkmark" size={18} color={theme.primary} />}
+                     </TouchableOpacity>
+                   );
+                 })}
+               </ScrollView>
+             </Pressable>
+          </Pressable>
        </Modal>
 
        {/* Language Selection Modal for Translation */}
@@ -1818,91 +2384,102 @@ export default function AIStoryGeneratorScreen() {
           visible={showLanguageModal}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => setShowLanguageModal(false)}
+          onRequestClose={() => { setShowLanguageModal(false); setLangSearchQuery(''); }}
        >
-          <TouchableOpacity 
-             style={styles.modalOverlay} 
-             activeOpacity={1} 
-             onPress={() => setShowLanguageModal(false)}
+          <Pressable
+             style={styles.langMenuBackdrop}
+             onPress={() => { setShowLanguageModal(false); setLangSearchQuery(''); }}
           >
-             <TouchableOpacity 
-                activeOpacity={1}
-                style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
-             >
-                 <Text style={[styles.modalTitle, { color: theme.text }]}> 
-                   {translationAction === 'share' ? 'Select Translation Language' : (selectedRecording ? 'Select Translation Language' : 'Translate Before Generating?')}
-                 </Text>
-                 <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: SPACING.m }]}>
-                   {translationAction === 'share'
-                    ? 'Choose a language first, then share with translated content.'
-                    : (selectedRecording 
-                      ? 'Choose a language to translate the recording transcript:' 
-                      : 'Select a language to translate your text, or skip to generate with original text.')}
-                 </Text>
+             <Pressable style={[styles.langMenuCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+               {/* Header */}
+               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.m, paddingTop: SPACING.m, paddingBottom: SPACING.s }}>
+                 <Text style={[styles.langMenuTitle, { color: theme.text }]}>Select Language</Text>
+                 <TouchableOpacity onPress={() => { setShowLanguageModal(false); setLangSearchQuery(''); }}>
+                   <Ionicons name="close" size={22} color={theme.textSecondary} />
+                 </TouchableOpacity>
+               </View>
 
-                {/* Borneo Languages */}
-                <Text style={[{ color: theme.primary, fontSize: 14, fontWeight: 'bold', marginBottom: SPACING.s }]}>Indigenous Borneo</Text>
-                <ScrollView style={{ maxHeight: 250 }}>
-                   {getBorneoLanguages().slice(0, 5).map((lang) => (
-                      <TouchableOpacity 
-                         key={lang.id} 
-                         style={[
-                            { 
-                              flexDirection: 'row', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center',
-                              paddingVertical: SPACING.m,
-                              borderBottomWidth: 1,
-                              borderBottomColor: theme.border
-                            },
-                            targetLanguage?.id === lang.id && { backgroundColor: theme.primary + '20' }
-                         ]}
-                         onPress={() => setTargetLanguage(lang)}
-                      >
-                         <Text style={[{ color: theme.text, fontSize: 16 }]}>
-                            {lang.label}
-                         </Text>
-                         {targetLanguage?.id === lang.id && (
-                            <Ionicons name="checkmark-circle" size={20} color={theme.primary} />
+               {/* Search Input */}
+               <View style={[styles.langMenuSearchWrap, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                 <Ionicons name="search" size={16} color={theme.textSecondary} />
+                 <TextInput
+                   style={[styles.langMenuSearchInput, { color: theme.text }]}
+                   placeholder="Search language..."
+                   placeholderTextColor={theme.textSecondary}
+                   value={langSearchQuery}
+                   onChangeText={setLangSearchQuery}
+                 />
+                 {langSearchQuery ? (
+                   <TouchableOpacity onPress={() => setLangSearchQuery('')}>
+                     <Ionicons name="close-circle" size={16} color={theme.textSecondary} />
+                   </TouchableOpacity>
+                 ) : null}
+               </View>
+
+               {/* Language List */}
+               <ScrollView style={styles.langMenuList} keyboardShouldPersistTaps="handled">
+                 {WORLD_LANGUAGES.filter(lang =>
+                   !langSearchQuery.trim() ||
+                   lang.label.toLowerCase().includes(langSearchQuery.trim().toLowerCase())
+                 ).map((lang) => {
+                   const active = targetLanguage?.id === lang.id;
+                   return (
+                     <TouchableOpacity
+                       key={lang.id}
+                       style={[styles.langMenuItem, active ? { backgroundColor: theme.primary + '18' } : null]}
+                       onPress={() => setTargetLanguage(lang)}
+                     >
+                       <Text style={{ fontSize: 16, marginRight: SPACING.s }}>{lang.flag}</Text>
+                       <View style={{ flex: 1 }}>
+                         <Text style={[styles.langMenuItemText, { color: theme.text }]}>{lang.label}</Text>
+                         {lang.indigenous && (
+                           <Text style={{ fontSize: 11, color: theme.primary, fontWeight: '600' }}>Indigenous Borneo</Text>
                          )}
-                      </TouchableOpacity>
-                   ))}
-                </ScrollView>
+                       </View>
+                       {active && <Ionicons name="checkmark" size={18} color={theme.primary} />}
+                     </TouchableOpacity>
+                   );
+                 })}
+               </ScrollView>
 
-                <View style={[styles.modalActions, { marginTop: SPACING.l }]}>
-                   {translationAction === 'generate' && !selectedRecording && (
-                   <TouchableOpacity 
-                      style={[styles.modalBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}
-                      onPress={() => {
-                         setTargetLanguage(null);
-                         handleTranslateAndGenerate();
-                      }}
+               {/* Action Buttons */}
+               <View style={{ padding: SPACING.m, gap: SPACING.s }}>
+                 <TouchableOpacity
+                   style={[styles.langMenuConfirmBtn, { backgroundColor: theme.primary, opacity: !targetLanguage ? 0.45 : 1 }]}
+                   disabled={!targetLanguage}
+                   onPress={() => {
+                     // If opened from Quick Share, just close and return — translation happens on "Share Now"
+                     if (showQuickShareModal) {
+                       setShowLanguageModal(false);
+                       setLangSearchQuery('');
+                       return;
+                     }
+                     if (translationAction === 'share') {
+                       if (selectedRecording) {
+                         handleTranslateForPreview(selectedRecording.transcript, selectedRecording);
+                       } else {
+                         handleTranslateForPreview(inputText.trim(), null);
+                       }
+                     } else {
+                       handleTranslateAndGenerate();
+                     }
+                   }}
+                 >
+                   <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 15 }}>
+                     {showQuickShareModal ? 'Select Language' : (translationAction === 'share' ? 'Translate & Continue' : 'Translate & Generate')}
+                   </Text>
+                 </TouchableOpacity>
+                 {translationAction === 'generate' && !selectedRecording && !showQuickShareModal && (
+                   <TouchableOpacity
+                     style={[styles.langMenuSkipBtn, { borderColor: theme.border }]}
+                     onPress={() => { setTargetLanguage(null); handleTranslateAndGenerate(); }}
                    >
-                      <Text style={[{ color: theme.text }]}>Skip Translation</Text>
+                     <Text style={{ color: theme.textSecondary, fontWeight: '600', fontSize: 14 }}>Skip — Generate without translation</Text>
                    </TouchableOpacity>
-                   )}
-                   <TouchableOpacity 
-                      style={[styles.modalBtn, { backgroundColor: theme.primary, opacity: !targetLanguage ? 0.5 : 1, flex: (selectedRecording || translationAction === 'share') ? 1 : 0 }]}
-                      onPress={() => {
-                        if (translationAction === 'share') {
-                          if (selectedRecording) {
-                            handleTranslateForPreview(selectedRecording.transcript, selectedRecording);
-                          } else {
-                            handleTranslateForPreview(inputText.trim(), null);
-                          }
-                        } else {
-                          handleTranslateAndGenerate();
-                        }
-                      }}
-                      disabled={!targetLanguage}
-                   >
-                      <Text style={[{ color: '#FFFFFF' }]}>
-                         {translationAction === 'share' ? 'Translate & Continue' : 'Translate & Generate'}
-                      </Text>
-                   </TouchableOpacity>
-                </View>
-             </TouchableOpacity>
-          </TouchableOpacity>
+                 )}
+               </View>
+             </Pressable>
+          </Pressable>
        </Modal>
 
        {/* Translation Preview Modal */}
@@ -1942,13 +2519,7 @@ export default function AIStoryGeneratorScreen() {
                </View>
              </ScrollView>
 
-             <View style={styles.modalActions}>
-               <TouchableOpacity
-                 onPress={() => setShowTranslationPreview(false)}
-                 style={[styles.modalBtn, { borderWidth: 1, borderColor: theme.border }]}
-               >
-                 <Text style={{ color: theme.text }}>Close</Text>
-               </TouchableOpacity>
+             <View style={{ gap: SPACING.s, paddingTop: SPACING.s }}>
                <TouchableOpacity
                  onPress={() => {
                    setShowTranslationPreview(false);
@@ -1971,10 +2542,16 @@ export default function AIStoryGeneratorScreen() {
                    setStoryDescription(translatedText);
                    setShowCreateStoryModal(true);
                  }}
-                 style={[styles.modalBtn, { backgroundColor: theme.primary }]}
+                 style={{ backgroundColor: theme.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
                >
-                 <Ionicons name="share-social-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                 <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share</Text>
+                 <Ionicons name="share-social-outline" size={18} color="#FFF" />
+                 <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 15 }}>Save & Share</Text>
+               </TouchableOpacity>
+               <TouchableOpacity
+                 onPress={() => setShowTranslationPreview(false)}
+                 style={{ borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}
+               >
+                 <Text style={{ color: theme.textSecondary, fontWeight: '600', fontSize: 14 }}>Close</Text>
                </TouchableOpacity>
              </View>
            </View>
@@ -2146,5 +2723,63 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
+  },
+
+  // Language Picker (Dict-style) Styles
+  langMenuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(10, 15, 30, 0.72)',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.l,
+  },
+  langMenuCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    maxHeight: '75%',
+    overflow: 'hidden',
+  },
+  langMenuTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  langMenuSearchWrap: {
+    marginHorizontal: SPACING.m,
+    marginBottom: SPACING.xs,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  langMenuSearchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
+  langMenuList: {
+    paddingHorizontal: SPACING.xs,
+  },
+  langMenuItem: {
+    minHeight: 48,
+    borderRadius: 10,
+    paddingHorizontal: SPACING.s,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  langMenuItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  langMenuConfirmBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  langMenuSkipBtn: {
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    borderWidth: 1,
   },
 });

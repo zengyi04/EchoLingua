@@ -57,6 +57,8 @@ const LANGUAGE_CODES = {
   bidayuh: 'ms',
   kadazan: 'ms',
   murut: 'ms',
+  melanau: 'ms',
+  penan: 'ms',
 };
 
 /**
@@ -91,6 +93,12 @@ export const translateText = async (text, languageId) => {
     }
 
     const targetCode = LANGUAGE_CODES[languageId] || 'en';
+
+    // MyMemory rejects same language pair like en|en.
+    if (targetCode === 'en' && String(languageId).toLowerCase() !== 'english') {
+      console.warn(`Unsupported target language id for MyMemory fallback: ${languageId}. Returning source text.`);
+      return text;
+    }
     
     // Use MyMemory free API (no authentication needed)
     const encodedText = encodeURIComponent(text);
