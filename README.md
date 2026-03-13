@@ -9,6 +9,7 @@ EchoLingua is a mobile-first platform for indigenous language preservation and l
 https://drive.google.com/file/d/17jdritN2Onja39VbLjdJlD10Uiak6gDy/view?usp=sharing
 
 ## Demo Video Link
+https://youtu.be/gnIzHsL_A0I?si=661phUbBICGrYLhN
 
 ## Slides Link
 https://www.canva.com/design/DAHDsmxfphI/BQ4w0jMthSstt6XeYXp9kQ/view?utm_content=DAHDsmxfphI&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h07f0f456ee
