@@ -11,6 +11,7 @@ https://drive.google.com/file/d/17jdritN2Onja39VbLjdJlD10Uiak6gDy/view?usp=shari
 ## Demo Video Link
 
 ## Slides Link
+https://www.canva.com/design/DAHDsmxfphI/BQ4w0jMthSstt6XeYXp9kQ/view?utm_content=DAHDsmxfphI&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h07f0f456ee
 
 ## 1. General Description
 
