@@ -1,108 +1,154 @@
 # EchoLingua
 
-An **Indigenous language preservation platform** for Borneo communities. Enables elders to record and share language documentation, and learners to access stories, lessons, and vocabulary.
+BorNEO HackWknd 2026
+Team UM is One
 
-## Tech Stack
+EchoLingua is a mobile-first platform for indigenous language preservation and learning in Borneo communities. It combines community storytelling, AI-assisted language tools, cultural documentation, and interactive learning features to support long-term language revitalization.
 
-| Layer | Technology |
-|-------|------------|
-| Backend API | FastAPI |
-| Database | MongoDB |
-| File Storage | Supabase Storage |
-| Auth | JWT (bcrypt) |
+## 1. General Description
 
-## Project Structure
+### What the project does
 
-```
-EchoLingua_Borneo/
-├── backend/           # FastAPI API server
-│   ├── main.py       # App entry point
-│   ├── config.py     # JWT & env config
-│   ├── database.py   # MongoDB connection
-│   ├── supabase_client.py
-│   ├── dto/          # Pydantic models
-│   ├── srcs/
-│   │   ├── core/     # Auth, security, dependencies
-│   │   ├── routes/   # API endpoints
-│   │   └── services/ # Storage, etc.
-│   ├── context/      # api_docs.md, db_docs.md
-│   └── tests/       # API smoke tests (test_apis.ps1)
-└── frontend/         # React/Expo app (if present)
-```
+EchoLingua provides an integrated platform for both language learning and language preservation. The prototype supports:
 
----
+- Vocabulary learning, quizzes, and scenario-based practice.
+- Community storytelling and cultural knowledge sharing.
+- Audio recording for pronunciation and oral history documentation.
+- AI-assisted chat, translation, story generation, transcription, and text-to-speech.
+- Progress tracking through XP, streaks, and user profiles.
 
-## Backend Setup & Run
+The goal is to preserve language and culture while making learning accessible to younger generations.
 
-### 1. Create virtual environment
+### SDGs addressed
 
-```bash
-cd backend
-python -m venv venv
-```
+- SDG 4: Quality Education.
+  - Promotes inclusive learning through interactive language content and AI-assisted practice.
+- SDG 11: Sustainable Cities and Communities.
+  - Protects intangible cultural heritage through digital preservation of stories and pronunciation.
 
-**Windows (PowerShell):**
+### Target users
+
+- Indigenous elders and fluent speakers who want to preserve language and cultural narratives.
+- Youth learners and students who need engaging language learning tools.
+- Families who want intergenerational language learning at home.
+- Educators, NGOs, and community organizations supporting language revitalization.
+- Judges and evaluators assessing social impact technology prototypes.
+
+## 2. Setup Instructions
+
+### How to install
+
+Prerequisites:
+
+- Python 3.10+
+- Node.js 18+ and npm
+- MongoDB access
+- Supabase credentials
+- API keys for Gemini, Maps, and OCR/Vision features
+
+Backend installation:
 
 ```powershell
+cd backend
+python -m venv venv
 .\venv\Scripts\Activate.ps1
-```
-
-**Windows (CMD) / macOS / Linux:**
-
-```bash
-# Windows CMD
-venv\Scripts\activate
-
-# macOS / Linux
-source venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-### 3. Configure environment
+Frontend installation:
 
-Copy `backend/.env.example` to `backend/.env` and fill in your values:
-
-```bash
-cp backend/.env.example backend/.env
+```powershell
+cd frontend
+npm install
+Copy-Item .env.example .env
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `MONGODB_URI` | MongoDB connection string (Atlas or local) |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_KEY` | Supabase anon/public key |
-| `JWT_SECRET` | Secret for signing JWT tokens |
+Configure environment values:
 
-### 4. Run the server
+- Backend `.env`: `MONGODB_URI`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `GEMINI_API_KEY_LIST`
+- Frontend `.env`: `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`, `EXPO_PUBLIC_GEMINI_API_KEY`, `EXPO_PUBLIC_GEMINI_MODEL`, `EXPO_PUBLIC_GOOGLE_VISION_API_KEY`, `EXPO_PUBLIC_OCR_SPACE_API_KEY`
 
-```bash
+Update API URL in [frontend/src/services/api.js](frontend/src/services/api.js):
+
+- Local web or emulator: `http://localhost:8000`
+- Physical device via Expo Go: `http://your-lan-ip:8000`
+
+### How to run
+
+Run backend:
+
+```powershell
 cd backend
 python main.py
 ```
 
-Server runs at **http://localhost:8000**
+Backend endpoints:
 
-- API docs: http://localhost:8000/docs
-- Health: http://localhost:8000/
+- Health check: `http://localhost:8000/`
+- Swagger docs: `http://localhost:8000/docs`
 
-### 5. Run API tests
+Run frontend:
 
-With the server running in another terminal:
+```powershell
+cd frontend
+npm start
+```
 
-```bash
-cd backend
+In Expo:
+
+- Press `w` for web.
+- Press `a` for Android emulator.
+- Or scan the QR code with Expo Go.
+
+## 3. How to Interact With the Prototype
+
+### Step-by-step guide for judges
+
+1. Start the backend and confirm the health endpoint is reachable.
+2. Start the frontend and open the app.
+3. On the authentication screen, choose `Sign Up` or `Continue as Guest`.
+4. On the Home screen, show the language dashboard and key navigation.
+5. Open the Learn section and demonstrate vocabulary and quiz flow.
+6. Open the Stories section and show story library or community stories.
+7. Open Record or an AI feature and demonstrate one AI interaction.
+8. Open Profile or Progress and show XP, streaks, and learner statistics.
+9. Open backend Swagger docs at `http://localhost:8000/docs` as API proof.
+
+### Test cases (if applicable)
+
+Automated backend smoke test:
+
+```powershell
+cd backend\tests
 .\test_apis.ps1
 ```
 
----
+This validates:
 
-## API Full Documentation
+- Health check.
+- Register and profile flow.
+- Stories and lessons endpoints.
+- Analytics endpoint.
+- Invalid ID error handling.
 
-Full API specification, request/response schemas, and implementation details:
+Optional test run:
 
-**[`backend/context/api_docs.md`](backend/context/api_docs.md)**
+```powershell
+cd backend
+pytest tests
+```
+
+Manual test checklist for judges:
+
+1. Register a new user and log in successfully.
+2. Open and complete at least one quiz interaction.
+3. Open one story and verify content displays correctly.
+4. Run one AI feature and verify a valid response is returned.
+5. Verify API routes are visible in Swagger documentation.
+
+## Additional References
+
+- [backend/context/api_docs.md](backend/context/api_docs.md)
+- [backend/context/db_docs.md](backend/context/db_docs.md)
+- [frontend/README.md](frontend/README.md)
