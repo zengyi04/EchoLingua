@@ -5,6 +5,13 @@ Team UM is One
 
 EchoLingua is a mobile-first platform for indigenous language preservation and learning in Borneo communities. It combines community storytelling, AI-assisted language tools, cultural documentation, and interactive learning features to support long-term language revitalization.
 
+## Final Report Link
+https://drive.google.com/file/d/17jdritN2Onja39VbLjdJlD10Uiak6gDy/view?usp=sharing
+
+## Demo Video Link
+
+## Slides Link
+
 ## 1. General Description
 
 ### What the project does
